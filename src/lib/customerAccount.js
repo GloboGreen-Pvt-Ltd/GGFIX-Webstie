@@ -28,7 +28,7 @@
 
 import {
   AUTH_BASE,
-  MASTER_BASE,
+  MEDIA_UPLOAD_URL,
   MARKETPLACE_BASE,
   ORDER_BASE,
   SHOP_BASE,
@@ -112,7 +112,7 @@ export async function uploadCustomerAvatar(file) {
   const data = new FormData();
   data.append('file', file);
   data.append('folder', 'customers/avatars');
-  const res = await fetch(`${trim(MASTER_BASE())}/media/upload`, {
+  const res = await fetch(MEDIA_UPLOAD_URL(), {
     method: 'POST',
     credentials: 'omit',
     headers: { Accept: 'application/json', ...authHeaders() },

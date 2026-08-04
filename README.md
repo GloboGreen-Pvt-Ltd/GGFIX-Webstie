@@ -20,7 +20,7 @@ Next.js admin panel for the mobile repair SaaS platform. Super Admin features: s
 cd repair-shop-admin
 npm install
 cp .env.local.example .env.local
-# Edit .env.local: set NEXT_PUBLIC_MASTER_DATA_BASE to your Master Data service URL (e.g. http://localhost:8091)
+# Edit .env.local: set NEXT_PUBLIC_MASTER_DATA_BASE to your Master Data service URL (e.g. https://api.ggfix.in/master)
 npm run dev
 ```
 
@@ -99,41 +99,60 @@ Every base is read as a **static** `process.env.NEXT_PUBLIC_*` literal in `src/l
 — a dynamic lookup would not be inlined into the client bundle and would silently fall
 back to localhost in the browser.
 
-> **Each base is scheme + host + port ONLY — never a path segment.**
-> `src/lib/api.js` already prefixes every call with the service name, so the base must
-> not repeat it. `NEXT_PUBLIC_AUTH_BASE=https://example.com/auth` makes the app request
-> `/auth/auth/login`. Verified against the live backend on 2026-08-04:
+> **Every base ends with its `/<service>` segment — except master-data, which is the
+> bare host.** e.g. `NEXT_PUBLIC_AUTH_BASE=https://api.ggfix.in/auth` but
+> `NEXT_PUBLIC_MASTER_DATA_BASE=https://api.ggfix.in`.
+>
+> `src/lib/api.js` already prefixes every call with the service name. For most
+> services the name therefore appears **twice** in the wire URL, and that is correct:
+> the nginx edge uses a trailing-slash `proxy_pass`
+> (`location /auth/ { proxy_pass http://127.0.0.1:8081/; }`), which **strips** the
+> first segment before forwarding. One copy is consumed by nginx for routing, the
+> other is what the Spring controller is mapped on.
+>
+> master-data-service is special-cased at the edge so its public path stays clean —
+> `location /master/ { proxy_pass http://127.0.0.1:8091/master/; }` keeps the segment
+> instead of eating it. Its base is therefore the bare host, and `/master` appears
+> once. Media is the wrinkle: the controller is `@RequestMapping("/media")` but the
+> edge only exposes it under `/master/media/`, so uploads go through
+> `MEDIA_UPLOAD_URL()` in `src/lib/api.js` rather than being spelled out at each
+> call site.
+>
+> Verified against the live edge (nginx/1.30.3) on 2026-08-04:
 >
 > | Request | Result |
 > |---|---|
-> | `/master/colors` | 200, JSON |
-> | `/master/master/colors` | 404 |
-> | `/auth/login` | 401 — endpoint exists |
-> | `/auth/auth/login` | 500 |
+> | `/master/brands` | 200, JSON — clean, preferred |
+> | `/master/master/brands` | 200 — legacy shape, still routed for shipped APKs |
+> | `/master/media/ping` | 200 |
+> | `/media/ping` | 404 — media exists only under the `/master` prefix |
+> | `/auth/auth/shop-owners` | 200, JSON |
+> | `POST /auth/auth/login` | 400 — endpoint exists |
 >
-> The one exception is an edge that strips the prefix: nginx
-> `location /auth/ { proxy_pass http://127.0.0.1:8081/; }` **with** the trailing slash
-> removes `/auth` before forwarding, so there a `.../auth` suffix is correct. Without
-> the trailing slash the path is preserved and the suffix must be omitted. Confirm
-> against the deployed edge before setting these — a doubled prefix surfaces in the
-> browser as an opaque CORS/`ERR_FAILED` error, not as a 404, because the failing
+> Dropping a non-master suffix makes those calls 404. `api.js` normalises the master
+> base, stripping a stray trailing `/master`, so an un-updated deploy variable still
+> resolves correctly. Note all of this is the opposite of talking to a service
+> directly by port (`http://host:8091/master/colors`), where the path is preserved
+> and no suffix belongs in the base. Confirm with a curl against whatever edge you
+> point at before setting these — under a misconfigured edge a failure can surface in
+> the browser as an opaque CORS/`ERR_FAILED` rather than a 404, because the error
 > response carries no `Access-Control-Allow-Origin` header.
 
 | Variable | Description |
 |----------|-------------|
-| `NEXT_PUBLIC_MASTER_DATA_BASE` | Master Data service (default `http://localhost:8091`) |
+| `NEXT_PUBLIC_MASTER_DATA_BASE` | Master Data service — **bare host**, no `/master` suffix (default `https://api.ggfix.in`) |
 | `NEXT_PUBLIC_API_BASE` | Legacy alias for the above; only used if it is unset |
-| `NEXT_PUBLIC_AUTH_BASE` | Auth service for login (default `http://localhost:8081`) |
-| `NEXT_PUBLIC_TICKET_BASE` | Ticket service (default `http://localhost:8082`) |
-| `NEXT_PUBLIC_USER_BASE` | User service (default `http://localhost:8083`) |
-| `NEXT_PUBLIC_SHOP_BASE` | Shop service for create/activate/suspend (default `http://localhost:8084`) |
-| `NEXT_PUBLIC_TECHNICIAN_BASE` | Technician service (default `http://localhost:8085`) |
-| `NEXT_PUBLIC_INVENTORY_BASE` | Inventory service (default `http://localhost:8086`) |
-| `NEXT_PUBLIC_MARKETPLACE_BASE` | Marketplace service (default `http://localhost:8087`) |
-| `NEXT_PUBLIC_PICKUP_BASE` | Pickup service (default `http://localhost:8088`) |
-| `NEXT_PUBLIC_NOTIFICATION_BASE` | Notification service (default `http://localhost:8089`) |
-| `NEXT_PUBLIC_SUBSCRIPTION_BASE` | Subscription service (default `http://localhost:8090`) |
-| `NEXT_PUBLIC_ORDER_BASE` | Order service (default `http://localhost:8092`) |
+| `NEXT_PUBLIC_AUTH_BASE` | Auth service for login (default `https://api.ggfix.in/auth`) |
+| `NEXT_PUBLIC_TICKET_BASE` | Ticket service (default `https://api.ggfix.in/ticket`) |
+| `NEXT_PUBLIC_USER_BASE` | User service (default `https://api.ggfix.in/user`) |
+| `NEXT_PUBLIC_SHOP_BASE` | Shop service for create/activate/suspend (default `https://api.ggfix.in/shop`) |
+| `NEXT_PUBLIC_TECHNICIAN_BASE` | Technician service (default `https://api.ggfix.in/technician`) |
+| `NEXT_PUBLIC_INVENTORY_BASE` | Inventory service (default `https://api.ggfix.in/inventory`) |
+| `NEXT_PUBLIC_MARKETPLACE_BASE` | Marketplace service (default `https://api.ggfix.in/marketplace`) |
+| `NEXT_PUBLIC_PICKUP_BASE` | Pickup service (default `https://api.ggfix.in/pickup`) |
+| `NEXT_PUBLIC_NOTIFICATION_BASE` | Notification service (default `https://api.ggfix.in/notification`) |
+| `NEXT_PUBLIC_SUBSCRIPTION_BASE` | Subscription service (default `https://api.ggfix.in/subscription`) |
+| `NEXT_PUBLIC_ORDER_BASE` | Order service (default `https://api.ggfix.in/order`) |
 
 ## Backend
 

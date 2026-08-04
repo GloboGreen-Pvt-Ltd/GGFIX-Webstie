@@ -1,28 +1,69 @@
 // IMPORTANT: Next.js only inlines NEXT_PUBLIC_* env vars into the client bundle when
 // they are referenced as STATIC literals (process.env.NEXT_PUBLIC_FOO). A dynamic
 // lookup such as process.env[`NEXT_PUBLIC_${key}`] is NOT inlined, so in the browser
-// it returns undefined and every base silently falls back to localhost. Each var must
+// it returns undefined and every base silently falls back to LIVE_BASE. Each var must
 // therefore be spelled out below. With output:'export' these are baked in at BUILD time.
+//
+// PATH SHAPE — master-data is the exception, every other service is uniform.
+//
+// Most nginx locations at the edge use a trailing-slash proxy_pass, which STRIPS
+// the matched prefix before forwarding:
+//   location /auth/ { proxy_pass http://127.0.0.1:8081/; }   /auth/auth/login -> :8081/auth/login
+// The Spring controller is @RequestMapping("/auth"), so the service name has to
+// appear TWICE in the wire URL — once for nginx to route on, once for the mapping.
+// That is why those bases keep their /<service> suffix and the call sites add it
+// again.
+//
+// master-data-service (8091) is special-cased at the edge precisely so the public
+// path does NOT have to double up:
+//   location /master/       { proxy_pass http://127.0.0.1:8091/master/; }  /master/brands -> :8091/master/brands
+//   location /master/media/ { proxy_pass http://127.0.0.1:8091/media/;  }  /master/media/upload -> :8091/media/upload
+// So MASTER_BASE is the bare host and the call sites supply the whole public path:
+//   MASTER_BASE() + '/master/brands' -> https://api.ggfix.in/master/brands
+// Verified 2026-08-04 against the live edge: /master/brands 200, /master/media/ping
+// 200, /media/ping 404 (media is only reachable under the /master routing prefix).
+const EDGE = 'https://api.ggfix.in';
 const pick = (value, fallback) => (value && value.trim()) || fallback;
 
+// Tolerate a deploy variable still carrying the old `/master` suffix. The edge now
+// routes /master/* by itself, so leaving the suffix on would double the segment and
+// — worse — push media to /master/master/media/upload, which 404s. Normalising here
+// keeps the app correct whether or not NEXT_PUBLIC_MASTER_DATA_BASE has been updated.
+const stripMasterSuffix = (value) => value.replace(/\/+$/, '').replace(/\/master$/, '');
+
 export const MASTER_BASE = () =>
-  pick(
-    process.env.NEXT_PUBLIC_MASTER_DATA_BASE ||
-      process.env.NEXT_PUBLIC_API_BASE ||
-      process.env.NEXT_PUBLIC_API_BASE_URL,
-    'http://localhost:8091',
+  stripMasterSuffix(
+    pick(
+      process.env.NEXT_PUBLIC_MASTER_DATA_BASE ||
+        process.env.NEXT_PUBLIC_API_BASE ||
+        process.env.NEXT_PUBLIC_API_BASE_URL,
+      EDGE,
+    ),
   );
-export const AUTH_BASE = () => pick(process.env.NEXT_PUBLIC_AUTH_BASE, 'http://localhost:8081');
-export const TICKET_BASE = () => pick(process.env.NEXT_PUBLIC_TICKET_BASE, 'http://localhost:8082');
-export const USER_BASE = () => pick(process.env.NEXT_PUBLIC_USER_BASE, 'http://localhost:8083');
-export const SHOP_BASE = () => pick(process.env.NEXT_PUBLIC_SHOP_BASE, 'http://localhost:8084');
-export const TECHNICIAN_BASE = () => pick(process.env.NEXT_PUBLIC_TECHNICIAN_BASE, 'http://localhost:8085');
-export const INVENTORY_BASE = () => pick(process.env.NEXT_PUBLIC_INVENTORY_BASE, 'http://localhost:8086');
-export const MARKETPLACE_BASE = () => pick(process.env.NEXT_PUBLIC_MARKETPLACE_BASE, 'http://localhost:8087');
-export const PICKUP_BASE = () => pick(process.env.NEXT_PUBLIC_PICKUP_BASE, 'http://localhost:8088');
-export const NOTIFICATION_BASE = () => pick(process.env.NEXT_PUBLIC_NOTIFICATION_BASE, 'http://localhost:8089');
-export const SUBSCRIPTION_BASE = () => pick(process.env.NEXT_PUBLIC_SUBSCRIPTION_BASE, 'http://localhost:8090');
-export const ORDER_BASE = () => pick(process.env.NEXT_PUBLIC_ORDER_BASE, 'http://localhost:8092');
+
+// Media is @RequestMapping("/media") on master-data-service, NOT under /master.
+// Talking to the service DIRECTLY (http://localhost:8091) hits that mapping as-is,
+// but the edge only exposes it beneath the /master routing prefix
+// (location /master/media/ -> :8091/media/), so the public path needs the prefix.
+// Detect by port: a direct origin always names one, the edge is plain 443.
+// Centralised here so this one odd path lives in a single place rather than being
+// respelled at each upload call site.
+const isDirectServiceOrigin = (base) => /:\d+$/.test(base);
+export const MEDIA_UPLOAD_URL = () => {
+  const base = MASTER_BASE();
+  return isDirectServiceOrigin(base) ? `${base}/media/upload` : `${base}/master/media/upload`;
+};
+export const AUTH_BASE = () => pick(process.env.NEXT_PUBLIC_AUTH_BASE, `${EDGE}/auth`);
+export const TICKET_BASE = () => pick(process.env.NEXT_PUBLIC_TICKET_BASE, `${EDGE}/ticket`);
+export const USER_BASE = () => pick(process.env.NEXT_PUBLIC_USER_BASE, `${EDGE}/user`);
+export const SHOP_BASE = () => pick(process.env.NEXT_PUBLIC_SHOP_BASE, `${EDGE}/shop`);
+export const TECHNICIAN_BASE = () => pick(process.env.NEXT_PUBLIC_TECHNICIAN_BASE, `${EDGE}/technician`);
+export const INVENTORY_BASE = () => pick(process.env.NEXT_PUBLIC_INVENTORY_BASE, `${EDGE}/inventory`);
+export const MARKETPLACE_BASE = () => pick(process.env.NEXT_PUBLIC_MARKETPLACE_BASE, `${EDGE}/marketplace`);
+export const PICKUP_BASE = () => pick(process.env.NEXT_PUBLIC_PICKUP_BASE, `${EDGE}/pickup`);
+export const NOTIFICATION_BASE = () => pick(process.env.NEXT_PUBLIC_NOTIFICATION_BASE, `${EDGE}/notification`);
+export const SUBSCRIPTION_BASE = () => pick(process.env.NEXT_PUBLIC_SUBSCRIPTION_BASE, `${EDGE}/subscription`);
+export const ORDER_BASE = () => pick(process.env.NEXT_PUBLIC_ORDER_BASE, `${EDGE}/order`);
 
 async function request(base, path, options = {}) {
   const url = `${base.replace(/\/$/, '')}${path}`;

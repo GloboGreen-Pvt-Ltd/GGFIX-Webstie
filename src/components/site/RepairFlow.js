@@ -66,7 +66,7 @@ import {
   Zap,
 } from 'lucide-react';
 
-import { MASTER_BASE, SHOP_BASE, masterApi } from '@/lib/api';
+import { MEDIA_UPLOAD_URL, SHOP_BASE, masterApi } from '@/lib/api';
 import { Button, cx } from '@/components/site/ui';
 import LoginModal from '@/components/site/LoginModal';
 import { isLoggedIn } from '@/lib/customerAuth';
@@ -1209,12 +1209,11 @@ function ServiceStep({ deviceCategoryId, modelName, deviceHref, device }) {
 
 /** Upload one image to master-data /media/upload; returns the Cloudinary URL. */
 async function uploadDevicePhoto(file) {
-  const base = String(MASTER_BASE() || '').replace(/\/$/, '');
   const fd = new FormData();
   fd.append('file', file);
   fd.append('folder', 'repair-bookings');
   // No Content-Type header — the browser sets the multipart boundary itself.
-  const res = await fetch(`${base}/media/upload`, { method: 'POST', body: fd, credentials: 'omit' });
+  const res = await fetch(MEDIA_UPLOAD_URL(), { method: 'POST', body: fd, credentials: 'omit' });
   if (!res.ok) throw new Error(`upload failed ${res.status}`);
   const data = await res.json();
   const url = data && data.url;

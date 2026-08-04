@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { authApi, MASTER_BASE } from '@/lib/api';
+import { authApi, MEDIA_UPLOAD_URL } from '@/lib/api';
 
 const EMPTY_OWNER = {
   name: '', email: '', phone: '', secondaryMobile: '', password: '', otpCode: '',
@@ -18,7 +18,7 @@ async function uploadFile(file, folder) {
   const fd = new FormData();
   fd.append('file', file);
   if (folder) fd.append('folder', folder);
-  const res = await fetch(`${MASTER_BASE()}/media/upload`, { method: 'POST', body: fd });
+  const res = await fetch(MEDIA_UPLOAD_URL(), { method: 'POST', body: fd });
   if (!res.ok) throw new Error(`Upload failed (${res.status})`);
   return (await res.json())?.url || null;
 }

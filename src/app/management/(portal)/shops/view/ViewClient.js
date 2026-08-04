@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { authApi, subscriptionApi, MASTER_BASE } from '@/lib/api';
+import { authApi, subscriptionApi, MEDIA_UPLOAD_URL } from '@/lib/api';
 
 const EMPTY_LOC = {
   name: '', mobile: '', gstNumber: '', state: '', district: '',
@@ -51,7 +51,7 @@ async function uploadFile(file, folder) {
   const fd = new FormData();
   fd.append('file', file);
   if (folder) fd.append('folder', folder);
-  const res = await fetch(`${MASTER_BASE()}/media/upload`, { method: 'POST', body: fd });
+  const res = await fetch(MEDIA_UPLOAD_URL(), { method: 'POST', body: fd });
   if (!res.ok) throw new Error(`Upload failed (${res.status})`);
   return (await res.json())?.url || null;
 }

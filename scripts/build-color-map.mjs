@@ -16,10 +16,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import http from 'node:http';
+import https from 'node:https';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const MASTER = process.env.MASTER_BASE || 'http://13.205.198.41:8091';
+// Bare host: the edge routes /master/* straight through to master-data-service
+// (location /master/ -> :8091/master/), so the calls below already carry the only
+// /master segment the wire URL needs — https://api.ggfix.in/master/brands.
+const MASTER = (process.env.MASTER_BASE || 'https://api.ggfix.in')
+  .replace(/\/+$/, '')
+  .replace(/\/master$/, '');
 
 /* Base-colour words → hex. Only used when color-name-list has no exact match.
  * Kept in sync with COLOR_WORDS in src/components/site/RepairFlow.js (the client
@@ -51,9 +57,11 @@ function baseWord(name) {
   return null;
 }
 
+// Pick the client by scheme — node:http throws "Protocol https: not supported"
+// on an https URL, so this must follow MASTER rather than be hardcoded.
 const getJson = (url) =>
   new Promise((resolve) => {
-    http
+    (url.startsWith('https:') ? https : http)
       .get(url, (res) => {
         let data = '';
         res.on('data', (c) => (data += c));

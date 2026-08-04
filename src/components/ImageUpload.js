@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { MASTER_BASE } from '@/lib/api';
+import { MEDIA_UPLOAD_URL } from '@/lib/api';
 
 /**
  * Image upload card. Matches the "Avatar / Upload Avatar" pattern.
@@ -67,7 +67,7 @@ export default function ImageUpload({
       const fd = new FormData();
       fd.append('file', file);
       if (folder) fd.append('folder', folder);
-      const url = `${MASTER_BASE().replace(/\/$/, '')}/media/upload`;
+      const url = MEDIA_UPLOAD_URL();
       const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
       const xhr = new XMLHttpRequest();
       xhr.open('POST', url);

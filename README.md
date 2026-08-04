@@ -118,10 +118,48 @@ for h in preview deploy www; do curl -sI "https://$h.ggfix.in/" | grep -i etag; 
 curl -sI https://ggfix.in/ | grep -i etag
 ```
 
-Four different ETags is correct. Identical ones mean the origins still need splitting:
-point each hostname at its own distribution whose origin is that environment's bucket,
-then set `CLOUDFRONT_DISTRIBUTION_PRODUCTION` and `_DEVELOPMENT` alongside the
-`_PREVIEW` variable so each deploy invalidates its own edge cache.
+Four different ETags is correct. Identical ones mean the origins still need splitting.
+
+> **Do not split the origins yet — it would take the public site down.** `main` and
+> `Development` are both still the empty *Initial commit*; only `Preview` carries the
+> app. Pointing `ggfix.in` at `ggfix-frontend` today would swap a working (preview)
+> build for a bucket that has never received one. The current state is at least
+> fail-safe: a push to `main` fails at `npm ci` long before the S3 sync, so nothing
+> can be published over a live bucket by accident.
+
+Order matters. Do these in sequence:
+
+**1. Apply the rewrite** (above). Fixes all routes on whatever serves traffic today,
+changes no content, and is independent of everything below.
+
+**2. Give `main` and `Development` the app.** Merge `Preview` → `Development` first and
+check `deploy.ggfix.in`, then `Preview` → `main`. Each push builds and syncs to its own
+bucket, which is what makes those buckets real. Until this is done the environment
+split has nothing to point at.
+
+**3. Then split the origins.** First establish what exists — one command answers it:
+
+```bash
+aws cloudfront list-distributions \
+  --query 'DistributionList.Items[].{Id:Id,Aliases:Aliases.Items,Origin:Origins.Items[0].DomainName}' \
+  --output table
+```
+
+- *One distribution holding all four aliases* — create one distribution per
+  environment, each with its own bucket as origin, then move `ggfix.in`/`www` and
+  `deploy` onto theirs in Route 53. Leave `preview` where it is.
+- *Several distributions already pointing at the preview bucket* — just correct each
+  one's origin; no new distributions needed.
+
+Either way each new distribution needs its own OAC **and** a matching bucket policy —
+the bucket only trusts the distribution named in its policy, so a new distribution
+against an untouched bucket serves 403 for everything. Apply the rewrite function to
+each new distribution too (step 1's script takes several IDs).
+
+**4. Set the remaining variables.** `CLOUDFRONT_DISTRIBUTION_PRODUCTION` and
+`CLOUDFRONT_DISTRIBUTION_DEVELOPMENT`, so each deploy invalidates its own edge cache
+rather than warning and skipping. Then re-run the ETag check above and confirm four
+distinct values.
 
 Two more things that bite if missed:
 

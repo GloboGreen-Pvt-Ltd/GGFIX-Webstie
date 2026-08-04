@@ -1,0 +1,131 @@
+import { MASTER_BASE } from '@/lib/api';
+
+/**
+ * Model images on media.ggfix.in.
+ *
+ * The client sends IDs and a file and NEVER a path. The S3 key is derived on the
+ * server from the names those IDs resolve to — see MediaKeys.java. Building the key
+ * here would mean two implementations of the same slug rules drifting apart, and it
+ * would let anyone with the endpoint choose where their bytes land.
+ *
+ * These go through fetch rather than `masterApi`, which sets Content-Type:
+ * application/json. A multipart POST must let the browser set that header itself so
+ * it can append the boundary; overriding it makes Spring see an unparseable body and
+ * report the file as missing.
+ */
+
+const trim = (base) => String(base || '').replace(/\/+$/, '');
+
+function authHeaders() {
+  if (typeof window === 'undefined') return {};
+  const token = localStorage.getItem('admin_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** Surface the backend's message — it is written to be shown to the user as-is. */
+async function unwrap(res) {
+  const raw = await res.text().catch(() => '');
+  let body = raw;
+  if (raw) {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      /* keep the raw text */
+    }
+  }
+  if (!res.ok) {
+    const message =
+      (body && typeof body === 'object' && (body.message || body.error)) ||
+      (typeof body === 'string' && body.trim()) ||
+      `Upload failed (${res.status})`;
+    const err = new Error(message);
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+  return body;
+}
+
+/**
+ * Append a repeated field once per value. Spring binds repeats to a List; a single
+ * comma-joined string would arrive as one element containing commas.
+ */
+function appendAll(form, field, values) {
+  (Array.isArray(values) ? values : []).forEach((value) => {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
+      form.append(field, String(value));
+    }
+  });
+}
+
+/**
+ * Create a model and upload its image in one request.
+ *
+ * @param {object} model
+ * @param {string} model.categoryId
+ * @param {string} model.brandId
+ * @param {string} model.seriesId
+ * @param {string} model.modelName
+ * @param {string[]} [model.modelNumber]
+ * @param {string[]} [model.colors]
+ * @param {string[]} [model.ramStorage]
+ * @param {boolean} [model.sellActive]
+ * @param {File} file  jpeg, png or webp
+ * @returns {Promise<{id:string, mediaFolderKey:string, imageKey:string, imageUrl:string}>}
+ */
+export async function createModelWithImage(model, file) {
+  const form = new FormData();
+  form.append('categoryId', model.categoryId);
+  form.append('brandId', model.brandId);
+  form.append('seriesId', model.seriesId);
+  form.append('modelName', model.modelName);
+  appendAll(form, 'modelNumber', model.modelNumber);
+  appendAll(form, 'colors', model.colors);
+  appendAll(form, 'ramStorage', model.ramStorage);
+  if (model.sellActive !== undefined) form.append('sellActive', String(model.sellActive));
+  form.append('image', file);
+
+  const res = await fetch(`${trim(MASTER_BASE())}/master/models/with-image`, {
+    method: 'POST',
+    headers: authHeaders(), // no Content-Type: the browser adds the boundary
+    body: form,
+  });
+  return unwrap(res);
+}
+
+/**
+ * Replace an existing model's image. The folder is kept; the response carries a NEW
+ * imageKey, because the filename changes on every upload so CloudFront and the
+ * browser cannot keep serving the superseded image.
+ */
+export async function replaceModelImage(modelId, file) {
+  const form = new FormData();
+  form.append('image', file);
+
+  const res = await fetch(
+    `${trim(MASTER_BASE())}/master/models/${encodeURIComponent(modelId)}/image`,
+    { method: 'POST', headers: authHeaders(), body: form },
+  );
+  return unwrap(res);
+}
+
+/**
+ * Ask the server where a model would be filed, without uploading.
+ *
+ * Lets the form show the destination as the user picks, and makes the shared base
+ * path visible: every model under one category/brand/series returns the same
+ * baseFolder.
+ *
+ * @returns {Promise<{baseFolder:string, modelFolder?:string, examplePublicUrl?:string}>}
+ */
+export async function previewModelMediaPath({ categoryId, brandId, seriesId, modelName }) {
+  const res = await fetch(`${trim(MASTER_BASE())}/master/models/media-path/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ categoryId, brandId, seriesId, modelName }),
+  });
+  return unwrap(res);
+}
+
+/** Formats accepted by the backend validator; use as the file input's `accept`. */
+export const ACCEPTED_IMAGE_TYPES = 'image/jpeg,image/png,image/webp';

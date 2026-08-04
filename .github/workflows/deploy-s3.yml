@@ -1,0 +1,143 @@
+name: Deploy Admin to S3
+
+# Three-branch promotion flow — one branch per environment:
+#   Preview      -> "preview"     (test)
+#   Development  -> "development" (deploy-test)
+#   main         -> "production"  (LIVE)
+#
+# Each maps to a GitHub *Environment* of the matching name, so the S3 bucket, the
+# AWS role and every NEXT_PUBLIC_* base URL are configured per environment under
+# Settings > Environments — NOT as repo-wide variables. Add a required reviewer on
+# the "production" environment to gate anything landing on main.
+
+on:
+  push:
+    branches: [main, Development, Preview]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Environment to deploy
+        type: choice
+        options: [preview, development, production]
+        default: preview
+
+# Required for the OIDC role assumption (AWS_ROLE_TO_ASSUME).
+permissions:
+  contents: read
+  id-token: write
+
+# Per-branch, so a Preview deploy never cancels a production deploy.
+concurrency:
+  group: s3-deploy-${{ github.event.inputs.target || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  # Branch -> environment name. Kept as its own job so `environment:` below can
+  # reference it; a manual run uses the chosen input instead of the branch.
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      env_name: ${{ steps.pick.outputs.env_name }}
+    steps:
+      - id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            name="${{ github.event.inputs.target }}"
+          else
+            case "${{ github.ref_name }}" in
+              main)        name=production  ;;
+              Development) name=development ;;
+              Preview)     name=preview     ;;
+              *) echo "::error::Branch '${{ github.ref_name }}' is not wired to an environment."; exit 1 ;;
+            esac
+          fi
+          echo "env_name=$name" >> "$GITHUB_OUTPUT"
+          echo "Deploying **$name** from \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  build-and-deploy:
+    needs: resolve
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve.outputs.env_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      # Fail fast and loudly. output:'export' bakes NEXT_PUBLIC_* in at BUILD
+      # time, so an unset variable does NOT error — api.js silently falls back to
+      # http://localhost:* and we would ship a bundle that talks to nothing.
+      # Better to stop here than to publish a dead site over a working one.
+      - name: Verify environment configuration
+        env:
+          S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME }}
+          AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          NEXT_PUBLIC_MASTER_DATA_BASE: ${{ vars.NEXT_PUBLIC_MASTER_DATA_BASE }}
+          NEXT_PUBLIC_AUTH_BASE: ${{ vars.NEXT_PUBLIC_AUTH_BASE }}
+        run: |
+          missing=""
+          for v in S3_BUCKET_NAME AWS_ROLE_TO_ASSUME AWS_REGION \
+                   NEXT_PUBLIC_MASTER_DATA_BASE NEXT_PUBLIC_AUTH_BASE; do
+            [ -z "${!v}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Environment '${{ needs.resolve.outputs.env_name }}' is missing:$missing"
+            echo "Set them under Settings > Environments > ${{ needs.resolve.outputs.env_name }} > Variables."
+            exit 1
+          fi
+          echo "Config OK for '${{ needs.resolve.outputs.env_name }}'."
+
+      - run: npm ci
+
+      - name: Build static export
+        env:
+          NEXT_PUBLIC_MASTER_DATA_BASE: ${{ vars.NEXT_PUBLIC_MASTER_DATA_BASE }}
+          NEXT_PUBLIC_API_BASE: ${{ vars.NEXT_PUBLIC_API_BASE }}
+          NEXT_PUBLIC_AUTH_BASE: ${{ vars.NEXT_PUBLIC_AUTH_BASE }}
+          NEXT_PUBLIC_TICKET_BASE: ${{ vars.NEXT_PUBLIC_TICKET_BASE }}
+          NEXT_PUBLIC_USER_BASE: ${{ vars.NEXT_PUBLIC_USER_BASE }}
+          NEXT_PUBLIC_SHOP_BASE: ${{ vars.NEXT_PUBLIC_SHOP_BASE }}
+          NEXT_PUBLIC_TECHNICIAN_BASE: ${{ vars.NEXT_PUBLIC_TECHNICIAN_BASE }}
+          NEXT_PUBLIC_INVENTORY_BASE: ${{ vars.NEXT_PUBLIC_INVENTORY_BASE }}
+          NEXT_PUBLIC_MARKETPLACE_BASE: ${{ vars.NEXT_PUBLIC_MARKETPLACE_BASE }}
+          NEXT_PUBLIC_PICKUP_BASE: ${{ vars.NEXT_PUBLIC_PICKUP_BASE }}
+          NEXT_PUBLIC_NOTIFICATION_BASE: ${{ vars.NEXT_PUBLIC_NOTIFICATION_BASE }}
+          NEXT_PUBLIC_SUBSCRIPTION_BASE: ${{ vars.NEXT_PUBLIC_SUBSCRIPTION_BASE }}
+          NEXT_PUBLIC_ORDER_BASE: ${{ vars.NEXT_PUBLIC_ORDER_BASE }}
+          NEXT_PUBLIC_BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH }}
+        run: npm run build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Sync to S3
+        run: aws s3 sync out/ "s3://${{ vars.S3_BUCKET_NAME }}" --delete
+
+      # Static export reuses the same HTML filenames, so a CDN in front of the
+      # bucket keeps serving the old build until it is invalidated. Optional:
+      # skipped unless the environment defines CLOUDFRONT_DISTRIBUTION_ID.
+      - name: Invalidate CloudFront
+        if: vars.CLOUDFRONT_DISTRIBUTION_ID != ''
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Deployed"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Environment | \`${{ needs.resolve.outputs.env_name }}\` |"
+            echo "| Branch | \`${{ github.ref_name }}\` |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Bucket | \`${{ vars.S3_BUCKET_NAME }}\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

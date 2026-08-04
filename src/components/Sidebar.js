@@ -1,0 +1,221 @@
+'use client';
+
+import Link from 'next/link';
+import Image from 'next/image';
+import { usePathname } from 'next/navigation';
+import { useState } from 'react';
+import {
+  LayoutDashboard, Store, Users, CreditCard,
+  Smartphone, Image as ImageIcon, Phone, HelpCircle, FileText,
+  Database, Tag, Briefcase, Link2, Layers, Boxes, Wrench,
+  FolderTree,
+  ShoppingCart, ClipboardList, SlidersHorizontal, AlertTriangle, Settings2,
+  ShoppingBag, Package,
+  Search, ChevronRight, ChevronDown, ChevronLeft, LogOut,
+} from 'lucide-react';
+
+const nav = [
+  { href: '/management/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/management/shops', label: 'Shop Management', icon: Store },
+  { href: '/management/users', label: 'User Management', icon: Users },
+  {
+    label: 'Master Data',
+    icon: Database,
+    children: [
+      { href: '/management/device-categories', label: 'Categories', icon: Tag },
+      { href: '/management/brands', label: 'Brands', icon: Briefcase },
+      { href: '/management/category-brand-mapping', label: 'Category-Brand Mapping', icon: Link2 },
+      { href: '/management/series', label: 'Series', icon: Layers },
+      { href: '/management/models', label: 'Models', icon: Boxes },
+      { href: '/management/repair-services', label: 'Repair Services', icon: Wrench },
+      { href: '/management/repair-categories', label: 'Repair Categories', icon: FolderTree },
+    ],
+  },
+  {
+    label: 'Customer App Directory',
+    icon: Smartphone,
+    children: [
+      { href: '/management/banners', label: 'Home Banners', icon: ImageIcon },
+      { href: '/management/support-contacts', label: 'Support Contacts', icon: Phone },
+      { href: '/management/faq-items', label: 'FAQ', icon: HelpCircle },
+      { href: '/management/app-content', label: 'App Content (About/Terms)', icon: FileText },
+    ],
+  },
+  {
+    label: 'Sell Flow Master Data',
+    icon: ShoppingCart,
+    children: [
+      { href: '/management/screening-questions', label: 'Screening Questions', icon: ClipboardList },
+      { href: '/management/condition-groups', label: 'Condition Groups', icon: SlidersHorizontal },
+      { href: '/management/functional-issues', label: 'Functional Issues', icon: AlertTriangle },
+      { href: '/management/device-configuration', label: 'Device Configuration', icon: Settings2 },
+    ],
+  },
+  { href: '/management/subscriptions', label: 'Subscriptions', icon: CreditCard },
+  {
+    label: 'Marketplace',
+    icon: ShoppingBag,
+    children: [
+      { href: '/management/items', label: 'Items', icon: Package },
+    ],
+  },
+];
+
+export default function Sidebar({ onLogout }) {
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Accordion: only ONE group open at a time. Starts on the section that
+  // contains the active route; opening another group closes the current one.
+  const [open, setOpen] = useState(() => {
+    for (const item of nav) {
+      if (item.children?.some((c) => pathname === c.href)) return item.label;
+    }
+    return null;
+  });
+
+  const toggle = (label) => {
+    if (collapsed) {
+      // Expanding a group while collapsed first opens the rail, then the group.
+      setCollapsed(false);
+      setOpen(label);
+      return;
+    }
+    setOpen((cur) => (cur === label ? null : label));
+  };
+
+  const isActive = (href) => pathname === href;
+  const groupActive = (item) => item.children?.some((c) => isActive(c.href));
+
+  const itemClass = (active) =>
+    `group flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+      collapsed ? 'justify-center' : ''
+    } ${
+      active
+        ? 'bg-admin-accent text-white shadow-sm'
+        : 'text-slate-300 hover:bg-white/5 hover:text-white'
+    }`;
+
+  return (
+    <aside
+      className={`${collapsed ? 'w-[68px]' : 'w-64'} shrink-0 bg-admin-panel border-r border-white/10 flex flex-col transition-[width] duration-200`}
+    >
+      {/* Brand header */}
+      <div className="relative flex items-center gap-3 px-4 h-16 border-b border-white/10">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 overflow-hidden">
+          <Image src="/logo.png" alt="GloboGreen" width={28} height={28} className="object-contain" />
+        </div>
+        {!collapsed && (
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white leading-tight">GGFIX Management Portal</p>
+            <p className="truncate text-[11px] text-slate-400 leading-tight">GloboGreen · Enterprise</p>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-admin-panel border border-white/15 text-slate-300 hover:text-white hover:bg-white/10"
+        >
+          <ChevronLeft className={`h-4 w-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      {/* Command search */}
+      <div className="px-3 pt-3">
+        <button
+          type="button"
+          className={`flex w-full items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          title="Open Anything"
+        >
+          <Search className="h-4 w-4 shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="flex-1 text-left">Open Anything</span>
+              <kbd className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">Ctrl K</kbd>
+            </>
+          )}
+        </button>
+      </div>
+
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+        {nav.map((item) => {
+          if (item.href) {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={itemClass(isActive(item.href))}
+                title={collapsed ? item.label : undefined}
+              >
+                <Icon className="h-[18px] w-[18px] shrink-0" />
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </Link>
+            );
+          }
+
+          const GroupIcon = item.icon;
+          const gActive = groupActive(item);
+          const isOpen = !collapsed && open === item.label;
+          return (
+            <div key={item.label} className="pt-1">
+              <button
+                type="button"
+                onClick={() => toggle(item.label)}
+                aria-expanded={isOpen}
+                title={collapsed ? item.label : undefined}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  collapsed ? 'justify-center' : ''
+                } ${
+                  gActive
+                    ? 'bg-white/5 text-white'
+                    : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <GroupIcon className="h-[18px] w-[18px] shrink-0" />
+                {!collapsed && (
+                  <>
+                    <span className="flex-1 text-left truncate">{item.label}</span>
+                    {isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />}
+                  </>
+                )}
+              </button>
+              {isOpen && (
+                <div className="mt-1 ml-4 space-y-0.5 border-l border-white/10 pl-2">
+                  {item.children.map((c) => {
+                    const CIcon = c.icon;
+                    return (
+                      <Link key={c.href} href={c.href} className={itemClass(isActive(c.href))}>
+                        <CIcon className="h-[18px] w-[18px] shrink-0" />
+                        <span className="truncate">{c.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </nav>
+
+      {onLogout && (
+        <div className="p-3 border-t border-white/10">
+          <button
+            type="button"
+            onClick={onLogout}
+            title={collapsed ? 'Log out' : undefined}
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-white/5 hover:text-white ${
+              collapsed ? 'justify-center' : ''
+            }`}
+          >
+            <LogOut className="h-[18px] w-[18px] shrink-0" />
+            {!collapsed && <span>Log out</span>}
+          </button>
+        </div>
+      )}
+    </aside>
+  );
+}

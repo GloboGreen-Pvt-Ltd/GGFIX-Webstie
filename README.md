@@ -62,20 +62,44 @@ AWS credentials, either one:
 The buckets are REST origins behind OAC, **not** S3 website endpoints, so CloudFront
 does no directory-index lookup — "Default Root Object" maps only `/`. Since
 `trailingSlash: true` exports `management/index.html`, a request for `/management/`
-asks S3 for the key `management/`, gets a 404, and the custom error response serves
-`/index.html` with **status 200**. Every route then renders the home page and the
-failure looks like a routing bug in the app.
+asks S3 for the key `management/`, which does not exist. Block Public Access means
+S3 answers **AccessDenied**, so the whole site is dead past the home page:
 
-Fix, per distribution:
+```
+GET /                       200
+GET /management/            403   <-- every route except "/" is dead
+GET /management/index.html  200   <-- the object is there; only the mapping is missing
+```
 
-1. Create a CloudFront Function from [`infra/cloudfront-rewrite-index.js`](infra/cloudfront-rewrite-index.js),
-   publish it, and attach it to the default behavior as **Viewer Request**.
-2. Change the custom error response from `404 -> /index.html (200)` to
-   `404 -> /404.html` returning **404**. The 200 fallback masks every missing page
-   and makes bad URLs look valid.
+Because the deploy itself succeeds, this reads as "the deploy did not go out" —
+it did; CloudFront just cannot map the URL to the object. If instead a custom error
+response maps `404 -> /index.html (200)`, the failure inverts and every route renders
+the home page with status 200, which reads as an app routing bug. Both are the same
+missing rewrite.
 
-Verify with `curl -I https://<host>/management/` — the `ETag` must differ from
-`curl -I https://<host>/`. Identical ETags mean the fallback is still swallowing it.
+Fix, per distribution — [`infra/apply-cloudfront-rewrite.sh`](infra/apply-cloudfront-rewrite.sh)
+does all of it, and prints a plan unless given `--apply`:
+
+```bash
+infra/apply-cloudfront-rewrite.sh <distribution-id>            # show what would change
+infra/apply-cloudfront-rewrite.sh <distribution-id> --apply    # commit it
+```
+
+It creates and publishes the function from
+[`infra/cloudfront-rewrite-index.js`](infra/cloudfront-rewrite-index.js), attaches it
+to the default behavior as **Viewer Request**, and sets `403` **and** `404` to
+`/404.html` returning **404** (403 matters here — an OAC'd REST origin reports a miss
+as AccessDenied, so mapping only 404 leaves bad URLs broken). Re-running is safe.
+
+Credentials must be for the account that owns the distributions — the frontend
+account, **not** the one hosting `api.ggfix.in`.
+
+Verify once the distribution leaves "Deploying":
+
+```bash
+curl -o /dev/null -w '%{http_code}\n' https://<host>/management/   # expect 200
+curl -o /dev/null -w '%{http_code}\n' https://<host>/nope-xyz/     # expect 404
+```
 
 ### One distribution per environment
 
@@ -83,6 +107,21 @@ Verify with `curl -I https://<host>/management/` — the `ETag` must differ from
 distribution whose origin is that environment's bucket. If several hostnames alias
 the same distribution they all serve one bucket, and the three-bucket split does
 nothing — a preview deploy either does not show up, or overwrites production.
+
+**This is currently broken.** Measured 2026-08-04, all four hostnames return an
+identical `ETag` for `/`, and its `Last-Modified` tracks the **Preview** deploy — so
+`ggfix.in` and `www` are serving preview builds, and `S3_BUCKET_PRODUCTION` /
+`S3_BUCKET_DEVELOPMENT` are not reaching users at all. Check with:
+
+```bash
+for h in preview deploy www; do curl -sI "https://$h.ggfix.in/" | grep -i etag; done
+curl -sI https://ggfix.in/ | grep -i etag
+```
+
+Four different ETags is correct. Identical ones mean the origins still need splitting:
+point each hostname at its own distribution whose origin is that environment's bucket,
+then set `CLOUDFRONT_DISTRIBUTION_PRODUCTION` and `_DEVELOPMENT` alongside the
+`_PREVIEW` variable so each deploy invalidates its own edge cache.
 
 Two more things that bite if missed:
 

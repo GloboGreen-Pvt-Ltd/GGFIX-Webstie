@@ -161,6 +161,45 @@ jobs:
             --exclude "*" --include "*.html" --include "*.json" \
             --cache-control "public,max-age=0,must-revalidate"
 
+      # INTERIM until the CloudFront rewrite is attached (see the README, and
+      # infra/github-actions-cloudfront-policy.json for the permissions it needs).
+      #
+      # CloudFront passes the URI straight through as the S3 key, so /management/ asks
+      # for the key "management/" — which the export never writes, because it produces
+      # management/index.html. On an OAC'd REST origin that miss comes back as a bare
+      # 403, so every route except "/" is dead.
+      #
+      # S3 keys are arbitrary strings and may end in "/", so the page is published a
+      # second time under exactly the key the browser requests. Same bytes, no
+      # redirect, and clean URLs work with only the S3 permissions this user already
+      # has. `aws s3 cp` would treat the trailing slash as a directory and append the
+      # filename, hence put-object with an explicit --key.
+      #
+      # Harmless once the rewrite lands: the function rewrites the URI before S3 sees
+      # it, so these keys simply stop being read and can be swept up then.
+      #
+      # Must run AFTER the syncs — the first one carries --delete and would otherwise
+      # remove these keys, since they have no counterpart in out/.
+      - name: Publish directory-key aliases
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r page; do
+            key="${page#out/}"          # management/index.html
+            key="${key%index.html}"     # management/
+            # Root is already covered by the distribution's Default Root Object, and an
+            # empty key is not a valid object anyway.
+            [ -n "$key" ] || continue
+            aws s3api put-object \
+              --bucket "$BUCKET" \
+              --key "$key" \
+              --body "$page" \
+              --content-type "text/html" \
+              --cache-control "public,max-age=0,must-revalidate" >/dev/null
+            count=$((count + 1))
+          done < <(find out -name index.html)
+          echo "published $count directory-key aliases"
+
       - name: Invalidate CloudFront
         if: env.DISTRIBUTION != ''
         run: |

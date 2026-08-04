@@ -94,6 +94,30 @@ as AccessDenied, so mapping only 404 leaves bad URLs broken). Re-running is safe
 Credentials must be for the account that owns the distributions — the frontend
 account, **not** the one hosting `api.ggfix.in`.
 
+#### Interim: directory-key aliases
+
+The deploy user (`arn:aws:iam::176202287053:user/github-actions`) currently has S3 and
+`CreateInvalidation` only, so it cannot attach the function. Until the policy above is
+granted, the deploy publishes each page a **second** time under the exact key the
+browser asks for — `out/management/index.html` also goes to the key `management/` —
+in the "Publish directory-key aliases" step of `deploy-s3.yml`.
+
+S3 keys are arbitrary strings and may end in `/`, so this serves `/management/`
+directly: no redirect, no `/index.html` in the URL, and no CloudFront change. It costs
+one extra small object per page (45 today).
+
+This is a workaround, not the fix. It leaves two copies of every page to keep in step,
+and it cannot help a route that has no exported page. Attach the policy, run the
+rewrite, then delete these keys:
+
+```bash
+aws s3api list-objects-v2 --bucket ggfix-frontend-preview-1762 \
+  --query 'Contents[?ends_with(Key, `/`)].Key' --output text
+```
+
+Once the function is attached the aliases are inert — it rewrites the URI before S3
+sees it, so they are simply never read.
+
 Verify once the distribution leaves "Deploying":
 
 ```bash

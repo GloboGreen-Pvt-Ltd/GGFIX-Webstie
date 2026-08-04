@@ -57,7 +57,34 @@ AWS credentials, either one:
 - leave it unset and add `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` as repository
   **secrets**. The workflow picks whichever is configured.
 
-Two things that bite if missed:
+### CloudFront must rewrite directory URIs
+
+The buckets are REST origins behind OAC, **not** S3 website endpoints, so CloudFront
+does no directory-index lookup — "Default Root Object" maps only `/`. Since
+`trailingSlash: true` exports `management/index.html`, a request for `/management/`
+asks S3 for the key `management/`, gets a 404, and the custom error response serves
+`/index.html` with **status 200**. Every route then renders the home page and the
+failure looks like a routing bug in the app.
+
+Fix, per distribution:
+
+1. Create a CloudFront Function from [`infra/cloudfront-rewrite-index.js`](infra/cloudfront-rewrite-index.js),
+   publish it, and attach it to the default behavior as **Viewer Request**.
+2. Change the custom error response from `404 -> /index.html (200)` to
+   `404 -> /404.html` returning **404**. The 200 fallback masks every missing page
+   and makes bad URLs look valid.
+
+Verify with `curl -I https://<host>/management/` — the `ETag` must differ from
+`curl -I https://<host>/`. Identical ETags mean the fallback is still swallowing it.
+
+### One distribution per environment
+
+`preview`, `deploy`, `ggfix.in` and `www` must each resolve to their **own**
+distribution whose origin is that environment's bucket. If several hostnames alias
+the same distribution they all serve one bucket, and the three-bucket split does
+nothing — a preview deploy either does not show up, or overwrites production.
+
+Two more things that bite if missed:
 
 - `output: 'export'` bakes `NEXT_PUBLIC_*` in at **build** time. An unset variable does
   not error — `lib/api.js` falls back to `http://localhost:*` and you ship a bundle

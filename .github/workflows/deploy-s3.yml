@@ -1,14 +1,19 @@
 name: Deploy Admin to S3
 
 # Three-branch promotion flow — one branch per environment:
-#   Preview      -> "preview"     (test)
-#   Development  -> "development" (deploy-test)
-#   main         -> "production"  (LIVE)
+#   Preview      -> preview     (test)        -> S3_BUCKET_PREVIEW
+#   Development  -> development (deploy-test) -> S3_BUCKET_DEVELOPMENT
+#   main         -> production  (LIVE)        -> S3_BUCKET_PRODUCTION
 #
-# Each maps to a GitHub *Environment* of the matching name, so the S3 bucket, the
-# AWS role and every NEXT_PUBLIC_* base URL are configured per environment under
-# Settings > Environments — NOT as repo-wide variables. Add a required reviewer on
-# the "production" environment to gate anything landing on main.
+# The bucket is picked by *name* from the repo-level variables above — the branch
+# resolves to PREVIEW / DEVELOPMENT / PRODUCTION and that suffix indexes into the
+# vars context. The NEXT_PUBLIC_* bases and AWS_REGION are shared repo variables,
+# since every environment talks to the same api.ggfix.in backend.
+#
+# The job still declares a GitHub Environment of the matching name. Nothing has to
+# be defined there — environment variables simply override the repo-level ones when
+# an environment does set them — but it gives you the place to add a required
+# reviewer on "production" so nothing auto-ships from main.
 
 on:
   push:
@@ -21,7 +26,7 @@ on:
         options: [preview, development, production]
         default: preview
 
-# Required for the OIDC role assumption (AWS_ROLE_TO_ASSUME).
+# id-token is only needed for the OIDC path; harmless when using access keys.
 permissions:
   contents: read
   id-token: write
@@ -32,12 +37,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Branch -> environment name. Kept as its own job so `environment:` below can
-  # reference it; a manual run uses the chosen input instead of the branch.
+  # Branch -> environment. Emits both the lowercase name (for `environment:`) and
+  # the uppercase suffix used to index S3_BUCKET_* / CLOUDFRONT_DISTRIBUTION_*.
   resolve:
     runs-on: ubuntu-latest
     outputs:
       env_name: ${{ steps.pick.outputs.env_name }}
+      env_upper: ${{ steps.pick.outputs.env_upper }}
     steps:
       - id: pick
         run: |
@@ -52,12 +58,18 @@ jobs:
             esac
           fi
           echo "env_name=$name" >> "$GITHUB_OUTPUT"
+          echo "env_upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
           echo "Deploying **$name** from \`${{ github.ref_name }}\`" >> "$GITHUB_STEP_SUMMARY"
 
   build-and-deploy:
     needs: resolve
     runs-on: ubuntu-latest
     environment: ${{ needs.resolve.outputs.env_name }}
+    env:
+      # Indexing the vars context by a computed name is how one workflow serves
+      # three buckets without duplicating the job per environment.
+      BUCKET: ${{ vars[format('S3_BUCKET_{0}', needs.resolve.outputs.env_upper)] }}
+      DISTRIBUTION: ${{ vars[format('CLOUDFRONT_DISTRIBUTION_{0}', needs.resolve.outputs.env_upper)] }}
     steps:
       - uses: actions/checkout@v4
 
@@ -68,27 +80,38 @@ jobs:
 
       # Fail fast and loudly. output:'export' bakes NEXT_PUBLIC_* in at BUILD
       # time, so an unset variable does NOT error — api.js silently falls back to
-      # http://localhost:* and we would ship a bundle that talks to nothing.
-      # Better to stop here than to publish a dead site over a working one.
-      - name: Verify environment configuration
+      # http://localhost:* and we would sync a dead bundle over a working site.
+      - name: Verify configuration
         env:
-          S3_BUCKET_NAME: ${{ vars.S3_BUCKET_NAME }}
-          AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
           AWS_REGION: ${{ vars.AWS_REGION }}
           NEXT_PUBLIC_MASTER_DATA_BASE: ${{ vars.NEXT_PUBLIC_MASTER_DATA_BASE }}
           NEXT_PUBLIC_AUTH_BASE: ${{ vars.NEXT_PUBLIC_AUTH_BASE }}
+          HAS_ROLE: ${{ vars.AWS_ROLE_TO_ASSUME != '' }}
+          HAS_KEYS: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
         run: |
           missing=""
-          for v in S3_BUCKET_NAME AWS_ROLE_TO_ASSUME AWS_REGION \
-                   NEXT_PUBLIC_MASTER_DATA_BASE NEXT_PUBLIC_AUTH_BASE; do
+          for v in BUCKET AWS_REGION NEXT_PUBLIC_MASTER_DATA_BASE NEXT_PUBLIC_AUTH_BASE; do
             [ -z "${!v}" ] && missing="$missing $v"
           done
+          if [ -z "$BUCKET" ]; then
+            echo "::error::S3_BUCKET_${{ needs.resolve.outputs.env_upper }} is not set."
+          fi
           if [ -n "$missing" ]; then
-            echo "::error::Environment '${{ needs.resolve.outputs.env_name }}' is missing:$missing"
-            echo "Set them under Settings > Environments > ${{ needs.resolve.outputs.env_name }} > Variables."
+            echo "::error::Missing configuration for '${{ needs.resolve.outputs.env_name }}':$missing"
             exit 1
           fi
-          echo "Config OK for '${{ needs.resolve.outputs.env_name }}'."
+          if [ "$HAS_ROLE" != "true" ] && [ "$HAS_KEYS" != "true" ]; then
+            echo "::error::No AWS credentials. Set the AWS_ROLE_TO_ASSUME variable (OIDC, preferred),"
+            echo "or the AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY secrets."
+            exit 1
+          fi
+          # The buckets are private (Block Public Access on) and served through
+          # CloudFront, so a sync without an invalidation leaves the old build live.
+          if [ -z "$DISTRIBUTION" ]; then
+            echo "::warning::CLOUDFRONT_DISTRIBUTION_${{ needs.resolve.outputs.env_upper }} is not set —"
+            echo "::warning::skipping cache invalidation. CloudFront may keep serving the previous build."
+          fi
+          echo "Config OK — bucket '$BUCKET' in $AWS_REGION."
 
       - run: npm ci
 
@@ -110,24 +133,39 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: ${{ vars.NEXT_PUBLIC_BASE_PATH }}
         run: npm run build
 
-      - name: Configure AWS credentials
+      # OIDC when a role is configured, long-lived keys otherwise. The `secrets`
+      # context is not allowed in a step `if:`, so the switch reads the variable.
+      - name: Configure AWS credentials (OIDC)
+        if: vars.AWS_ROLE_TO_ASSUME != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      - name: Sync to S3
-        run: aws s3 sync out/ "s3://${{ vars.S3_BUCKET_NAME }}" --delete
+      - name: Configure AWS credentials (access keys)
+        if: vars.AWS_ROLE_TO_ASSUME == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      # Static export reuses the same HTML filenames, so a CDN in front of the
-      # bucket keeps serving the old build until it is invalidated. Optional:
-      # skipped unless the environment defines CLOUDFRONT_DISTRIBUTION_ID.
+      # Long-cache the fingerprinted assets, never cache the HTML. Without this the
+      # CDN can hand out a stale index.html that points at deleted _next chunks.
+      - name: Sync to S3
+        run: |
+          aws s3 sync out/ "s3://$BUCKET" --delete \
+            --exclude "*.html" --exclude "*.json" \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 sync out/ "s3://$BUCKET" --delete \
+            --exclude "*" --include "*.html" --include "*.json" \
+            --cache-control "public,max-age=0,must-revalidate"
+
       - name: Invalidate CloudFront
-        if: vars.CLOUDFRONT_DISTRIBUTION_ID != ''
+        if: env.DISTRIBUTION != ''
         run: |
           aws cloudfront create-invalidation \
-            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
-            --paths "/*"
+            --distribution-id "$DISTRIBUTION" --paths "/*"
 
       - name: Summary
         run: |
@@ -139,5 +177,6 @@ jobs:
             echo "| Environment | \`${{ needs.resolve.outputs.env_name }}\` |"
             echo "| Branch | \`${{ github.ref_name }}\` |"
             echo "| Commit | \`${{ github.sha }}\` |"
-            echo "| Bucket | \`${{ vars.S3_BUCKET_NAME }}\` |"
+            echo "| Bucket | \`$BUCKET\` |"
+            echo "| Distribution | \`${DISTRIBUTION:-not set}\` |"
           } >> "$GITHUB_STEP_SUMMARY"

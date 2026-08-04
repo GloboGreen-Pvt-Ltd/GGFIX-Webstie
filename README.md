@@ -99,6 +99,26 @@ Every base is read as a **static** `process.env.NEXT_PUBLIC_*` literal in `src/l
 — a dynamic lookup would not be inlined into the client bundle and would silently fall
 back to localhost in the browser.
 
+> **Each base is scheme + host + port ONLY — never a path segment.**
+> `src/lib/api.js` already prefixes every call with the service name, so the base must
+> not repeat it. `NEXT_PUBLIC_AUTH_BASE=https://example.com/auth` makes the app request
+> `/auth/auth/login`. Verified against the live backend on 2026-08-04:
+>
+> | Request | Result |
+> |---|---|
+> | `/master/colors` | 200, JSON |
+> | `/master/master/colors` | 404 |
+> | `/auth/login` | 401 — endpoint exists |
+> | `/auth/auth/login` | 500 |
+>
+> The one exception is an edge that strips the prefix: nginx
+> `location /auth/ { proxy_pass http://127.0.0.1:8081/; }` **with** the trailing slash
+> removes `/auth` before forwarding, so there a `.../auth` suffix is correct. Without
+> the trailing slash the path is preserved and the suffix must be omitted. Confirm
+> against the deployed edge before setting these — a doubled prefix surfaces in the
+> browser as an opaque CORS/`ERR_FAILED` error, not as a 404, because the failing
+> response carries no `Access-Control-Allow-Origin` header.
+
 | Variable | Description |
 |----------|-------------|
 | `NEXT_PUBLIC_MASTER_DATA_BASE` | Master Data service (default `http://localhost:8091`) |

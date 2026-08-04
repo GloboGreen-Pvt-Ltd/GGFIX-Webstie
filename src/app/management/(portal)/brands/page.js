@@ -5,7 +5,8 @@ import { Plus, RefreshCw } from 'lucide-react';
 import { masterApi } from '@/lib/api';
 import DataTable, { StatusPill } from '@/components/DataTable';
 import PageHeader, { Button } from '@/components/PageHeader';
-import ImageUpload from '@/components/ImageUpload';
+import S3ImageUpload from '@/components/S3ImageUpload';
+import { uploadBrandImage } from '@/lib/modelMedia';
 
 export default function MasterBrandsPage() {
   const [list, setList] = useState([]);
@@ -14,6 +15,8 @@ export default function MasterBrandsPage() {
   const [modal, setModal] = useState(null); // { type: 'create' | 'edit', item?: {} }
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  // Held until the record has an id: the S3 key is derived from the stored name.
+  const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
@@ -38,6 +41,7 @@ export default function MasterBrandsPage() {
     setModal({ type: 'create' });
     setName('');
     setImageUrl('');
+    setImageFile(null);
   };
   const openEdit = (item) => {
     setModal({ type: 'edit', item });
@@ -51,13 +55,23 @@ export default function MasterBrandsPage() {
     if (!name.trim()) return;
     setSubmitting(true);
     try {
+      // Save first, then upload: the endpoint is id-scoped because the object key
+      // is built from the brand's stored name.
+      let brandId = modal.type === 'create' ? null : modal.item.id;
       if (modal.type === 'create') {
-        await masterApi.post('/master/brands', { name: name.trim(), imageUrl: imageUrl.trim() || null });
+        const created = await masterApi.post('/master/brands', {
+          name: name.trim(),
+          imageUrl: imageUrl.trim() || null,
+        });
+        brandId = created?.id || null;
       } else {
         await masterApi.put(`/master/brands/${modal.item.id}`, {
           name: name.trim(),
           imageUrl: imageUrl.trim() || null,
         });
+      }
+      if (imageFile && brandId) {
+        await uploadBrandImage(brandId, imageFile);
       }
       closeModal();
       load();
@@ -149,13 +163,11 @@ export default function MasterBrandsPage() {
                   required
                 />
               </div>
-              <ImageUpload
+              <S3ImageUpload
                 value={imageUrl}
-                onChange={setImageUrl}
+                onFileChange={setImageFile}
                 label="Brand logo"
-                caption="Shown in customer brand picker (e.g. Apple, Vivo, Samsung)"
-                folder="brands"
-                buttonText="Upload Brand Logo"
+                caption="Shown on brand pickers across the apps"
               />
               <div className="flex gap-2 justify-end pt-2">
                 <Button type="button" variant="secondary" onClick={closeModal}>Cancel</Button>

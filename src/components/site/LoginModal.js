@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { BadgeCheck, Smartphone, Sparkles, Wrench, X } from 'lucide-react';
 
@@ -36,6 +37,18 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
   const otpRefs = useRef([]);
   const dialogRef = useRef(null);
   const firstFieldRef = useRef(null);
+
+  // The modal renders into document.body rather than in place. SiteHeader is
+  // `sticky ... backdrop-blur-md`, and a backdrop-filter other than `none` makes an
+  // element the CONTAINING BLOCK for its position:fixed descendants. HeaderAccount
+  // renders this modal inside that header, so `fixed inset-0` resolved to the
+  // header's ~64px box instead of the viewport: the dialog sat pinned to the top
+  // with its head cut off and the backdrop covered only the header strip.
+  // Portalling to body sidesteps it for every caller — header, AccountGate and
+  // RepairFlow alike — and keeps working if another ancestor later grows a
+  // transform/filter/will-change.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const digits = normalizeMobile(mobile);
   const otpValue = otp.join('');
@@ -164,11 +177,13 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
 
   const maskedPhone = useMemo(() => (digits ? `+91-${digits}` : ''), [digits]);
 
-  if (!open) return null;
+  // `mounted` also keeps this SSR-safe: the site is a static export, so document
+  // does not exist at build time and the first client render must match it.
+  if (!open || !mounted) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4 sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-label="Log in to GGFIX"
@@ -182,9 +197,16 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
         tabIndex={-1}
       />
 
+      {/* dvh, not vh: on mobile browsers vh is the tallest-possible viewport, so a
+          92vh dialog still runs under the address bar.
+          The 540px desktop min-height is gated on the window actually being that
+          tall — min-height beats max-height in CSS, so on a short landscape window it
+          would otherwise win over max-h and push the dialog off screen.
+          my-auto centres it while the wrapper scrolls; plain items-center cannot,
+          because an overflowing flex item gets pinned and loses its top. */}
       <div
         ref={dialogRef}
-        className="relative z-10 grid max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-lift md:min-h-[540px] md:grid-cols-[minmax(0,320px)_1fr]"
+        className="relative z-10 my-auto grid max-h-[92dvh] w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-lift md:grid-cols-[minmax(0,320px)_1fr] md:[@media(min-height:620px)]:min-h-[540px]"
       >
         {/* Left brand panel (hidden on mobile) */}
         <aside className="relative hidden overflow-hidden bg-gradient-to-b from-brand-500 to-brand-700 p-8 text-white md:flex md:flex-col">
@@ -223,7 +245,11 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
         </aside>
 
         {/* Right form panel */}
-        <section className="relative flex flex-col overflow-y-auto p-6 sm:p-8">
+        {/* Extra top padding below md: the brand column is hidden there, so the offer
+            banner is the first thing in the panel and would otherwise run underneath
+            the absolutely-positioned close button (top-4, h-9 => 52px). From md up the
+            content is my-auto centred and clears it on its own. */}
+        <section className="relative flex flex-col overflow-y-auto px-6 pb-6 pt-16 sm:px-8 sm:pb-8 md:pt-8">
           <button
             type="button"
             aria-label="Close"
@@ -391,6 +417,7 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
           </div>
         </section>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

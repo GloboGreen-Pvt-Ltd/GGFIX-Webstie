@@ -26,6 +26,13 @@ on:
         type: choice
         options: [plan, apply]
         default: plan
+  # workflow_dispatch only works once the file is on the DEFAULT branch, and main is
+  # still an empty initial commit — putting it there means shipping the whole app to
+  # production, which is a separate decision. Pushing this branch runs the read-only
+  # plan in the meantime; deploy-s3.yml ignores it, so nothing deploys.
+  # A push can carry no inputs, so it always plans and never applies.
+  push:
+    branches: [ci/cloudfront-plan]
 
 permissions:
   contents: read
@@ -38,6 +45,10 @@ concurrency:
 jobs:
   rewrite:
     runs-on: ubuntu-latest
+    env:
+      # A push event carries no inputs, so both fall back to the safe defaults.
+      DISTRIBUTIONS: ${{ inputs.distributions || 'E1E6CMW5CEO8Z5' }}
+      MODE: ${{ inputs.mode || 'plan' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -63,7 +74,7 @@ jobs:
         run: |
           set -e
           echo "identity: $(aws sts get-caller-identity --query Arn --output text)"
-          for dist in ${{ inputs.distributions }}; do
+          for dist in $DISTRIBUTIONS; do
             if aws cloudfront get-distribution-config --region us-east-1 --id "$dist" >/dev/null 2>&1; then
               echo "  $dist: readable"
             else
@@ -78,14 +89,14 @@ jobs:
       - name: Run
         run: |
           chmod +x infra/apply-cloudfront-rewrite.sh
-          if [ "${{ inputs.mode }}" = "apply" ]; then
-            infra/apply-cloudfront-rewrite.sh ${{ inputs.distributions }} --apply
+          if [ "$MODE" = "apply" ]; then
+            infra/apply-cloudfront-rewrite.sh $DISTRIBUTIONS --apply
           else
-            infra/apply-cloudfront-rewrite.sh ${{ inputs.distributions }}
+            infra/apply-cloudfront-rewrite.sh $DISTRIBUTIONS
           fi
 
       - name: Verify
-        if: inputs.mode == 'apply'
+        if: env.MODE == 'apply'
         run: |
           echo "CloudFront takes ~5 min to redeploy; these may still show the old status."
           for p in / /management/ /nope-xyz/; do

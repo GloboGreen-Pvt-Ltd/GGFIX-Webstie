@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
-import S3ImageUpload from '@/components/S3ImageUpload';
-import { uploadCategoryImage } from '@/lib/modelMedia';
+import ImageUpload from '@/components/ImageUpload';
 
 export default function MasterDeviceCategoriesPage() {
   const [list, setList] = useState([]);
@@ -13,8 +12,6 @@ export default function MasterDeviceCategoriesPage() {
   const [modal, setModal] = useState(null);
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
-  // Held until the record has an id: the S3 key is derived from the stored name.
-  const [imageFile, setImageFile] = useState(null);
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -40,7 +37,6 @@ export default function MasterDeviceCategoriesPage() {
     setModal({ type: 'create' });
     setName('');
     setImageUrl('');
-    setImageFile(null);
     setIsActive(true);
   };
   const openEdit = (item) => {
@@ -62,17 +58,10 @@ export default function MasterDeviceCategoriesPage() {
         imageUrl: imageUrl.trim() || null,
         isActive,
       };
-      // Save first, then upload: the endpoint is id-scoped because the object key
-      // is built from the category's stored name.
-      let categoryId = modal.type === 'create' ? null : modal.item.id;
       if (modal.type === 'create') {
-        const created = await masterApi.post('/master/device-categories', body);
-        categoryId = created?.id || null;
+        await masterApi.post('/master/device-categories', body);
       } else {
         await masterApi.put(`/master/device-categories/${modal.item.id}`, body);
-      }
-      if (imageFile && categoryId) {
-        await uploadCategoryImage(categoryId, imageFile);
       }
       closeModal();
       load();
@@ -158,11 +147,13 @@ export default function MasterDeviceCategoriesPage() {
                   required
                 />
               </div>
-              <S3ImageUpload
+              <ImageUpload
                 value={imageUrl}
-                onFileChange={setImageFile}
+                onChange={setImageUrl}
                 label="Category image"
                 caption="Shown on the customer Home tile (Mobile, Laptop, etc.)"
+                folder="categories"
+                buttonText="Upload Category Image"
               />
               <label className="flex items-center gap-2 text-sm text-slate-800">
                 <input

@@ -129,37 +129,3 @@ export async function previewModelMediaPath({ categoryId, brandId, seriesId, mod
 
 /** Formats accepted by the backend validator; use as the file input's `accept`. */
 export const ACCEPTED_IMAGE_TYPES = 'image/jpeg,image/png,image/webp';
-
-/* -------------------------------------------------------------------------- */
-/* Taxonomy artwork (categories, brands)                                       */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Upload or replace a category tile.
- *
- * Id-scoped, so a NEW category has to be saved before its image can be uploaded —
- * the key is derived from the category's stored name. That is the opposite order to
- * the old Cloudinary uploader, which produced a URL first and saved it as a field.
- *
- * @returns {Promise<{imageKey:string, imageUrl:string}>}
- */
-export async function uploadCategoryImage(categoryId, file) {
-  const form = new FormData();
-  form.append('image', file);
-  const res = await fetch(
-    `${trim(MASTER_BASE())}/master/device-categories/${encodeURIComponent(categoryId)}/image`,
-    { method: 'POST', headers: authHeaders(), body: form },
-  );
-  return unwrap(res);
-}
-
-/** Upload or replace a brand logo. Same id-scoped ordering as categories. */
-export async function uploadBrandImage(brandId, file) {
-  const form = new FormData();
-  form.append('image', file);
-  const res = await fetch(
-    `${trim(MASTER_BASE())}/master/brands/${encodeURIComponent(brandId)}/image`,
-    { method: 'POST', headers: authHeaders(), body: form },
-  );
-  return unwrap(res);
-}

@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
-import ImageUpload from '@/components/ImageUpload';
+import S3ImageUpload from '@/components/S3ImageUpload';
+import { uploadBannerImage } from '@/lib/modelMedia';
 
 export default function DirectoryBannersPage() {
   const [list, setList] = useState([]);
@@ -12,6 +13,8 @@ export default function DirectoryBannersPage() {
   const [modal, setModal] = useState(null);
   const [title, setTitle] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  // Held until the row has an id: the S3 key is built from the banner's stored title.
+  const [imageFile, setImageFile] = useState(null);
   const [sortOrder, setSortOrder] = useState('0');
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -38,6 +41,7 @@ export default function DirectoryBannersPage() {
     setModal({ type: 'create' });
     setTitle('');
     setImageUrl('');
+    setImageFile(null);
     setSortOrder('0');
     setIsActive(true);
   };
@@ -61,10 +65,17 @@ export default function DirectoryBannersPage() {
         sortOrder: parseInt(sortOrder, 10) || 0,
         isActive,
       };
+      // Save first, then upload: the endpoint is id-scoped because the object key
+      // is derived from the banner's stored title.
+      let bannerId = modal.type === 'create' ? null : modal.item.id;
       if (modal.type === 'create') {
-        await masterApi.post('/master/banners', body);
+        const created = await masterApi.post('/master/banners', body);
+        bannerId = created?.id || null;
       } else {
         await masterApi.put(`/master/banners/${modal.item.id}`, body);
+      }
+      if (imageFile && bannerId) {
+        await uploadBannerImage(bannerId, imageFile);
       }
       closeModal();
       load();
@@ -151,15 +162,11 @@ export default function DirectoryBannersPage() {
                   hosted-URL column and every banner ships to the app on each
                   list fetch, so a silent data-URI fallback is worse than a
                   visible upload error. */}
-              <ImageUpload
+              <S3ImageUpload
                 value={imageUrl}
-                onChange={setImageUrl}
+                onFileChange={setImageFile}
                 label="Banner image"
-                caption="Click or drag an image here — shown in the mobile app carousel"
-                folder="banners"
-                buttonText="Upload banner image"
-                aspect="wide"
-                allowBase64Fallback={false}
+                caption="Shown in the customer app home slider"
               />
               <div>
                 <label className="block text-sm text-admin-muted mb-1">Sort order</label>

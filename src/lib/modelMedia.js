@@ -163,3 +163,20 @@ export async function uploadBrandImage(brandId, file) {
   );
   return unwrap(res);
 }
+
+/**
+ * Upload or replace a home-screen banner image.
+ *
+ * Keyed on the banner's title, so it lands at banner/<title>-<id>.<ext>. Id-scoped
+ * like the others, because the key comes from the stored title — the banner has to
+ * exist before its image can be named.
+ */
+export async function uploadBannerImage(bannerId, file) {
+  const form = new FormData();
+  form.append('image', file);
+  const res = await fetch(
+    `${trim(MASTER_BASE())}/master/banners/${encodeURIComponent(bannerId)}/image`,
+    { method: 'POST', headers: authHeaders(), body: form },
+  );
+  return unwrap(res);
+}

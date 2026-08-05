@@ -175,6 +175,16 @@ jobs:
       # has. `aws s3 cp` would treat the trailing slash as a directory and append the
       # filename, hence put-object with an explicit --key.
       #
+      # BOTH forms are published, because trailingSlash:true only makes Next *emit*
+      # management/brands/index.html — it does not make the browser ask for a trailing
+      # slash. A typed, pasted or bookmarked /management/brands asks for the key
+      # "management/brands", and nothing on a static origin redirects it to
+      # "management/brands/" the way `next start` would 308 it. So:
+      #   management/brands/   <- linked navigation, what Next generates
+      #   management/brands    <- typed / pasted / bookmarked / shared links
+      # Same object, two keys; "brands" and "brands/" are distinct, non-colliding S3
+      # keys, and the export never writes an extension-less sibling to clash with.
+      #
       # Harmless once the rewrite lands: the function rewrites the URI before S3 sees
       # it, so these keys simply stop being read and can be swept up then.
       #
@@ -185,20 +195,22 @@ jobs:
           set -euo pipefail
           count=0
           while IFS= read -r page; do
-            key="${page#out/}"          # management/index.html
-            key="${key%index.html}"     # management/
+            dir="${page#out/}"          # management/brands/index.html
+            dir="${dir%index.html}"     # management/brands/
             # Root is already covered by the distribution's Default Root Object, and an
             # empty key is not a valid object anyway.
-            [ -n "$key" ] || continue
-            aws s3api put-object \
-              --bucket "$BUCKET" \
-              --key "$key" \
-              --body "$page" \
-              --content-type "text/html" \
-              --cache-control "public,max-age=0,must-revalidate" >/dev/null
-            count=$((count + 1))
+            [ -n "$dir" ] || continue
+            for key in "$dir" "${dir%/}"; do
+              aws s3api put-object \
+                --bucket "$BUCKET" \
+                --key "$key" \
+                --body "$page" \
+                --content-type "text/html" \
+                --cache-control "public,max-age=0,must-revalidate" >/dev/null
+              count=$((count + 1))
+            done
           done < <(find out -name index.html)
-          echo "published $count directory-key aliases"
+          echo "published $count directory-key aliases (both /path/ and /path)"
 
       - name: Invalidate CloudFront
         if: env.DISTRIBUTION != ''

@@ -7,7 +7,8 @@ import cssColorNames from 'color-name';
 import { masterApi } from '@/lib/api';
 import { mapPool } from '@/lib/concurrency';
 import DataTable from '@/components/DataTable';
-import ImageUpload from '@/components/ImageUpload';
+import S3ImageUpload from '@/components/S3ImageUpload';
+import { replaceModelImage } from '@/lib/modelMedia';
 
 function slugify(s) {
   return String(s || '')
@@ -169,6 +170,9 @@ export default function MasterModelsPage() {
   const [modelNumberInput, setModelNumberInput] = useState('');
   const [modelNumbers, setModelNumbers] = useState([]);
   const [imageUrl, setImageUrl] = useState('');
+  // Held until the row has an id: the S3 key is derived from the model's stored
+  // category/brand/series/name, so the record must exist before the upload.
+  const [imageFile, setImageFile] = useState(null);
   const [category, setCategory] = useState('DEVICE');
   const [sellActive, setSellActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -438,6 +442,7 @@ export default function MasterModelsPage() {
     setName('');
     setModelNumberInput(''); setModelNumbers([]);
     setImageUrl('');
+    setImageFile(null);
     setCategory('DEVICE');
     setSellActive(true);
     setColorInput(''); setColorChips([]);
@@ -630,10 +635,17 @@ export default function MasterModelsPage() {
         colors: colorChips.map((c) => c.name),
         ramStorage: specChips.map((s) => s.label),
       };
+      // Save first, then upload. The image endpoint is id-scoped because the S3 key
+      // comes from the model's stored taxonomy, not from anything the client sends.
+      let modelId = modal.type === 'create' ? null : modal.item.id;
       if (modal.type === 'create') {
-        await masterApi.post('/master/models', body);
+        const created = await masterApi.post('/master/models', body);
+        modelId = created?.id || null;
       } else {
         await masterApi.put(`/master/models/${modal.item.id}`, body);
+      }
+      if (imageFile && modelId) {
+        await replaceModelImage(modelId, imageFile);
       }
       await persistPalette();
       closeModal();
@@ -990,13 +1002,11 @@ export default function MasterModelsPage() {
                 </p>
               </div>
 
-              <ImageUpload
+              <S3ImageUpload
                 value={imageUrl}
-                onChange={setImageUrl}
+                onFileChange={setImageFile}
                 label="Model image"
                 caption="Hero image for this model (e.g. Vivo Y20)"
-                folder="models"
-                buttonText="Upload Model Image"
               />
             </div>
             <div className="flex gap-2 justify-end px-6 py-4 border-t border-admin-border shrink-0">

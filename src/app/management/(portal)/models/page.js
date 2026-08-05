@@ -156,7 +156,6 @@ export default function MasterModelsPage() {
 
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(null); // { done, total } while aggregating
   const [error, setError] = useState('');
 
   // Form state
@@ -307,102 +306,38 @@ export default function MasterModelsPage() {
     seriesByBrandRef.current = idx;
   }, [mappings, allSeries]);
 
+  /**
+   * One request for the whole catalogue.
+   *
+   * This used to fetch models one brand at a time — 55 sequential round-trips —
+   * wrapped in retry, a wait-for-restart poll and a second pass, because a single
+   * oversized brand could OOM master-data and take whatever was in flight with it
+   * (Nokia alone answered 83 MB).
+   *
+   * That weight was base64, not rows: 82% of the payload came from a handful of
+   * models still holding a data: URI. GET /master/models returns a projection with
+   * those stripped — the full 1397 models measure ~0.7 MB and land in about a
+   * second — so none of that machinery is needed any more.
+   *
+   * Rows still holding an inline image come back as inlineImage:true with a null
+   * imageUrl; the table shows a placeholder for them rather than a broken thumbnail.
+   */
   const loadModels = async () => {
-    const aggregate = !filterBrand && !filterSeries;
-    if (aggregate && !brands.length) return; // wait until brands land
     setLoading(true);
     setError('');
-    setProgress(aggregate ? { done: 0, total: brands.length } : null);
     try {
-      if (!aggregate) {
-        const path = filterSeries
-          ? `/master/series/${filterSeries}/models`
-          : `/master/brands/${filterBrand}/models`;
-        const rows = await masterApi.get(path);
-        setList(Array.isArray(rows) ? rows : []);
-        return;
-      }
-
-      // One brand: whole list, else series-by-series so it arrives in pieces the
-      // service can actually serialize. null = couldn't get it at all.
-      const fetchBrand = async (b) => {
-        const id = b.id ?? b.brandId;
-        if (!id) return [];
-        const rows = await masterApi.get(`/master/brands/${id}/models`).catch(() => null);
-        if (rows) return Array.isArray(rows) ? rows : [];
-        const series = seriesByBrandRef.current.get(id) || [];
-        const parts = [];
-        let anyOk = false;
-        for (const s of series) {
-          const r = await masterApi.get(`/master/series/${s.id}/models`).catch(() => null);
-          if (Array.isArray(r)) { parts.push(...r); anyOk = true; }
-        }
-        return anyOk ? parts : null;
-      };
-
-      const acc = [];
-      let done = 0;
-      const tick = () => setProgress({ done: ++done, total: brands.length });
-
-      // Poll until master-data answers again, so the brands queued behind a
-      // failure aren't fired at a process that is still restarting.
-      const waitForService = async (tries = 12, gapMs = 5000) => {
-        for (let i = 0; i < tries; i++) {
-          await new Promise((r) => setTimeout(r, gapMs));
-          const ok = await masterApi.get('/master/brands').then(() => true).catch(() => false);
-          if (ok) return true;
-        }
-        return false;
-      };
-
-      // Pass 1 — strictly one brand at a time, i.e. exactly the request the
-      // single-brand selector makes, which is known to work. Running two in
-      // flight meant an oversized brand (Nokia is 83 MB) took whichever brand
-      // was paired with it down as well: Honor answers in 0.5s on its own but
-      // failed purely as collateral.
-      const failed = [];
-      for (const b of brands) {
-        const rows = await fetchBrand(b);
-        if (rows) {
-          acc.push(...rows);
-        } else {
-          failed.push(b);
-          await waitForService(); // that brand most likely just OOM'd the service
-        }
-        tick();
-      }
-
-      // Pass 2 — a brand that is not itself oversized can still fail as collateral:
-      // when a genuinely huge brand OOMs the service, whatever was in flight beside
-      // it dies too, as does anything issued during the ~30-60s systemd restart.
-      // Retry those once, serially, by which time the service is usually back.
-      const stillFailed = [];
-      if (failed.length) {
-        setProgress({ done: brands.length, total: brands.length });
-        await new Promise((r) => setTimeout(r, 4000)); // let the service come back
-        for (const b of failed) {
-          const rows = await fetchBrand(b);
-          if (rows) acc.push(...rows); else stillFailed.push(b.name || b.id);
-        }
-      }
-
-      setList(acc);
-      if (stillFailed.length) {
-        // Note when this fires: a brand that fails twice is usually carrying an
-        // oversized inline image again (the service cannot build the response),
-        // not a transient blip — those were shrunk once already.
-        setError(
-          `${stillFailed.length} of ${brands.length} brands could not be loaded (${stillFailed.join(', ')}). ` +
-          `Usually this means the master-data service could not build the response — most often a model in that ` +
-          `brand has an oversized image stored inline instead of as a URL.`
-        );
-      }
+      const params = filterSeries
+        ? `?seriesId=${encodeURIComponent(filterSeries)}`
+        : filterBrand
+          ? `?brandId=${encodeURIComponent(filterBrand)}`
+          : '';
+      const rows = await masterApi.get(`/master/models${params}`);
+      setList(Array.isArray(rows) ? rows : []);
     } catch (e) {
-      setError(e.message || 'Failed to load');
+      setError(e.body?.message || e.message || 'Failed to load');
       setList([]);
     } finally {
       setLoading(false);
-      setProgress(null);
     }
   };
   useEffect(() => { loadModels(); }, [filterBrand, filterSeries, brands]);
@@ -776,9 +711,15 @@ export default function MasterModelsPage() {
     {
       key: 'imageUrl',
       label: 'Image',
+      // inlineImage means the row still holds a base64 data URI, which the list
+      // endpoint strips for weight. Flag it rather than showing '—', so it reads as
+      // "needs re-uploading to S3" instead of "has no image".
       render: (r) => (r.imageUrl
         ? <img src={r.imageUrl} alt="" className="h-8 w-8 rounded object-cover" />
-        : '—'),
+        : r.inlineImage
+          ? <span title="Stored inline as a data URI — re-upload to move it to media.ggfix.in"
+                  className="text-[11px] font-semibold text-amber-600">inline</span>
+          : '—'),
     },
     {
       key: 'sellActive',
@@ -834,7 +775,7 @@ export default function MasterModelsPage() {
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {loading ? (
         <p className="text-admin-muted">
-          Loading…{progress ? ` (${progress.done} / ${progress.total} brands)` : ''}
+          Loading…
         </p>
       ) : (
         <DataTable columns={columns} rows={visibleList} onEdit={openEdit} onDelete={handleDelete} emptyMessage="No models." />

@@ -6,28 +6,30 @@ import { MEDIA_UPLOAD_URL } from '@/lib/api';
 /**
  * Image upload card. Matches the "Avatar / Upload Avatar" pattern.
  *
- * Strategy: tries POST /media/upload (Cloudinary-backed) FIRST, and falls
- * back to a fully client-side FileReader -> base64 data URI if the backend
- * isn't reachable or returns any error. The fallback means the admin can
- * always save an image even before the master-data-service is rebuilt with
- * the /media endpoint live.
+ * Strategy: POST /media/upload, which stores the file on S3 and returns a
+ * media.ggfix.in URL. A client-side FileReader -> base64 data URI remains as an
+ * OPT-IN fallback, no longer the default — see allowBase64Fallback.
  *
  * Props:
  *  - value         current image URL (preview)
- *  - onChange(url) called with the uploaded image URL (cloudinary or base64)
+ *  - onChange(url) called with the uploaded image URL
  *  - label         card title  (default "Avatar")
  *  - caption       small caption (default "Profile image")
- *  - folder        Cloudinary folder override (e.g. "ggfix/categories")
+ *  - folder        key prefix in the media bucket (e.g. "categories")
  *  - buttonText    upload button label (default "Upload Image")
  *  - aspect        "square" | "wide"
  *  - maxMB         max file size (default 5)
  *  - clientOnly    skip the backend attempt and go straight to base64
  *  - allowBase64Fallback
- *                  when false, a failed backend upload surfaces the error
- *                  instead of quietly storing a data URI. Set this on any
- *                  screen whose column cannot hold a multi-MB string, or where
- *                  an inline image would be served to the mobile app on every
- *                  list fetch. Defaults true so existing callers are unchanged.
+ *                  when true, a failed backend upload quietly stores a data URI
+ *                  instead of surfacing the error.
+ *
+ *                  Defaults FALSE. It defaulted true while /media/upload was new
+ *                  and might not be deployed yet; that window is closed, and the
+ *                  fallback's real-world outcome was 206 MB of inline base64 in
+ *                  master_models, which took the admin down. A failed upload is
+ *                  now a visible error the operator can act on — check
+ *                  /media/ping, which reports whether S3 is configured.
  */
 export default function ImageUpload({
   value,
@@ -39,13 +41,13 @@ export default function ImageUpload({
   aspect = 'square',
   maxMB = 5,
   clientOnly = false,
-  allowBase64Fallback = true,
+  allowBase64Fallback = false,
 }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState(0);
-  const [source, setSource] = useState(''); // 'cloudinary' | 'base64' | ''
+  const [source, setSource] = useState(''); // 's3' | 'base64' | ''
 
   const pick = () => fileRef.current?.click();
 
@@ -61,7 +63,7 @@ export default function ImageUpload({
       reader.readAsDataURL(file);
     });
 
-  // ---- Backend upload (Cloudinary-backed when configured) ----
+  // ---- Backend upload (S3 behind media.ggfix.in) ----
   const uploadToBackend = (file) =>
     new Promise((resolve, reject) => {
       const fd = new FormData();
@@ -97,7 +99,7 @@ export default function ImageUpload({
     setUploading(true);
     setProgress(0);
     try {
-      // 1) Try backend so we get a Cloudinary URL when the service is up.
+      // 1) Try the backend so we get a hosted media.ggfix.in URL.
       if (!clientOnly) {
         let failure = null;
         try {

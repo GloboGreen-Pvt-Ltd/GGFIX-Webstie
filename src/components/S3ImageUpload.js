@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ACCEPTED_IMAGE_TYPES } from '@/lib/modelMedia';
 
@@ -16,6 +16,10 @@ import { ACCEPTED_IMAGE_TYPES } from '@/lib/modelMedia';
  * stored name. So this component does NOT upload: it only holds the chosen File and
  * shows a preview, and the form uploads after the record is saved and has an id.
  *
+ * Replacing an image is destructive: on save the server deletes the file the record
+ * currently points at. That is confirmed here, at the moment of picking, because
+ * this is where the operator can still see which image is about to go.
+ *
  * @param {string}   props.value         existing image URL, for the preview
  * @param {Function} props.onFileChange  called with the File, or null when cleared
  * @param {string}   props.label
@@ -24,6 +28,10 @@ import { ACCEPTED_IMAGE_TYPES } from '@/lib/modelMedia';
 export default function S3ImageUpload({ value, onFileChange, label, caption }) {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
+  // The input keeps its own value, and a file input does NOT fire change when the
+  // same file is picked twice. Clearing it after a cancel or a Clear is what lets
+  // the operator pick that same file again.
+  const inputRef = useRef(null);
 
   // Object URLs are leaked unless revoked, and a long admin session can pick many
   // images; useMemo + the cleanup below keeps exactly one alive at a time.
@@ -48,6 +56,22 @@ export default function S3ImageUpload({ value, onFileChange, label, caption }) {
       setError('Please choose a JPEG, PNG or WebP image.');
       setFile(null);
       onFileChange(null);
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
+    // Only when there is something to lose. Saving deletes the current file from the
+    // bucket, and that cannot be undone from the admin — so it is asked, not assumed.
+    // An inline data URI has no file to delete; it is dropped from the row instead,
+    // and saying "permanently delete" about it would be untrue.
+    if (value && !window.confirm(
+      'This record already has an image.\n\n'
+      + (isInline
+        ? 'Saving will store the new image on media.ggfix.in and drop the current inline copy from the record.'
+        : 'Saving will store the new image on media.ggfix.in and permanently delete the current one.')
+      + '\n\nContinue?')) {
+      setFile(null);
+      onFileChange(null);
+      if (inputRef.current) inputRef.current.value = '';
       return;
     }
     setFile(picked);
@@ -58,6 +82,7 @@ export default function S3ImageUpload({ value, onFileChange, label, caption }) {
     setFile(null);
     setError('');
     onFileChange(null);
+    if (inputRef.current) inputRef.current.value = '';
   };
 
   return (
@@ -77,6 +102,7 @@ export default function S3ImageUpload({ value, onFileChange, label, caption }) {
       <label className="mt-3 block">
         <span className="sr-only">{label}</span>
         <input
+          ref={inputRef}
           type="file"
           accept={ACCEPTED_IMAGE_TYPES}
           onChange={pick}
@@ -91,6 +117,14 @@ export default function S3ImageUpload({ value, onFileChange, label, caption }) {
       ) : null}
 
       {error ? <p className="mt-2 text-xs font-medium text-red-600">{error}</p> : null}
+
+      {file && value ? (
+        <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] font-medium text-amber-800">
+          {isInline
+            ? 'On save this image is stored on media.ggfix.in and the current inline copy is dropped from the record.'
+            : 'On save the current image is permanently deleted from media.ggfix.in and this one is stored in its place.'}
+        </p>
+      ) : null}
 
       <p className="mt-2 text-[11px] text-slate-500">
         {file

@@ -8,7 +8,7 @@ import { masterApi } from '@/lib/api';
 import { mapPool } from '@/lib/concurrency';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
-import { replaceModelImage } from '@/lib/modelMedia';
+import { imageReplacementNotice, replaceModelImage } from '@/lib/modelMedia';
 
 function slugify(s) {
   return String(s || '')
@@ -157,6 +157,11 @@ export default function MasterModelsPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // Outcome of the last image upload. Shown on the page rather than in the modal
+  // because the modal closes on save — and a replacement deletes the old file from
+  // the bucket, which is worth confirming in words rather than leaving to be inferred
+  // from the thumbnail.
+  const [notice, setNotice] = useState('');
 
   // Form state
   const [modal, setModal] = useState(null);
@@ -396,6 +401,9 @@ export default function MasterModelsPage() {
     setName(item.name || '');
     setModelNumberInput(''); setModelNumbers(asNumberList(item.modelNumber));
     setImageUrl(item.imageUrl || '');
+    // A file left staged from a previous modal would otherwise be uploaded onto THIS
+    // record on save — and now also delete that record's current image.
+    setImageFile(null);
     setCategory(item.category || 'DEVICE');
     setSellActive(item.sellActive !== false);
     // Colours + RAM/storage come straight off the model's inline JSON arrays.
@@ -430,7 +438,13 @@ export default function MasterModelsPage() {
       .filter(Boolean);
     setColorChips(cChips); setSpecChips(sChips);
   };
-  const closeModal = () => setModal(null);
+  // Drop the staged file on the way OUT as well as on the way in. openCreate and
+  // openEdit both clear it, but that only holds while every future entry point
+  // remembers to — and the cost of forgetting is silent: the previous model's
+  // image is uploaded onto this record on save, and the record's own image is
+  // deleted from the bucket to make room for it. Clearing here also releases the
+  // File so a long admin session does not pin every image it has touched.
+  const closeModal = () => { setModal(null); setImageFile(null); };
 
   // ---- Color chips ----
   const addColorChips = () => {
@@ -548,6 +562,7 @@ export default function MasterModelsPage() {
     if (!name.trim() || !formBrandId) return;
     setSubmitting(true);
     setError('');
+    setNotice('');
     try {
       // Fold any code still sitting in the input (user typed but didn't press Enter).
       const allModelNumbers = [...modelNumbers];
@@ -580,7 +595,8 @@ export default function MasterModelsPage() {
         await masterApi.put(`/master/models/${modal.item.id}`, body);
       }
       if (imageFile && modelId) {
-        await replaceModelImage(modelId, imageFile);
+        const uploaded = await replaceModelImage(modelId, imageFile);
+        setNotice(imageReplacementNotice(uploaded, 'Model image'));
       }
       await persistPalette();
       closeModal();
@@ -773,6 +789,11 @@ export default function MasterModelsPage() {
         Models live under a series — e.g. <span className="text-slate-600">Mobile + Vivo → Y Series → Vivo Y20</span>.
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {notice && (
+        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {notice}
+        </p>
+      )}
       {loading ? (
         <p className="text-admin-muted">
           Loading…

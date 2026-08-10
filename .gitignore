@@ -25,6 +25,11 @@ pnpm-debug.log*
 .env.test.local
 .env.production.local
 .env*.local
+# Catch-all, because the list above is an allow-by-omission: .env.deployment
+# matched none of these patterns and staged itself during a dev-folder sync.
+.env*
+# ...except the committed template, which carries key NAMES and no values.
+!.env.local.example
 
 # =========================
 # Next.js

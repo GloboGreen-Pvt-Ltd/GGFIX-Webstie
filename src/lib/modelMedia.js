@@ -97,6 +97,10 @@ export async function createModelWithImage(model, file) {
  * Replace an existing model's image. The folder is kept; the response carries a NEW
  * imageKey, because the filename changes on every upload so CloudFront and the
  * browser cannot keep serving the superseded image.
+ *
+ * The image it replaced is deleted from the bucket by the server — see
+ * {@link imageReplacementNotice} for reporting that, including the cases where the
+ * old file was deliberately kept.
  */
 export async function replaceModelImage(modelId, file) {
   const form = new FormData();
@@ -129,6 +133,30 @@ export async function previewModelMediaPath({ categoryId, brandId, seriesId, mod
 
 /** Formats accepted by the backend validator; use as the file input's `accept`. */
 export const ACCEPTED_IMAGE_TYPES = 'image/jpeg,image/png,image/webp';
+
+/**
+ * What to tell the operator after an upload replaced an existing image.
+ *
+ * Every upload endpoint returns previousImageUrl (what the record held before) and
+ * previousImageRemoved (whether that file was deleted from the bucket). The server
+ * keeps the old file in two cases it cannot safely delete — another record still
+ * points at it, or it was never hosted on media.ggfix.in (a data URI, an old
+ * Cloudinary link) — and those must not be reported as a deletion that happened.
+ *
+ * @param {object} res    upload response
+ * @param {string} label  what was uploaded, e.g. "Model image"
+ * @returns {string} a sentence to show, or '' when there is nothing worth saying
+ */
+export function imageReplacementNotice(res, label = 'Image') {
+  if (!res) return '';
+  if (res.previousImageRemoved) {
+    return `${label} updated — the new file is stored on media.ggfix.in and the old one was deleted.`;
+  }
+  if (res.previousImageUrl) {
+    return `${label} updated and stored on media.ggfix.in. The previous file was kept: it is either still used by another record or was not stored on media.ggfix.in.`;
+  }
+  return `${label} stored on media.ggfix.in.`;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Taxonomy artwork (categories, brands)                                       */
@@ -176,6 +204,24 @@ export async function uploadBannerImage(bannerId, file) {
   form.append('image', file);
   const res = await fetch(
     `${trim(MASTER_BASE())}/master/banners/${encodeURIComponent(bannerId)}/image`,
+    { method: 'POST', headers: authHeaders(), body: form },
+  );
+  return unwrap(res);
+}
+
+/**
+ * Upload or replace the reference photo on a Model Compatibility box.
+ *
+ * Keyed on the box's number, so it lands at
+ * master/model-compatibility/a-12-9d3f7b10.jpg. Id-scoped like the others — the
+ * box must be saved first, which is why the form uploads after the save returns
+ * an id rather than before.
+ */
+export async function uploadCompatibilityImage(compatibilityId, file) {
+  const form = new FormData();
+  form.append('image', file);
+  const res = await fetch(
+    `${trim(MASTER_BASE())}/master/model-compatibility/${encodeURIComponent(compatibilityId)}/image`,
     { method: 'POST', headers: authHeaders(), body: form },
   );
   return unwrap(res);

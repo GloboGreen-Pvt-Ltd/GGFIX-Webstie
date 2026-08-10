@@ -4,12 +4,16 @@ import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
-import { uploadBannerImage } from '@/lib/modelMedia';
+import { imageReplacementNotice, uploadBannerImage } from '@/lib/modelMedia';
 
 export default function DirectoryBannersPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Outcome of the last image upload. Shown on the page, not in the modal, because
+  // the modal closes on save — and a replacement deletes the old file from the
+  // bucket, which is worth saying in words rather than leaving to be inferred.
+  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null);
   const [title, setTitle] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -51,6 +55,9 @@ export default function DirectoryBannersPage() {
     setImageUrl(item.imageUrl || '');
     setSortOrder(String(item.sortOrder ?? 0));
     setIsActive(item.isActive ?? true);
+    // A file left staged from a previous modal would otherwise be uploaded onto THIS
+    // banner on save — and now also delete that banner's current image.
+    setImageFile(null);
   };
   const closeModal = () => setModal(null);
 
@@ -58,6 +65,7 @@ export default function DirectoryBannersPage() {
     e.preventDefault();
     if (!title.trim()) return;
     setSubmitting(true);
+    setNotice('');
     try {
       const body = {
         title: title.trim(),
@@ -75,7 +83,8 @@ export default function DirectoryBannersPage() {
         await masterApi.put(`/master/banners/${modal.item.id}`, body);
       }
       if (imageFile && bannerId) {
-        await uploadBannerImage(bannerId, imageFile);
+        const uploaded = await uploadBannerImage(bannerId, imageFile);
+        setNotice(imageReplacementNotice(uploaded, 'Banner image'));
       }
       closeModal();
       load();
@@ -128,6 +137,11 @@ export default function DirectoryBannersPage() {
         Promotional banners shown in the mobile app (GET /api/master/banners).
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {notice && (
+        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {notice}
+        </p>
+      )}
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
       ) : (

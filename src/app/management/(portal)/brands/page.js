@@ -6,12 +6,16 @@ import { masterApi } from '@/lib/api';
 import DataTable, { StatusPill } from '@/components/DataTable';
 import PageHeader, { Button } from '@/components/PageHeader';
 import S3ImageUpload from '@/components/S3ImageUpload';
-import { uploadBrandImage } from '@/lib/modelMedia';
+import { imageReplacementNotice, uploadBrandImage } from '@/lib/modelMedia';
 
 export default function MasterBrandsPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Outcome of the last image upload. Shown on the page, not in the modal, because
+  // the modal closes on save — and a replacement deletes the old file from the
+  // bucket, which is worth saying in words rather than leaving to be inferred.
+  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null); // { type: 'create' | 'edit', item?: {} }
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -47,6 +51,9 @@ export default function MasterBrandsPage() {
     setModal({ type: 'edit', item });
     setName(item.name || '');
     setImageUrl(item.imageUrl || '');
+    // A file left staged from a previous modal would otherwise be uploaded onto THIS
+    // record on save — and now also delete that record's current logo.
+    setImageFile(null);
   };
   const closeModal = () => setModal(null);
 
@@ -54,6 +61,7 @@ export default function MasterBrandsPage() {
     e.preventDefault();
     if (!name.trim()) return;
     setSubmitting(true);
+    setNotice('');
     try {
       // Save first, then upload: the endpoint is id-scoped because the object key
       // is built from the brand's stored name.
@@ -71,7 +79,8 @@ export default function MasterBrandsPage() {
         });
       }
       if (imageFile && brandId) {
-        await uploadBrandImage(brandId, imageFile);
+        const uploaded = await uploadBrandImage(brandId, imageFile);
+        setNotice(imageReplacementNotice(uploaded, 'Brand logo'));
       }
       closeModal();
       load();
@@ -133,6 +142,11 @@ export default function MasterBrandsPage() {
       />
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {notice && (
+        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {notice}
+        </p>
+      )}
 
       {loading ? (
         <div className="rounded-xl border border-admin-border bg-admin-card p-10 text-center text-admin-muted shadow-sm">Loading…</div>

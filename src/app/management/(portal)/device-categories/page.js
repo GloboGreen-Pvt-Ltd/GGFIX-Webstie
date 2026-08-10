@@ -4,12 +4,16 @@ import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
-import { uploadCategoryImage } from '@/lib/modelMedia';
+import { imageReplacementNotice, uploadCategoryImage } from '@/lib/modelMedia';
 
 export default function MasterDeviceCategoriesPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Outcome of the last image upload. Shown on the page, not in the modal, because
+  // the modal closes on save — and a replacement deletes the old file from the
+  // bucket, which is worth saying in words rather than leaving to be inferred.
+  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null);
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -48,6 +52,9 @@ export default function MasterDeviceCategoriesPage() {
     setName(item.name || '');
     setImageUrl(item.imageUrl || '');
     setIsActive(item.isActive ?? true);
+    // A file left staged from a previous modal would otherwise be uploaded onto THIS
+    // record on save — and now also delete that record's current image.
+    setImageFile(null);
   };
   const closeModal = () => setModal(null);
 
@@ -55,6 +62,7 @@ export default function MasterDeviceCategoriesPage() {
     e.preventDefault();
     if (!name.trim()) return;
     setSubmitting(true);
+    setNotice('');
     try {
       // Backend auto-derives `code` from name when not supplied.
       const body = {
@@ -72,7 +80,8 @@ export default function MasterDeviceCategoriesPage() {
         await masterApi.put(`/master/device-categories/${modal.item.id}`, body);
       }
       if (imageFile && categoryId) {
-        await uploadCategoryImage(categoryId, imageFile);
+        const uploaded = await uploadCategoryImage(categoryId, imageFile);
+        setNotice(imageReplacementNotice(uploaded, 'Category image'));
       }
       closeModal();
       load();
@@ -128,6 +137,11 @@ export default function MasterDeviceCategoriesPage() {
         Top-level categories — Mobile, Laptop, Tablet, etc. (GET /api/master/categories).
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {notice && (
+        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {notice}
+        </p>
+      )}
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
       ) : (

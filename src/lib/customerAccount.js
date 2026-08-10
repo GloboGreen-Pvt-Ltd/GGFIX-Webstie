@@ -104,7 +104,7 @@ export async function updateCustomerProfile(profile) {
 }
 
 /**
- * Upload one customer avatar to Cloudinary through the existing media service.
+ * Upload one customer avatar to media.ggfix.in through the media service.
  * The profile table stores an URL (not a data URI), so callers must not use a
  * base64 fallback when this request fails.
  */

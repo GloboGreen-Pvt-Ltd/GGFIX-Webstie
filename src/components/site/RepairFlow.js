@@ -1203,15 +1203,20 @@ function ServiceStep({ deviceCategoryId, modelName, deviceHref, device }) {
 /* -------------------------------------------------------------------------- */
 /* Shown to a LOGGED-IN customer after picking services. Mirrors the app's
  * Review screen: device details, the chosen services, and front/back device
- * photos (uploaded for real to Cloudinary). Booking still finishes in the app,
+ * photos (uploaded for real to media.ggfix.in). Booking still finishes in the app,
  * so the end action is an app handoff — the photo URLs are not attached to a web
  * booking (there is no web booking backend). */
 
-/** Upload one image to master-data /media/upload; returns the Cloudinary URL. */
-async function uploadDevicePhoto(file) {
+/**
+ * Upload one image to master-data /media/upload; returns the hosted URL.
+ * The 'repair-bookings' folder files it under Devicefiles/ in the media bucket,
+ * the same place the shop and customer apps put their device photos.
+ */
+async function uploadDevicePhoto(file, slot) {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('folder', 'repair-bookings');
+  if (slot) fd.append('slot', slot);
   // No Content-Type header — the browser sets the multipart boundary itself.
   const res = await fetch(MEDIA_UPLOAD_URL(), { method: 'POST', body: fd, credentials: 'omit' });
   if (!res.ok) throw new Error(`upload failed ${res.status}`);
@@ -1333,7 +1338,7 @@ function ReportStep({
     setPhotoError('');
     setUploading((u) => ({ ...u, [key]: true }));
     try {
-      const url = await uploadDevicePhoto(file);
+      const url = await uploadDevicePhoto(file, key);
       setPhotos((p) => ({ ...p, [key]: url }));
     } catch {
       setPhotoError("That photo didn't upload. Please try again.");

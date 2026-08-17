@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { ExternalLink, Pencil, Plus, Search, Settings2, Trash2 } from 'lucide-react';
+import { ExternalLink, Pencil, Plus, Search, Settings2, Trash2, X } from 'lucide-react';
 
 import { masterApi } from '@/lib/api';
 import { imageReplacementNotice, uploadCompatibilityImage } from '@/lib/modelMedia';
@@ -22,11 +22,67 @@ import S3ImageUpload from '@/components/S3ImageUpload';
  * A flat list would mean scrolling every model of every brand to find three.
  */
 
-/** Models are fetched per brand and cached here for the life of the page. */
-const emptyBlock = (key) => ({ key, brandId: '', modelIds: [] });
+/**
+ * One brand block in the form. `modelIds` holds everything ticked — catalogue
+ * models and added ones alike, so one list drives every checkbox — while
+ * `customs` carries the added ones' names, because those exist nowhere else.
+ */
+const emptyBlock = (key) => ({ key, brandId: '', modelIds: [], customs: [] });
+
+/**
+ * A model added in this form has no master_models row to take an id from, so it
+ * is keyed locally until the server mints one. The prefix is what tells the two
+ * apart at save time.
+ */
+const NEW_PREFIX = 'new:';
+const isNewCustom = (id) => String(id).startsWith(NEW_PREFIX);
 
 /** Model chips shown per brand in the table before the rest fold into "+N more". */
 const PER_BRAND_CHIPS = 6;
+
+/**
+ * A fitment list arrives pasted out of a supplier sheet — "Nord CE3 Lite, Nord
+ * N30, Nord N30 SE" — so the models search box is read as several names rather
+ * than one. Semicolons and newlines split too: a paste keeps whatever separator
+ * the sheet used, and a single-line input flattens newlines into the value.
+ */
+function splitTerms(raw) {
+  return String(raw || '')
+    .split(/[,;\n\r]+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/** Case- and spacing-insensitive form, used for the first matching pass. */
+const normalise = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+/** Letters and digits only, so "CE 3" and "CE3" — or "12 R" and "12R" — read alike. */
+const squash = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+/**
+ * The models of one brand whose name contains `term`. Partial by design: staff
+ * type the model as it is written on the box ("Nord N30"), not as the catalogue
+ * spells it ("OnePlus Nord N30 5G"). The loose pass only runs when the plain one
+ * found nothing, so punctuation and spacing never widen a result set that was
+ * already answering.
+ *
+ * A term matches only what is already in `models` — the catalogue plus anything
+ * added to this box. A term that matches nothing is offered as an "Add" button
+ * rather than creating anything on its own.
+ */
+function matchTerm(models, term) {
+  const n = normalise(term);
+  if (!n) return [];
+  let hits = models.filter((m) => normalise(m.name).includes(n));
+  if (!hits.length) {
+    const s = squash(term);
+    hits = s ? models.filter((m) => squash(m.name).includes(s)) : [];
+  }
+  // "Nord N30" also matches Nord N30 SE, so the name that *is* the term leads;
+  // the sort is stable, so everything behind it stays A-Z.
+  const exact = squash(term);
+  const rank = (m) => (squash(m.name) === exact ? 0 : 1);
+  return [...hits].sort((a, b) => rank(a) - rank(b));
+}
 
 /**
  * The table can only show the first six models before it stops being a table,
@@ -60,6 +116,24 @@ function formatStamp(iso) {
   });
 }
 
+/**
+ * One model as stored on a box. A name added on the box alone is drawn dashed,
+ * so the table and the detail panel show at a glance which entries the models
+ * catalogue does not back — those are the ones nobody will find in Master Data.
+ */
+function ModelChip({ model }) {
+  return (
+    <span
+      title={model.custom ? `${model.modelName} — added on this box only` : model.modelName}
+      className={`rounded-full bg-admin-dark border px-2.5 py-1 text-xs text-slate-800 ${
+        model.custom ? 'border-dashed border-admin-accent/60' : 'border-admin-border'
+      }`}
+    >
+      {model.modelName}
+    </span>
+  );
+}
+
 /** One labelled line in the view panel. */
 function Field({ label, children }) {
   return (
@@ -84,6 +158,9 @@ export default function CompatibilityClient() {
   // the modal closes on save — and a replacement deletes the old file from the
   // bucket, which is worth saying in words rather than leaving to be inferred.
   const [notice, setNotice] = useState('');
+  // 'warn' when the save came back missing something it was asked to store —
+  // the same line in the same place, but not dressed as good news.
+  const [noticeTone, setNoticeTone] = useState('ok');
 
   // Part-type management, so a fourth type is a row the shop adds rather than a
   // release. Kept on this page instead of its own route — it is a short list
@@ -120,6 +197,9 @@ export default function CompatibilityClient() {
   // an index shifts when a block above it is removed.
   const blockKey = useRef(0);
   const nextBlock = () => emptyBlock(`b${++blockKey.current}`);
+  // Same reasoning for the models added by hand: their local id has to stay put
+  // while the form is open, so it is counted rather than derived from the name.
+  const customKey = useRef(0);
 
   // Filtering server-side rather than in the browser: the type is a stored
   // column, so the box list for one menu entry is one query, and a shop with
@@ -160,6 +240,24 @@ export default function CompatibilityClient() {
 
   const activeType = types.find((t) => t.slug === typeSlug) || null;
   const typeNameOf = (id) => types.find((t) => t.id === id)?.name || '';
+
+  /**
+   * A box is named after what it holds, and the part type IS that name — the
+   * shelf reads "Tempered Glass - 01", "- 02", "- 03". So the name follows the
+   * type instead of being typed again for every box, and the field is locked
+   * while a type is chosen; an untyped box has nothing to inherit and stays
+   * free text.
+   *
+   * Kept as an effect rather than done in the dropdown's onChange because the
+   * type list is fetched on mount and can land AFTER the modal is opened — the
+   * pre-filled type on "Add box" from inside a type would otherwise name the box
+   * only if the fetch happened to have finished.
+   */
+  useEffect(() => {
+    if (!modal) return;
+    const name = typeNameOf(partTypeId);
+    if (name && name !== boxName) setBoxName(name);
+  }, [modal, partTypeId, types]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Fetch a brand's models once and cache them. */
   const ensureModels = async (brandId) => {
@@ -221,7 +319,12 @@ export default function CompatibilityClient() {
         g = { ...nextBlock(), brandId: m.brandId || '' };
         grouped.push(g);
       }
-      if (m.modelId && !g.modelIds.includes(m.modelId)) g.modelIds.push(m.modelId);
+      if (!m.modelId || g.modelIds.includes(m.modelId)) continue;
+      g.modelIds.push(m.modelId);
+      // An added model is not in the catalogue, so nothing would put it back in
+      // the checklist — it has to be carried in the block, or saving this edit
+      // would quietly drop it off the box.
+      if (m.custom) g.customs.push({ id: m.modelId, name: m.modelName || '' });
     }
     setBlocks(grouped.length ? grouped : [nextBlock()]);
     grouped.forEach((g) => ensureModels(g.brandId));
@@ -239,9 +342,10 @@ export default function CompatibilityClient() {
 
   const setBlockBrand = (key, brandId) => {
     // Changing the brand drops the ticks: they were ids of the previous brand's
-    // models and would otherwise be saved invisibly. The search text goes with
-    // them — it was typed against the old brand's list.
-    setBlocks((prev) => prev.map((b) => (b.key === key ? { ...b, brandId, modelIds: [] } : b)));
+    // models and would otherwise be saved invisibly. The added names go too —
+    // they were typed under the old brand and would now be filed under a brand
+    // that never sold them. The search text goes for the same reason.
+    setBlocks((prev) => prev.map((b) => (b.key === key ? { ...b, brandId, modelIds: [], customs: [] } : b)));
     setModelQuery((prev) => ({ ...prev, [key]: '' }));
     ensureModels(brandId);
   };
@@ -250,7 +354,49 @@ export default function CompatibilityClient() {
     setBlocks((prev) => prev.map((b) => {
       if (b.key !== key) return b;
       const on = b.modelIds.includes(modelId);
-      return { ...b, modelIds: on ? b.modelIds.filter((x) => x !== modelId) : [...b.modelIds, modelId] };
+      const modelIds = on ? b.modelIds.filter((x) => x !== modelId) : [...b.modelIds, modelId];
+      // An added model only exists because it was ticked, so unticking it is how
+      // it comes back off the box. Leaving it in the list unticked would show a
+      // name that saves nothing.
+      const customs = on ? b.customs.filter((c) => c.id !== modelId) : b.customs;
+      return { ...b, modelIds, customs };
+    }));
+  };
+
+  /**
+   * Put a model on this box that the catalogue does not carry.
+   *
+   * Deliberately NOT a master_models row: a fitment list is copied off a
+   * supplier's sheet and carries names the catalogue may never gain — a regional
+   * variant, the shop's own shorthand, a name spelt as it is on the box. Adding
+   * those to the catalogue would push unvetted names into every brand/model
+   * picker in the shop, employee and customer apps, so the name is stored inside
+   * this box's own row and shows up nowhere else.
+   *
+   * A name the block already has — under any spacing or case — ticks what is
+   * there instead of adding a near-twin.
+   */
+  const addCustomModel = (key, rawName) => {
+    const name = String(rawName || '').replace(/\s+/g, ' ').trim();
+    if (!name) return;
+    setBlocks((prev) => prev.map((b) => {
+      if (b.key !== key) return b;
+      const known = [...(modelsByBrand[b.brandId] || []), ...b.customs];
+      // Same two spellings the Add button is offered on: the name as typed, and
+      // the name as the catalogue writes it — with the brand in front.
+      const bare = squash(name);
+      const prefixed = squash(`${brandName(b.brandId)} ${name}`);
+      const existing = known.find((m) => {
+        const n = squash(m.name);
+        return n === bare || n === prefixed;
+      });
+      if (existing) {
+        return b.modelIds.includes(existing.id)
+          ? b
+          : { ...b, modelIds: [...b.modelIds, existing.id] };
+      }
+      const id = `${NEW_PREFIX}${++customKey.current}`;
+      return { ...b, customs: [...b.customs, { id, name }], modelIds: [...b.modelIds, id] };
     }));
   };
 
@@ -265,7 +411,13 @@ export default function CompatibilityClient() {
       if (b.key !== key) return b;
       if (on) return { ...b, modelIds: [...new Set([...b.modelIds, ...ids])] };
       const drop = new Set(ids);
-      return { ...b, modelIds: b.modelIds.filter((x) => !drop.has(x)) };
+      return {
+        ...b,
+        modelIds: b.modelIds.filter((x) => !drop.has(x)),
+        // Clearing an added model takes it off the box, exactly as unticking it
+        // one at a time does.
+        customs: b.customs.filter((c) => !drop.has(c.id)),
+      };
     }));
   };
 
@@ -278,6 +430,7 @@ export default function CompatibilityClient() {
     e.preventDefault();
     setFormError('');
     setNotice('');
+    setNoticeTone('ok');
 
     if (!boxNo.trim()) { setFormError('Box No is required.'); return; }
     if (!boxName.trim()) { setFormError('Box Name is required.'); return; }
@@ -289,8 +442,20 @@ export default function CompatibilityClient() {
       return;
     }
 
+    // Added models travel in their own list — they carry a name and no catalogue
+    // id, and the server would reject their local key as an unknown model.
+    const customIds = new Set(used.flatMap((b) => b.customs.map((c) => c.id)));
     // Dedup across blocks: the same model cannot be listed twice on one box.
-    const models = [...new Set(used.flatMap((b) => b.modelIds))];
+    const models = [...new Set(used.flatMap((b) => b.modelIds))].filter((id) => !customIds.has(id));
+    const customModels = used.flatMap((b) => b.customs
+      .filter((c) => b.modelIds.includes(c.id))
+      .map((c) => ({
+        // A stored entry sends the id it was given back, so an edit keeps its
+        // identity instead of being re-minted as a new model each save.
+        modelId: isNewCustom(c.id) ? null : c.id,
+        brandId: b.brandId,
+        modelName: c.name,
+      })));
 
     setSubmitting(true);
     try {
@@ -302,6 +467,7 @@ export default function CompatibilityClient() {
         boxNo: boxNo.trim(),
         boxName: boxName.trim(),
         models,
+        customModels,
         notes: notes.trim(),
         isActive,
       };
@@ -310,12 +476,28 @@ export default function CompatibilityClient() {
         ? await masterApi.post('/master/model-compatibility', payload)
         : await masterApi.put(`/master/model-compatibility/${modal.row.id}`, payload);
 
+      const said = [];
+
+      // A master-data service that predates added models IGNORES the field
+      // rather than rejecting it — Spring drops unknown JSON properties — so the
+      // box would come back looking saved with the typed names quietly gone.
+      // Reading them back off the response is the only way to tell.
+      const keptCustoms = (saved?.models || []).filter((m) => m.custom).length;
+      const dropped = customModels.length - keptCustoms;
+      if (customModels.length > 0 && dropped > 0) {
+        setNoticeTone('warn');
+        said.push(`Saved — but ${dropped} added model name${dropped === 1 ? '' : 's'} did not stick.`
+          + ' The master-data service is running a build that cannot store them yet.');
+      }
+
       // The image endpoint is id-scoped — the key is derived from the box number
       // as stored — so the upload can only happen once the row exists.
       if (imageFile && saved?.id) {
         const uploaded = await uploadCompatibilityImage(saved.id, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Reference image'));
+        said.push(imageReplacementNotice(uploaded, 'Reference image'));
       }
+
+      if (said.length) setNotice(said.filter(Boolean).join(' '));
 
       closeModal();
       load();
@@ -457,14 +639,7 @@ export default function CompatibilityClient() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {shown.map((m) => (
-                      <span
-                        key={m.modelId}
-                        className="rounded-full bg-admin-dark border border-admin-border px-2.5 py-1 text-xs text-slate-800"
-                      >
-                        {m.modelName}
-                      </span>
-                    ))}
+                    {shown.map((m) => (<ModelChip key={m.modelId} model={m} />))}
                     {/* A brand can hold dozens of models; past a handful the row
                         stops being scannable, so the overflow opens the detail
                         panel rather than growing the table. */}
@@ -553,7 +728,11 @@ export default function CompatibilityClient() {
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
+          noticeTone === 'warn'
+            ? 'border-amber-200 bg-amber-50 text-amber-800'
+            : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+        }`}>
           {notice}
         </p>
       )}
@@ -614,14 +793,7 @@ export default function CompatibilityClient() {
                           </span>
                         </p>
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {g.models.map((m) => (
-                            <span
-                              key={m.modelId}
-                              className="rounded-full bg-admin-dark border border-admin-border px-2.5 py-1 text-xs text-slate-800"
-                            >
-                              {m.modelName}
-                            </span>
-                          ))}
+                          {g.models.map((m) => (<ModelChip key={m.modelId} model={m} />))}
                         </div>
                       </div>
                     ))}
@@ -792,14 +964,25 @@ export default function CompatibilityClient() {
                 </div>
                 <div>
                   <label className="block text-sm text-admin-muted mb-1">Box Name</label>
+                  {/* Read-only while a type is chosen: the name IS the type, and
+                      letting the two drift is what makes a shelf of "Tempered
+                      Glass" boxes sort as three different things. */}
                   <input
                     type="text"
                     value={boxName}
                     onChange={(e) => setBoxName(e.target.value)}
-                    className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
+                    readOnly={!!partTypeId}
+                    className={`w-full rounded-lg border border-admin-border px-3 py-2 text-slate-900 ${
+                      partTypeId ? 'bg-admin-dark/60 cursor-not-allowed' : 'bg-admin-dark'
+                    }`}
                     placeholder="Display Combo — 6.5 inch"
                     required
                   />
+                  <p className="mt-1 text-xs text-admin-muted">
+                    {partTypeId
+                      ? 'Taken from the part type above.'
+                      : 'Pick a part type above to name the box automatically.'}
+                  </p>
                 </div>
               </div>
 
@@ -825,14 +1008,66 @@ export default function CompatibilityClient() {
 
                 <div className="mt-4 space-y-4">
                   {blocks.map((block) => {
-                    const models = modelsByBrand[block.brandId] || [];
+                    // The catalogue and the names added on this box are one list
+                    // from here on: they search, tick, count and clear alike, and
+                    // only the "Added" mark and the save payload tell them apart.
+                    const catalogue = modelsByBrand[block.brandId] || [];
+                    const models = block.customs.length
+                      ? [...catalogue, ...block.customs.map((c) => ({ ...c, custom: true }))]
+                        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+                      : catalogue;
                     const isLoading = loadingBrands.includes(block.brandId);
-                    const q = (modelQuery[block.key] || '').trim().toLowerCase();
-                    const visible = q
-                      ? models.filter((m) => String(m.name || '').toLowerCase().includes(q))
-                      : models;
+
+                    // Every pasted name is searched on its own and the hits merged in
+                    // the order they were typed, so the checklist reads back like the
+                    // list that was pasted. A name that finds nothing is collected
+                    // rather than thrown — one unknown model must not blank the other
+                    // two out of the results.
+                    const terms = splitTerms(modelQuery[block.key]);
+                    const seen = new Set();
+                    const matched = [];
+                    for (const term of terms) {
+                      const hits = matchTerm(models, term);
+                      if (!hits.length) continue;
+                      for (const m of hits) {
+                        if (seen.has(m.id)) continue;
+                        seen.add(m.id);
+                        matched.push(m);
+                      }
+                    }
+
+                    /**
+                     * Names this block can add — every term the list does not
+                     * already hold under that exact name.
+                     *
+                     * Deliberately NOT "terms that found nothing": searching
+                     * "Reno 3" on OPPO finds Reno3 Pro, and Reno 3 itself is
+                     * still missing. Requiring an empty result would leave the
+                     * one case this exists for — a model whose siblings ARE in
+                     * the catalogue — with no way to be added.
+                     *
+                     * Catalogue names carry the brand ("Oppo Reno3 Pro") while a
+                     * term usually does not, so the brand-prefixed form counts as
+                     * a match too — otherwise typing "Reno3 Pro" would offer to
+                     * add a twin of a model already on the list.
+                     */
+                    const brandOf = brandName(block.brandId);
+                    const addable = terms.filter((t) => {
+                      const bare = squash(t);
+                      const prefixed = squash(`${brandOf} ${t}`);
+                      return !models.some((m) => {
+                        const n = squash(m.name);
+                        return n === bare || n === prefixed;
+                      });
+                    });
+
+                    const visible = terms.length ? matched : models;
                     const visibleIds = visible.map((m) => m.id);
                     const allOn = visible.length > 0 && visible.every((m) => block.modelIds.includes(m.id));
+                    // Ticks outlive every search, so the whole selection is listed under
+                    // the results — otherwise searching a second name reads as if the
+                    // first one's picks had been dropped.
+                    const chosen = models.filter((m) => block.modelIds.includes(m.id));
                     return (
                       <div key={block.key} className="rounded-xl border border-admin-border p-4">
                         <label className="block text-sm text-admin-muted mb-1">Brand</label>
@@ -874,21 +1109,60 @@ export default function CompatibilityClient() {
                                   onClick={() => setAllModels(block.key, visibleIds, !allOn)}
                                   className="text-xs font-medium text-admin-accent hover:underline"
                                 >
-                                  {allOn ? 'Clear' : 'Select'} {q ? `${visible.length} shown` : 'all'}
+                                  {allOn ? 'Clear' : 'Select'} {terms.length ? `${visible.length} shown` : 'all'}
                                 </button>
                               )}
                             </div>
 
-                            {models.length > 0 && (
-                              <div className="relative mt-1">
-                                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                                <input
-                                  type="text"
-                                  value={modelQuery[block.key] || ''}
-                                  onChange={(e) => setModelQuery((prev) => ({ ...prev, [block.key]: e.target.value }))}
-                                  placeholder={`Search ${brandName(block.brandId) || 'models'}…`}
-                                  className="w-full rounded-lg border border-admin-border bg-white py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
-                                />
+                            {/* Rendered even for a brand with no models at all —
+                                the search box is also how a name is added, so
+                                hiding it would leave that brand unusable. */}
+                            <div className="relative mt-1">
+                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                              <input
+                                type="text"
+                                value={modelQuery[block.key] || ''}
+                                onChange={(e) => setModelQuery((prev) => ({ ...prev, [block.key]: e.target.value }))}
+                                placeholder={`Search or type a new ${brandName(block.brandId) || ''} model…`}
+                                className="w-full rounded-lg border border-admin-border bg-white py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
+                              />
+                            </div>
+
+                            {/* The comma trick is not discoverable, so it is said once
+                                while the box is empty and replaced by the tally as soon
+                                as there is something to tally. */}
+                            {terms.length === 0 && (
+                              <p className="mt-1 text-xs text-admin-muted">
+                                Paste several names separated by commas to search them all at once.
+                              </p>
+                            )}
+                            {terms.length > 1 && (
+                              <p className="mt-1 text-xs text-admin-muted">
+                                {terms.length} names searched · {visible.length} model{visible.length === 1 ? '' : 's'} found
+                              </p>
+                            )}
+
+                            {/* A name the catalogue does not carry is offered as an
+                                Add button rather than a dead end — the fitment list
+                                being copied is real whether the catalogue agrees or
+                                not. One button per name, so a paste of five where
+                                two are unknown adds exactly those two. */}
+                            {addable.length > 0 && (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                <span className="text-xs text-amber-700">
+                                  Not in {brandOf || 'this brand'}?
+                                </span>
+                                {addable.map((t) => (
+                                  <button
+                                    key={t}
+                                    type="button"
+                                    onClick={() => addCustomModel(block.key, t)}
+                                    title={`Add “${t}” to this box only — it is not added to the models catalogue`}
+                                    className="inline-flex items-center gap-1 rounded-full border border-dashed border-admin-accent px-2.5 py-1 text-xs font-medium text-admin-accent hover:bg-blue-50"
+                                  >
+                                    <Plus className="h-3 w-3" /> Add “{t}”
+                                  </button>
+                                ))}
                               </div>
                             )}
 
@@ -896,9 +1170,17 @@ export default function CompatibilityClient() {
                               {isLoading ? (
                                 <p className="text-sm text-admin-muted">Loading models…</p>
                               ) : models.length === 0 ? (
-                                <p className="text-sm text-admin-muted">This brand has no models yet.</p>
+                                <p className="text-sm text-admin-muted">
+                                  This brand has no models yet — type a name above and add it to this box.
+                                </p>
                               ) : visible.length === 0 ? (
-                                <p className="text-sm text-admin-muted">No model matches “{modelQuery[block.key]}”.</p>
+                                // Named one by one, not as the pasted string: "no model
+                                // matches Nord CE3 Lite, Nord N30, ABC XYZ" would read as
+                                // if the whole line had been looked up as one model.
+                                <p className="text-sm text-admin-muted">
+                                  No model matches {terms.map((t) => `“${t}”`).join(', ')} — add
+                                  {terms.length === 1 ? ' it' : ' them'} with the button above.
+                                </p>
                               ) : (
                                 <div className="grid grid-cols-1 gap-y-2 sm:grid-cols-2">
                                   {visible.map((m) => (
@@ -910,11 +1192,60 @@ export default function CompatibilityClient() {
                                         className="h-4 w-4 rounded border-admin-border text-admin-accent focus:ring-admin-accent"
                                       />
                                       <span className="truncate" title={m.name}>{m.name}</span>
+                                      {/* Says where the name came from, so nobody goes
+                                          looking for it in Master Data -> Models. */}
+                                      {m.custom && (
+                                        <span
+                                          title="Added on this box only — not in the models catalogue"
+                                          className="shrink-0 rounded-full border border-dashed border-admin-border px-1.5 py-px text-[10px] text-admin-muted"
+                                        >
+                                          Added
+                                        </span>
+                                      )}
                                     </label>
                                   ))}
                                 </div>
                               )}
                             </div>
+
+                            {/* What is ticked, in full and regardless of the search —
+                                a search for the next name would otherwise hide the
+                                previous one's picks and read as if they were lost.
+                                Each chip removes its own model. */}
+                            {chosen.length > 0 && (
+                              <div className="mt-2 rounded-lg border border-admin-border bg-admin-dark p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[11px] font-medium uppercase tracking-wide text-admin-muted">
+                                    Selected · {chosen.length}
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() => setAllModels(block.key, chosen.map((m) => m.id), false)}
+                                    className="text-xs font-medium text-admin-accent hover:underline"
+                                  >
+                                    Clear all
+                                  </button>
+                                </div>
+                                <div className="mt-2 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto">
+                                  {chosen.map((m) => (
+                                    <button
+                                      key={m.id}
+                                      type="button"
+                                      onClick={() => toggleModel(block.key, m.id)}
+                                      title={m.custom
+                                        ? `Remove ${m.name} — added on this box only`
+                                        : `Remove ${m.name}`}
+                                      className={`inline-flex items-center gap-1 rounded-full border bg-admin-card px-2.5 py-1 text-xs text-slate-800 hover:border-red-200 hover:text-red-700 ${
+                                        m.custom ? 'border-dashed border-admin-accent/60' : 'border-admin-border'
+                                      }`}
+                                    >
+                                      {m.name}
+                                      <X className="h-3 w-3" />
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

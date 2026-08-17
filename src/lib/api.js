@@ -90,9 +90,15 @@ async function request(base, path, options = {}) {
     // and kick the user to /management. Callers that hit endpoints which don't
     // require auth (like master-data /master/**) pass skipAuthRedirect:true so
     // a 401 from a misrouted/cold service doesn't bounce the whole page.
+    //
+    // Only a 401 ends the session. A 403 means the token is perfectly valid and
+    // the server simply refused this action for this role — e.g. a MARKET_PERSON
+    // attempting an ADMIN-only account-status change. Logging them out for that
+    // would be wrong and confusing; we keep the session and let the caller show
+    // the permission message built below.
     if (res.status === 401 || res.status === 403) {
-      if (!skipAuthRedirect && typeof window !== 'undefined') {
-        try { localStorage.removeItem('admin_token'); } catch {}
+      if (res.status === 401 && !skipAuthRedirect && typeof window !== 'undefined') {
+        try { localStorage.removeItem('admin_token'); localStorage.removeItem('admin_role'); } catch {}
         // The login page IS /management/ and every portal page lives under it
         // (/management/dashboard/, /management/models/, …), so this must be an
         // EXACT match. A startsWith() here would be true everywhere in the

@@ -19,7 +19,10 @@ import {
 const nav = [
   { href: '/management/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/management/shops', label: 'Shop Management', icon: Store },
-  { href: '/management/users', label: 'User Management', icon: Users },
+  { href: '/management/user-management', label: 'User Management', icon: Users },
+  // /management/users lists the staff of one selected shop — a different thing
+  // from the platform-level account management above, hence the clearer label.
+  { href: '/management/users', label: 'Shop Staff', icon: Users },
   {
     label: 'Master Data',
     icon: Database,

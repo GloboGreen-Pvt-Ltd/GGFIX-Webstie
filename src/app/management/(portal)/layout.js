@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Search, Bell } from 'lucide-react';
-import { getToken, setToken } from '@/lib/auth';
+import { getToken, setToken, setRole } from '@/lib/auth';
 import Sidebar from '@/components/Sidebar';
 
 // Higher-level section label for the topbar (breadcrumbs/title live in-page).
@@ -34,7 +34,8 @@ const SECTION_BY_SLUG = {
   items: 'Marketplace',
   // Standalone sections
   shops: 'Shop Management',
-  users: 'User Management',
+  'user-management': 'User Management',
+  users: 'Shop Staff',
   subscriptions: 'Subscriptions',
 };
 
@@ -74,6 +75,7 @@ export default function AdminLayout({ children }) {
 
   const handleLogout = () => {
     setToken(null);
+    setRole(null);
     router.replace('/management');
   };
 

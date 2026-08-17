@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { authApi } from '@/lib/api';
+import { isAdmin as isAdminRole } from '@/lib/auth';
 
 function initialsOf(name) {
   if (!name) return '?';
@@ -11,12 +12,33 @@ function initialsOf(name) {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// SUPER_ADMIN is the stored value for the platform administrator; the UI calls
+// it "Admin" to match how the roles are named to users.
+const ROLE_LABELS = {
+  SUPER_ADMIN: 'Admin',
+  ADMIN: 'Admin',
+  MARKET_PERSON: 'Market Person',
+  SHOP_OWNER: 'Shop Owner',
+  TECHNICIAN: 'Technician',
+};
+
+function formatRole(role) {
+  if (!role) return '—';
+  return ROLE_LABELS[String(role).toUpperCase()] || role;
+}
+
 export default function ShopOwnerListPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(null);
+  // Resolved after mount — localStorage is unavailable during SSR/export, and
+  // reading it inline would make the first client render disagree with the
+  // server HTML and trip a hydration mismatch.
+  const [canManageStatus, setCanManageStatus] = useState(false);
+
+  useEffect(() => { setCanManageStatus(isAdminRole()); }, []);
 
   const load = async () => {
     setLoading(true);
@@ -35,6 +57,9 @@ export default function ShopOwnerListPage() {
   useEffect(() => { load(); }, []);
 
   const toggleActive = async (row) => {
+    // Hiding the control is presentation only — the backend re-checks the role
+    // and answers 403, so a non-admin can never actually flip this.
+    if (!canManageStatus) return;
     try {
       await authApi.patch(`/auth/shop-owners/${row.id}/status`, { active: !row.isActive });
       load();
@@ -109,19 +134,22 @@ export default function ShopOwnerListPage() {
                 <th className="px-4 py-3 text-left">Shop Owner Name</th>
                 <th className="px-4 py-3 text-left">Mobile Number</th>
                 <th className="px-4 py-3 text-left">Email ID</th>
+                <th className="px-4 py-3 text-left">Role</th>
+                <th className="px-4 py-3 text-left">Created By</th>
+                <th className="px-4 py-3 text-left">Created Date</th>
                 <th className="px-4 py-3 text-left">Email Status</th>
                 <th className="px-4 py-3 text-left">Profile Progress</th>
                 <th className="px-4 py-3 text-left">Active Date</th>
                 <th className="px-4 py-3 text-left">Inactive Date</th>
-                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Account Status</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-admin-border">
               {loading ? (
-                <tr><td className="px-4 py-6 text-admin-muted" colSpan={11}>Loading…</td></tr>
+                <tr><td className="px-4 py-6 text-admin-muted" colSpan={14}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td className="px-4 py-6 text-admin-muted" colSpan={11}>No shop owners yet. Click "+ Add Shop Owner" to create one.</td></tr>
+                <tr><td className="px-4 py-6 text-admin-muted" colSpan={14}>No shop owners yet. Click "+ Add Shop Owner" to create one.</td></tr>
               ) : filtered.map((r, i) => (
                 <tr key={r.id} className="hover:bg-admin-dark/40">
                   <td className="px-4 py-3 text-slate-600">{i + 1}</td>
@@ -139,6 +167,20 @@ export default function ShopOwnerListPage() {
                   <td className="px-4 py-3 text-slate-600">{r.phone || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{r.email || '—'}</td>
                   <td className="px-4 py-3">
+                    <span className="inline-flex items-center rounded-full bg-slate-500/15 text-slate-600 px-2 py-0.5 text-[11px] font-medium">
+                      {formatRole(r.role)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {r.createdPersonName || '—'}
+                    {r.createdBy && (
+                      <span className="block text-[10px] text-admin-muted">{formatRole(r.createdBy)}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}
+                  </td>
+                  <td className="px-4 py-3">
                     {r.emailVerified ? (
                       <span className="inline-flex items-center rounded-full bg-emerald-500/15 text-emerald-300 px-2 py-0.5 text-[11px] font-medium">✓ Verified</span>
                     ) : (
@@ -151,7 +193,11 @@ export default function ShopOwnerListPage() {
                   <td className="px-4 py-3 text-slate-600">{r.activeDate ? new Date(r.activeDate).toLocaleDateString() : '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{r.inactiveDate ? new Date(r.inactiveDate).toLocaleDateString() : '—'}</td>
                   <td className="px-4 py-3">
-                    <StatusToggle active={!!r.isActive} onToggle={() => toggleActive(r)} />
+                    <StatusToggle
+                      active={!!r.isActive}
+                      canToggle={canManageStatus}
+                      onToggle={() => toggleActive(r)}
+                    />
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
@@ -215,20 +261,36 @@ function ProfileProgress({ percent, done, total }) {
   );
 }
 
-function StatusToggle({ active, onToggle }) {
+/**
+ * Account status cell. Admins get an interactive switch; everyone else sees the
+ * same Active/Inactive badge with no control, since only ADMIN may change it.
+ */
+function StatusToggle({ active, canToggle, onToggle }) {
+  const badge = (
+    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-500/15 text-slate-500'}`}>
+      {active ? 'Active' : 'Inactive'}
+    </span>
+  );
+
+  if (!canToggle) {
+    return (
+      <span className="inline-flex items-center" title="Only an administrator can change account status">
+        {badge}
+      </span>
+    );
+  }
+
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={`inline-flex items-center gap-2 ${active ? '' : ''}`}
+      className="inline-flex items-center gap-2"
       aria-label={active ? 'Active — click to deactivate' : 'Inactive — click to activate'}
     >
       <span className={`relative inline-block h-5 w-9 rounded-full transition ${active ? 'bg-emerald-500' : 'bg-admin-dark border border-admin-border'}`}>
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition ${active ? 'left-[18px]' : 'left-0.5'}`} />
       </span>
-      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-500/15 text-slate-500'}`}>
-        {active ? 'Active' : 'Inactive'}
-      </span>
+      {badge}
     </button>
   );
 }

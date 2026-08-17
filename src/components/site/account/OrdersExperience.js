@@ -125,8 +125,6 @@ const SERVICE_STEPS = [
   ['CUSTOMER_REJECTED', 'Customer Rejected'],
   ['IN_REPAIR', 'Repair Work In Progress'],
   ['PARTS_REQUIRED', 'Spare Parts Waiting'],
-  ['PARTS_REPLACED', 'Spare Parts Replaced'],
-  ['QUALITY_CHECK_STARTED', 'Quality Check Started'],
   ['QUALITY_CHECK_COMPLETED', 'Quality Check Completed'],
   ['REPAIR_COMPLETED', 'Repair Completed'],
   ['INVOICE_GENERATED', 'Invoice Generated'],

@@ -4,7 +4,7 @@ import { Suspense, useState } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { authApi } from '@/lib/api';
-import { setToken } from '@/lib/auth';
+import { setToken, setRole } from '@/lib/auth';
 
 export default function LoginPage() {
   return (
@@ -42,12 +42,15 @@ function LoginPageInner() {
         return;
       }
 
-      // Gate the admin web by loginType. Only SUPER_ADMIN belongs on /management/*.
+      // Gate the admin web by loginType. Back-office staff — SUPER_ADMIN and
+      // MARKET_PERSON — belong on /management/*; both create shop owners, and
+      // only SUPER_ADMIN may change account status (enforced server-side).
       // Shop-owner and shop-mobile sessions are mobile-app territory; employee
       // sessions belong in the employee app. We reject them here with a clear
       // message rather than dropping them on a half-broken admin dashboard.
       const loginType = res.loginType;
-      if (loginType && loginType !== 'SUPER_ADMIN') {
+      const isStaff = loginType === 'SUPER_ADMIN' || loginType === 'MARKET_PERSON';
+      if (loginType && !isStaff) {
         setError(
           loginType === 'SHOP_OWNER' || loginType === 'SHOP_LOGIN'
             ? 'Shop accounts must sign in through the GGfix mobile app.'
@@ -57,6 +60,7 @@ function LoginPageInner() {
       }
 
       setToken(token);
+      setRole(loginType || null);
       // returnTo must be a portal page *below* /management — bare "/management"
       // is this login page, and replacing to it would just bounce back here.
       const safeReturn = returnTo && /^\/management\/.+/.test(returnTo) ? returnTo : null;

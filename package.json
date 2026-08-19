@@ -12,10 +12,12 @@
   "dependencies": {
     "color-name": "^2.1.0",
     "color-name-list": "^14.45.0",
+    "fflate": "^0.8.3",
     "lucide-react": "^1.23.0",
     "next": "^14.2.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.18",

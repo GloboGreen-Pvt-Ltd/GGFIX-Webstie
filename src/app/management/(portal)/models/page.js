@@ -1,14 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { ChevronDown, Download, FileSpreadsheet, RefreshCw, Upload } from 'lucide-react';
 import { colornames } from 'color-name-list';
 import cssColorNames from 'color-name';
 import { masterApi } from '@/lib/api';
 import { mapPool } from '@/lib/concurrency';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
+import ModelsImportModal from '@/components/ModelsImportModal';
 import { imageReplacementNotice, replaceModelImage } from '@/lib/modelMedia';
+import { exportModelsWorkbook, exportTemplateWorkbook } from '@/lib/modelsExcel';
 
 function slugify(s) {
   return String(s || '')
@@ -165,6 +167,10 @@ export default function MasterModelsPage() {
 
   // Form state
   const [modal, setModal] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportMenu, setExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
   const [formCategoryId, setFormCategoryId] = useState('');
   const [formBrandId, setFormBrandId] = useState('');
   const [formSeriesId, setFormSeriesId] = useState('');
@@ -536,26 +542,49 @@ export default function MasterModelsPage() {
   // The global master_colors / ram / storage rows are still kept in sync so the
   // swatch hex persists and the mobile pickers can resolve a label → option UUID.
   // No per-model master_model_variant rows are created any more.
-  const persistPalette = async () => {
-    for (const c of colorChips) {
-      const existing = allColors.find((x) => x.name?.toLowerCase() === c.name.toLowerCase());
+  const persistPaletteFor = async (colors, specs) => {
+    // Track what this run has already created: two specs can share a size
+    // ("8 GB + 128 GB" and "8 GB + 256 GB" both need 8 GB RAM), and the state
+    // arrays below are a snapshot that does not grow as we POST. Without this a
+    // bulk import registers the same option a dozen times.
+    const madeColors = new Set();
+    const madeRam = new Set();
+    const madeStorage = new Set();
+
+    for (const c of colors) {
+      const key = c.name.toLowerCase();
+      if (madeColors.has(key)) continue;
+      const existing = allColors.find((x) => x.name?.toLowerCase() === key);
       if (!existing) {
+        madeColors.add(key);
         await masterApi.post('/master/colors', { name: c.name, hexCode: c.hex }).catch(() => {});
       } else if (c.hexTouched) {
         // Admin fine-tuned an existing colour's swatch — persist the corrected hex.
         await masterApi.put(`/master/colors/${existing.id}`, { name: existing.name, hexCode: c.hex }).catch(() => {});
       }
     }
-    for (const s of specChips) {
-      if (s.ramValue && !ramOptions.some((r) => r.valueGb === s.ramValue)) {
+    for (const s of specs) {
+      if (s.ramValue && !madeRam.has(s.ramValue) && !ramOptions.some((r) => r.valueGb === s.ramValue)) {
+        madeRam.add(s.ramValue);
         await masterApi.post('/master/ram-options', { valueGb: s.ramValue, label: s.ramLabel || `${s.ramValue} GB` }).catch(() => {});
       }
-      if (s.storageValue && !storageOptions.some((r) => r.valueGb === s.storageValue)) {
+      if (s.storageValue && !madeStorage.has(s.storageValue) && !storageOptions.some((r) => r.valueGb === s.storageValue)) {
+        madeStorage.add(s.storageValue);
         await masterApi.post('/master/storage-options', { valueGb: s.storageValue, label: s.storageLabel || `${s.storageValue} GB` }).catch(() => {});
       }
     }
     loadOptionSets();
   };
+
+  const persistPalette = () => persistPaletteFor(colorChips, specChips);
+
+  // Same registration, driven by the plain name/label strings an imported sheet
+  // carries rather than by the modal's chip objects — so a colour that only ever
+  // arrived through Excel still gets a swatch and a resolvable option row.
+  const syncPaletteFromLabels = (colorNames, specLabels) => persistPaletteFor(
+    colorNames.map((name) => ({ name, hex: guessColorHex(name) })),
+    specLabels.map((label) => (label.includes('+') ? parseSpec(label) : parseStorageOnly(label))).filter(Boolean),
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -662,6 +691,64 @@ export default function MasterModelsPage() {
     const map = s ? mappings.find((m) => m.id === s.categoryBrandId) : null;
     return nameById.cat(map?.categoryId || r.categoryId);
   };
+
+  // Name the download after whatever the three dropdowns are narrowed to, e.g.
+  // ggfix-models-laptop-dell-alienware-2026-08-19.xlsx — so a folder of exports
+  // taken over a few days is still tellable apart.
+  const exportFilename = () => {
+    const parts = ['ggfix-models'];
+    for (const label of [nameById.cat(filterCategory), nameById.brand(filterBrand), nameById.series(filterSeries)]) {
+      if (label) parts.push(slugify(label));
+    }
+    parts.push(new Date().toISOString().slice(0, 10));
+    return parts.join('-');
+  };
+
+  useEffect(() => {
+    if (!exportMenu) return undefined;
+    const onDown = (e) => { if (!exportMenuRef.current?.contains(e.target)) setExportMenu(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setExportMenu(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [exportMenu]);
+
+  /**
+   * Download the rows the filters currently select — not the whole catalogue.
+   * What you see in the table is what lands in the sheet, which is what makes the
+   * export → edit → import round-trip safe to do one brand at a time.
+   */
+  const runExport = async (build) => {
+    setExportMenu(false);
+    setExporting(true);
+    setError('');
+    try {
+      await build();
+    } catch (e) {
+      setError(e.message || 'Could not build the Excel file.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExport = () => visibleList.length && runExport(() => exportModelsWorkbook(
+    visibleList,
+    { categoryOf: categoryNameOf, brand: nameById.brand, series: nameById.series },
+    exportFilename(),
+  ));
+
+  // The same workbook with no rows under the header — the sheet to fill in when the
+  // models being added do not exist yet, so there is nothing to export and edit.
+  // The live taxonomy goes with it so Category / Brand / Series are real Excel
+  // dropdowns rather than free text that only fails at import time.
+  const handleExportEmpty = () => runExport(() => exportTemplateWorkbook({
+    categories: categories.map((c) => c.name),
+    brands: brands.map((b) => b.name),
+    series: allSeries.map((x) => x.name),
+  }));
 
   const columns = [
     {
@@ -779,6 +866,54 @@ export default function MasterModelsPage() {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
+          {/* Export is a menu rather than a single button: the blank format has to stay
+              reachable when the filters match nothing, which is exactly when there are
+              no rows to export and a plain button would be disabled. */}
+          <div className="relative" ref={exportMenuRef}>
+            <button type="button" onClick={() => setExportMenu((v) => !v)} disabled={exporting}
+              aria-haspopup="menu" aria-expanded={exportMenu}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark disabled:opacity-50">
+              <Download size={16} />
+              {exporting ? 'Exporting…' : 'Export'}
+              <ChevronDown size={14} className={exportMenu ? 'rotate-180 transition-transform' : 'transition-transform'} />
+            </button>
+            {exportMenu && (
+              <div role="menu"
+                className="absolute right-0 z-20 mt-1 w-72 overflow-hidden rounded-lg border border-admin-border bg-admin-card shadow-lg">
+                <button type="button" role="menuitem" onClick={handleExport} disabled={loading || !visibleList.length}
+                  className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-admin-dark disabled:opacity-50 disabled:hover:bg-transparent">
+                  <Download size={16} className="mt-0.5 shrink-0 text-slate-500" />
+                  <span>
+                    <span className="block text-sm font-medium text-slate-900">
+                      Listed models{visibleList.length ? ` (${visibleList.length})` : ''}
+                    </span>
+                    <span className="block text-xs text-admin-muted">
+                      {visibleList.length
+                        ? 'The rows the filters above select, with their data.'
+                        : 'Nothing matches the current filters.'}
+                    </span>
+                  </span>
+                </button>
+                <div className="border-t border-admin-border" />
+                <button type="button" role="menuitem" onClick={handleExportEmpty}
+                  className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-admin-dark">
+                  <FileSpreadsheet size={16} className="mt-0.5 shrink-0 text-slate-500" />
+                  <span>
+                    <span className="block text-sm font-medium text-slate-900">Empty format</span>
+                    <span className="block text-xs text-admin-muted">
+                      Headers only, with Category / Brand / Series dropdowns. Fill it in, then Import.
+                    </span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+          <button type="button" onClick={() => setImportOpen(true)} disabled={!brands.length}
+            title="Upload a filled-in Excel file to create or update models in bulk"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark disabled:opacity-50">
+            <Upload size={16} />
+            Import
+          </button>
           <button type="button" onClick={openCreate} disabled={!brands.length}
             className="rounded-lg bg-admin-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
             Add model
@@ -787,6 +922,8 @@ export default function MasterModelsPage() {
       </div>
       <p className="text-admin-muted text-sm mb-4">
         Models live under a series — e.g. <span className="text-slate-600">Mobile + Vivo → Y Series → Vivo Y20</span>.
+        {' '}Export writes the rows the filters above select; Import reads that same sheet back, creating new models and
+        updating the ones it recognises.
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {notice && (
@@ -980,6 +1117,18 @@ export default function MasterModelsPage() {
             </div>
           </form>
         </div>
+      )}
+
+      {importOpen && (
+        <ModelsImportModal
+          categories={categories}
+          brands={brands}
+          mappings={mappings}
+          allSeries={allSeries}
+          onSyncPalette={syncPaletteFromLabels}
+          onClose={() => setImportOpen(false)}
+          onImported={() => { loadRefData(); loadModels(); }}
+        />
       )}
     </div>
   );

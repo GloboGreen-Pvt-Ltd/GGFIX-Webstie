@@ -172,7 +172,7 @@ const COLUMN_HELP = {
   id: ['Keep as-is', 'The database id of the model. Keep it to UPDATE that model; leave it blank to CREATE a new one.'],
   categoryName: ['Yes', 'Pick from the dropdown. Must already exist in Master Data \u2192 Categories.'],
   brandName: ['Yes', 'Pick from the dropdown. Must already exist and be mapped to the Category.'],
-  seriesName: ['Optional', 'Pick from the dropdown, or type a new name and tick "Create missing series" when importing.'],
+  seriesName: ['Optional', 'Fill Category and Brand first, and the dropdown then lists only the series for that pair. Or type a new name and tick "Create missing series" when importing.'],
   name: ['Yes', 'The model display name, e.g. Vivo Y20. Must be unique within its series.'],
   modelNumber: ['Optional', 'Manufacturer code(s). Separate several with / , or ;   e.g. V2043 / V2043BA'],
   colors: ['Optional', 'Comma-separated colour names, e.g. Midnight Black, Champagne Gold. Swatches are auto-detected on import.'],
@@ -283,24 +283,53 @@ export async function exportTemplateWorkbook(lists = {}) {
   // by typing the first letters in Excel.
   const uniqueSorted = (xs) => [...new Set((xs || []).map((x) => text(x)).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b));
+
+  // Brands may arrive as plain names or as { name, category } pairs; series as
+  // plain names or { name, category, brand } triples. Given the structured form
+  // the dropdown CASCADES off the columns already filled on that row - the same
+  // rule the admin Models filter bar uses: Category -> the brands mapped to it ->
+  // that Category+Brand pair's series. Flat lists were why a Laptop/Apple row was
+  // offered every brand in the system and Lenovo's ThinkPad series.
+  const structured = (xs, keyFields) => {
+    const seen = new Map();
+    for (const x of xs || []) {
+      if (!x || typeof x !== 'object') continue;
+      const name = text(x.name);
+      const parts = keyFields.map((f) => text(x[f]));
+      if (!name || parts.some((v) => !v)) continue;
+      const key = parts.join('|');
+      seen.set(`${key}::${name}`, { key, name });
+    }
+    // Sorted so every row sharing a key is CONTIGUOUS: OFFSET takes the first
+    // match plus a height, so a split key would silently truncate the list.
+    return [...seen.values()].sort((a, b) => a.key.localeCompare(b.key) || a.name.localeCompare(b.name));
+  };
+  const flatNames = (xs) => uniqueSorted((xs || []).map((x) => (x && typeof x === 'object' ? x.name : x)));
+
+  const brandPairs = structured(lists.brands, ['category']);
+  const seriesPairs = structured(lists.series, ['category', 'brand']);
+  const cascadeBrands = brandPairs.length > 0;
+  const cascadeSeries = seriesPairs.length > 0;
+
   const lookups = [
     {
-      key: 'categoryName', header: 'Categories', values: uniqueSorted(lists.categories), errorStyle: 'stop',
+      key: 'categoryName', header: 'Categories', values: flatNames(lists.categories), errorStyle: 'stop',
       title: 'Unknown category',
       message: 'Pick a category from the list. New categories have to be added in Master Data > Categories first.',
     },
-    {
-      key: 'brandName', header: 'Brands', values: uniqueSorted(lists.brands), errorStyle: 'stop',
+    // Each of these stays a flat column only while there is nothing to cascade on.
+    ...(cascadeBrands ? [] : [{
+      key: 'brandName', header: 'Brands', values: flatNames(lists.brands), errorStyle: 'stop',
       title: 'Unknown brand',
       message: 'Pick a brand from the list. New brands have to be added in Master Data > Brands first.',
-    },
-    {
+    }]),
+    ...(cascadeSeries ? [] : [{
       // Warning rather than stop: a new series IS allowed, as long as the importer
       // is told to create it.
-      key: 'seriesName', header: 'Series', values: uniqueSorted(lists.series), errorStyle: 'warning',
+      key: 'seriesName', header: 'Series', values: flatNames(lists.series), errorStyle: 'warning',
       title: 'Series not in the list',
       message: 'This series does not exist yet. That is fine if you tick "Create missing series" when importing - otherwise pick one from the list.',
-    },
+    }]),
     {
       key: 'sellActive', header: 'Sell Active', values: ['Yes', 'No'], errorStyle: 'stop',
       title: 'Yes or No',
@@ -308,29 +337,78 @@ export async function exportTemplateWorkbook(lists = {}) {
     },
   ].filter((l) => l.values.length);
 
-  // The lookup sheet is a plain grid: headers in row 1, values beneath, one column
-  // per dropdown. Short columns are padded so the rows stay aligned.
-  const depth = Math.max(0, ...lookups.map((l) => l.values.length));
-  const lookupRows = [lookups.map((l) => l.header)];
-  for (let r = 0; r < depth; r++) lookupRows.push(lookups.map((l) => l.values[r] ?? ''));
+  // Each cascade adds a key/value column pair to the right of the flat dropdowns.
+  const blocks = [
+    ...(cascadeBrands ? [{
+      key: 'brandName', keyCols: ['categoryName'], pairs: brandPairs,
+      keyHeader: 'Brand key (Category)', valueHeader: 'Brands by Category',
+      errorStyle: 'stop',
+      title: 'Unknown brand',
+      message: 'Pick a brand from the list. It shows the brands mapped to this row\'s Category - set Category first. New brands and mappings are added in Master Data.',
+    }] : []),
+    ...(cascadeSeries ? [{
+      key: 'seriesName', keyCols: ['categoryName', 'brandName'], pairs: seriesPairs,
+      keyHeader: 'Series key (Category|Brand)', valueHeader: 'Series by Category + Brand',
+      errorStyle: 'warning',
+      title: 'Series not in the list',
+      message: 'This series does not exist for that Category and Brand yet. That is fine if you tick "Create missing series" when importing - otherwise pick one from the list.',
+    }] : []),
+  ];
+
+  // The lookup sheet is a plain grid: headers in row 1, values beneath. Short
+  // columns are padded so the rows stay aligned.
+  const depth = Math.max(0, ...lookups.map((l) => l.values.length), ...blocks.map((b) => b.pairs.length));
+  const headerRow = [...lookups.map((l) => l.header), ...blocks.flatMap((b) => [b.keyHeader, b.valueHeader])];
+  const lookupRows = [headerRow];
+  for (let r = 0; r < depth; r++) {
+    lookupRows.push([
+      ...lookups.map((l) => l.values[r] ?? ''),
+      ...blocks.flatMap((b) => [b.pairs[r]?.key ?? '', b.pairs[r]?.name ?? '']),
+    ]);
+  }
   const lookupSheet = XLSX.utils.aoa_to_sheet(lookupRows);
-  lookupSheet['!cols'] = lookups.map(() => ({ wch: 24 }));
+  lookupSheet['!cols'] = headerRow.map((_, i) => ({ wch: i < lookups.length ? 24 : 30 }));
+  // Ctrl+F and the filter buttons on this sheet are how you search the full list
+  // in Excel builds whose dropdown has no search box (anything before 365).
+  lookupSheet['!autofilter'] = {
+    ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: depth, c: headerRow.length - 1 } }),
+  };
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, buildModelsSheet(XLSX, cols, []), SHEET_NAME);
   XLSX.utils.book_append_sheet(wb, buildGuideSheet(XLSX, cols), GUIDE_SHEET);
   XLSX.utils.book_append_sheet(wb, lookupSheet, LOOKUP_SHEET);
 
-  const { colLetter, sheetRef } = await import('./xlsxPatch.js');
-  const validations = lookups.map((l, i) => {
-    const target = colLetter(cols.findIndex((c) => c.key === l.key));
-    return {
-      sqref: `${target}2:${target}${VALIDATED_ROWS}`,
-      formula: sheetRef(LOOKUP_SHEET, colLetter(i), 2, l.values.length + 1),
-      errorStyle: l.errorStyle,
-      title: l.title,
-      message: l.message,
-    };
+  const { colLetter, sheetRef, quoteSheet } = await import('./xlsxPatch.js');
+  const targetCol = (key) => colLetter(cols.findIndex((c) => c.key === key));
+  const validations = lookups.map((l, i) => ({
+    sqref: `${targetCol(l.key)}2:${targetCol(l.key)}${VALIDATED_ROWS}`,
+    formula: sheetRef(LOOKUP_SHEET, colLetter(i), 2, l.values.length + 1),
+    errorStyle: l.errorStyle,
+    title: l.title,
+    message: l.message,
+  }));
+
+  const sheet = quoteSheet(LOOKUP_SHEET);
+  blocks.forEach((b, bi) => {
+    const keyCol = colLetter(lookups.length + bi * 2);
+    const valCol = colLetter(lookups.length + bi * 2 + 1);
+    const last = b.pairs.length + 1;                            // header is row 1
+    const keyRange = `${sheet}!$${keyCol}$2:$${keyCol}$${last}`;
+    // The key is built from THIS row's parent columns. OOXML stores one formula
+    // for the whole sqref, resolved relative to its top-left cell, so a
+    // row-relative $A2 becomes $A3 on the next row, and so on down the sheet.
+    const rowKey = b.keyCols.map((k) => `$${targetCol(k)}2`).join('&"|"&');
+    validations.push({
+      sqref: `${targetCol(b.key)}2:${targetCol(b.key)}${VALIDATED_ROWS}`,
+      // OFFSET(first value cell, rows down to the first match, 0, how many match, 1).
+      // Until the parent columns are filled MATCH is #N/A and the list is simply
+      // empty - which is the right prompt: fill those first.
+      formula: `OFFSET(${sheet}!$${valCol}$2,MATCH(${rowKey},${keyRange},0)-1,0,COUNTIF(${keyRange},${rowKey}),1)`,
+      errorStyle: b.errorStyle,
+      title: b.title,
+      message: b.message,
+    });
   });
 
   await finish(XLSX, wb, 'ggfix-models-empty-format', { freezeRows: 1, validations });

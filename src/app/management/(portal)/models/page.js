@@ -744,11 +744,32 @@ export default function MasterModelsPage() {
   // models being added do not exist yet, so there is nothing to export and edit.
   // The live taxonomy goes with it so Category / Brand / Series are real Excel
   // dropdowns rather than free text that only fails at import time.
-  const handleExportEmpty = () => runExport(() => exportTemplateWorkbook({
-    categories: categories.map((c) => c.name),
-    brands: brands.map((b) => b.name),
-    series: allSeries.map((x) => x.name),
-  }));
+  const handleExportEmpty = () => runExport(() => {
+    // Send each series WITH its category and brand, not just its name. A flat
+    // name list makes the template offer every series on every row — a Laptop /
+    // Apple row was being offered Lenovo's ThinkPad series — and leaves the user
+    // scrolling hundreds of entries. With the pair, the template cascades the
+    // Series dropdown off the Category + Brand already chosen on that row.
+    const categoryOfMapping = new Map(mappings.map((m) => [m.id, m.categoryId]));
+    const brandOfMapping = new Map(mappings.map((m) => [m.id, m.brandId]));
+    const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
+    const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
+    return exportTemplateWorkbook({
+      categories: categories.map((c) => c.name),
+      // One entry per category-brand MAPPING, not per brand: the template
+      // cascades Brand off Category exactly like the filter bar above, so a
+      // Laptop row offers the 14 laptop brands rather than all 55.
+      brands: mappings.map((m) => ({
+        name: brandNameById.get(m.brandId) || '',
+        category: categoryNameById.get(m.categoryId) || '',
+      })).filter((b) => b.name && b.category),
+      series: allSeries.map((x) => ({
+        name: x.name,
+        category: categoryNameById.get(categoryOfMapping.get(x.categoryBrandId)) || '',
+        brand: brandNameById.get(brandOfMapping.get(x.categoryBrandId)) || '',
+      })),
+    });
+  });
 
   const columns = [
     {

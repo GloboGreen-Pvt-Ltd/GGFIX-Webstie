@@ -48,11 +48,19 @@ export function colLetter(i) {
  * a space (ours is "Valid values") must be single-quoted, and an apostrophe inside
  * one is escaped by doubling it.
  */
-export function sheetRef(sheetName, col, firstRow, lastRow) {
-  const quoted = /^[A-Za-z0-9_]+$/.test(sheetName)
+/**
+ * A sheet name as it must appear inside a formula: bare when it is a plain
+ * identifier, single-quoted (with embedded quotes doubled) when it is not.
+ * "Valid values" has a space, so it always needs the quotes.
+ */
+export function quoteSheet(sheetName) {
+  return /^[A-Za-z0-9_]+$/.test(sheetName)
     ? sheetName
     : `'${sheetName.replace(/'/g, "''")}'`;
-  return `${quoted}!$${col}$${firstRow}:$${col}$${lastRow}`;
+}
+
+export function sheetRef(sheetName, col, firstRow, lastRow) {
+  return `${quoteSheet(sheetName)}!$${col}$${firstRow}:$${col}$${lastRow}`;
 }
 
 /** Freeze everything above `rows` — for us, the header row. */

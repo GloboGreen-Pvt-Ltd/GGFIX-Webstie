@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import SellFlowBulkActions from '@/components/SellFlowBulkActions';
+import SellFlowImportModal from '@/components/SellFlowImportModal';
 
 // Split a typed/pasted value into individual values on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -18,6 +20,7 @@ export default function MasterDeviceConfigurationPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
 
   const [modal, setModal] = useState(null);
   const [deviceCategoryId, setDeviceCategoryId] = useState('');
@@ -26,26 +29,39 @@ export default function MasterDeviceConfigurationPage() {
   const [optNames, setOptNames] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const load = async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
     setError('');
-    try {
-      const data = await masterApi.get('/master/config-fields');
+    const [fieldsResult, categoriesResult] = await Promise.allSettled([
+      masterApi.get('/master/config-fields'),
+      masterApi.get('/master/device-categories'),
+    ]);
+
+    let loadError = null;
+    if (fieldsResult.status === 'fulfilled') {
+      const data = fieldsResult.value;
       setList(Array.isArray(data) ? data : data?.content ?? []);
-    } catch (e) {
-      setError(e.message || 'Failed to load');
+    } else {
+      loadError = fieldsResult.reason;
       setList([]);
-    } finally {
-      setLoading(false);
     }
-  };
+
+
+    if (categoriesResult.status === 'fulfilled') {
+      const data = categoriesResult.value;
+      setCategories(Array.isArray(data) ? data : data?.content ?? []);
+    } else {
+      loadError ||= categoriesResult.reason;
+      setCategories([]);
+    }
+
+    if (loadError) setError(loadError?.message || 'Failed to load');
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    load();
-    masterApi.get('/master/device-categories')
-      .then((d) => setCategories(Array.isArray(d) ? d : d?.content ?? []))
-      .catch(() => {});
-  }, []);
+    reload();
+  }, [reload]);
 
   const catName = (id) => categories.find((c) => c.id === id)?.name || 'All categories';
   const filtered = filterCategory ? list.filter((r) => r.deviceCategoryId === filterCategory) : list;
@@ -88,7 +104,7 @@ export default function MasterDeviceConfigurationPage() {
         await masterApi.put(`/master/config-fields/${modal.item.id}`, body);
       }
       closeModal();
-      load();
+      reload();
     } catch (e) {
       setError(e.body?.message || e.message || 'Request failed');
     } finally {
@@ -100,7 +116,7 @@ export default function MasterDeviceConfigurationPage() {
     if (!confirm(`Delete config field "${row.name}" and its options?`)) return;
     try {
       await masterApi.delete(`/master/config-fields/${row.id}`);
-      load();
+      reload();
     } catch (e) {
       setError(e.body?.message || e.message || 'Delete failed');
     }
@@ -127,7 +143,7 @@ export default function MasterDeviceConfigurationPage() {
     <div className="p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Device Configuration</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
@@ -136,6 +152,14 @@ export default function MasterDeviceConfigurationPage() {
             <option value="">All categories</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
           </select>
+          <SellFlowBulkActions
+            kind="deviceConfiguration"
+            categories={categories}
+            rows={filtered}
+            filterCategory={filterCategory}
+            onRefresh={reload}
+            onImport={() => setImportOpen(true)}
+          />
           <button
             type="button"
             onClick={openCreate}
@@ -225,6 +249,14 @@ export default function MasterDeviceConfigurationPage() {
             </form>
           </div>
         </div>
+      )}
+      {importOpen && (
+        <SellFlowImportModal
+          kind="deviceConfiguration"
+          categories={categories}
+          onClose={() => setImportOpen(false)}
+          onImported={reload}
+        />
       )}
     </div>
   );

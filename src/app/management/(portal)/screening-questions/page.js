@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import SellFlowBulkActions from '@/components/SellFlowBulkActions';
+import SellFlowImportModal from '@/components/SellFlowImportModal';
 
 export default function MasterScreeningQuestionsPage() {
   const [categories, setCategories] = useState([]);
@@ -12,32 +14,46 @@ export default function MasterScreeningQuestionsPage() {
   const [error, setError] = useState('');
 
   const [modal, setModal] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [deviceCategoryId, setDeviceCategoryId] = useState('');
   const [question, setQuestion] = useState('');
   const [description, setDescription] = useState(''); // stored as helperText
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const load = async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
     setError('');
-    try {
-      const data = await masterApi.get('/master/screening-questions');
+    const [questionsResult, categoriesResult] = await Promise.allSettled([
+      masterApi.get('/master/screening-questions'),
+      masterApi.get('/master/device-categories'),
+    ]);
+
+    let loadError = null;
+    if (questionsResult.status === 'fulfilled') {
+      const data = questionsResult.value;
       setList(Array.isArray(data) ? data : data?.content ?? []);
-    } catch (e) {
-      setError(e.message || 'Failed to load');
+    } else {
+      loadError = questionsResult.reason;
       setList([]);
-    } finally {
-      setLoading(false);
     }
-  };
+
+
+    if (categoriesResult.status === 'fulfilled') {
+      const data = categoriesResult.value;
+      setCategories(Array.isArray(data) ? data : data?.content ?? []);
+    } else {
+      loadError ||= categoriesResult.reason;
+      setCategories([]);
+    }
+
+    if (loadError) setError(loadError?.message || 'Failed to load');
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    load();
-    masterApi.get('/master/device-categories')
-      .then((d) => setCategories(Array.isArray(d) ? d : d?.content ?? []))
-      .catch(() => {});
-  }, []);
+    reload();
+  }, [reload]);
 
   const catName = (id) => categories.find((c) => c.id === id)?.name || '—';
   const filtered = filterCategory ? list.filter((r) => r.deviceCategoryId === filterCategory) : list;
@@ -76,7 +92,7 @@ export default function MasterScreeningQuestionsPage() {
         await masterApi.put(`/master/screening-questions/${modal.item.id}`, body);
       }
       closeModal();
-      load();
+      reload();
     } catch (e) {
       setError(e.body?.message || e.message || 'Request failed');
     } finally {
@@ -88,7 +104,7 @@ export default function MasterScreeningQuestionsPage() {
     if (!confirm('Delete this question?')) return;
     try {
       await masterApi.delete(`/master/screening-questions/${row.id}`);
-      load();
+      reload();
     } catch (e) {
       setError(e.body?.message || e.message || 'Delete failed');
     }
@@ -105,7 +121,7 @@ export default function MasterScreeningQuestionsPage() {
     <div className="p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Screening Questions</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
@@ -114,6 +130,14 @@ export default function MasterScreeningQuestionsPage() {
             <option value="">All categories</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
           </select>
+          <SellFlowBulkActions
+            kind="screeningQuestions"
+            categories={categories}
+            rows={filtered}
+            filterCategory={filterCategory}
+            onRefresh={reload}
+            onImport={() => setImportOpen(true)}
+          />
           <button
             type="button"
             onClick={openCreate}
@@ -192,6 +216,14 @@ export default function MasterScreeningQuestionsPage() {
             </form>
           </div>
         </div>
+      )}
+      {importOpen && (
+        <SellFlowImportModal
+          kind="screeningQuestions"
+          categories={categories}
+          onClose={() => setImportOpen(false)}
+          onImported={reload}
+        />
       )}
     </div>
   );

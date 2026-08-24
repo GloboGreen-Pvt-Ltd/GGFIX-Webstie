@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import SellFlowBulkActions from '@/components/SellFlowBulkActions';
+import SellFlowImportModal from '@/components/SellFlowImportModal';
 
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
 
@@ -13,6 +15,7 @@ export default function MasterConditionGroupsPage() {
   const [optionsByCond, setOptionsByCond] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
 
   // Condition Categories modal (manage names per device category)
   const [catModal, setCatModal] = useState(null); // { type, group? }
@@ -31,11 +34,17 @@ export default function MasterConditionGroupsPage() {
   const [oRemoved, setORemoved] = useState([]);
   const [oSubmitting, setOSubmitting] = useState(false);
 
-  const load = async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
     setError('');
-    try {
-      const data = await masterApi.get('/master/condition-groups');
+    const [groupsResult, categoriesResult] = await Promise.allSettled([
+      masterApi.get('/master/condition-groups'),
+      masterApi.get('/master/device-categories'),
+    ]);
+
+    let loadError = null;
+    if (groupsResult.status === 'fulfilled') {
+      const data = groupsResult.value;
       const groups = Array.isArray(data) ? data : data?.content ?? [];
       setConds(groups);
       const map = {};
@@ -44,20 +53,28 @@ export default function MasterConditionGroupsPage() {
         map[g.id] = Array.isArray(opts) ? opts : opts?.content ?? [];
       }));
       setOptionsByCond(map);
-    } catch (e) {
-      setError(e.message || 'Failed to load');
+    } else {
+      loadError = groupsResult.reason;
       setConds([]);
-    } finally {
-      setLoading(false);
+      setOptionsByCond({});
     }
-  };
+
+
+    if (categoriesResult.status === 'fulfilled') {
+      const data = categoriesResult.value;
+      setCategories(Array.isArray(data) ? data : data?.content ?? []);
+    } else {
+      loadError ||= categoriesResult.reason;
+      setCategories([]);
+    }
+
+    if (loadError) setError(loadError?.message || 'Failed to load');
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    load();
-    masterApi.get('/master/device-categories')
-      .then((d) => setCategories(Array.isArray(d) ? d : d?.content ?? []))
-      .catch(() => {});
-  }, []);
+    reload();
+  }, [reload]);
 
   const catName = (id) => categories.find((c) => c.id === id)?.name || 'All categories (shared)';
   const filteredConds = filterCategory ? conds.filter((c) => c.deviceCategoryId === filterCategory) : conds;
@@ -108,7 +125,7 @@ export default function MasterConditionGroupsPage() {
         await masterApi.post('/master/condition-groups', { name: c.name, deviceCategoryId: cCategory || null });
       }
       setCatModal(null);
-      load();
+      reload();
     } catch (e) {
       setError(e.body?.message || e.message || 'Request failed');
     } finally { setCSubmitting(false); }
@@ -117,7 +134,7 @@ export default function MasterConditionGroupsPage() {
     if (!confirm(`Delete all ${group.items.length} condition categor(ies) for ${catName(group.deviceCategoryId)}? Their options are removed too.`)) return;
     try {
       for (const c of group.items) await masterApi.delete(`/master/condition-groups/${c.id}`).catch(() => {});
-      load();
+      reload();
     } catch (e) { setError(e.body?.message || e.message || 'Delete failed'); }
   };
 
@@ -167,14 +184,14 @@ export default function MasterConditionGroupsPage() {
         await masterApi.post('/master/condition-options', { groupId: oCondId, label: c.label, sortOrder: sort++, priceImpact: 0 });
       }
       setOptModal(null);
-      load();
+      reload();
     } catch (e) {
       setError(e.body?.message || e.message || 'Request failed');
     } finally { setOSubmitting(false); }
   };
   const deleteCond = async (cond) => {
     if (!confirm(`Delete condition category "${cond.name}" and its options?`)) return;
-    try { await masterApi.delete(`/master/condition-groups/${cond.id}`); load(); }
+    try { await masterApi.delete(`/master/condition-groups/${cond.id}`); reload(); }
     catch (e) { setError(e.body?.message || e.message || 'Delete failed'); }
   };
 
@@ -222,7 +239,7 @@ export default function MasterConditionGroupsPage() {
       <section>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <h1 className="text-2xl font-semibold text-slate-900">Condition Categories</h1>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <select
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
@@ -231,6 +248,15 @@ export default function MasterConditionGroupsPage() {
               <option value="">All categories</option>
               {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
             </select>
+            <SellFlowBulkActions
+              kind="conditionGroups"
+              categories={categories}
+              rows={filteredConds}
+              optionsByGroup={optionsByCond}
+              filterCategory={filterCategory}
+              onRefresh={reload}
+              onImport={() => setImportOpen(true)}
+            />
             <button type="button" onClick={openCatCreate} className="rounded-lg bg-admin-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Add category</button>
           </div>
         </div>
@@ -347,6 +373,14 @@ export default function MasterConditionGroupsPage() {
             </form>
           </div>
         </div>
+      )}
+      {importOpen && (
+        <SellFlowImportModal
+          kind="conditionGroups"
+          categories={categories}
+          onClose={() => setImportOpen(false)}
+          onImported={reload}
+        />
       )}
     </div>
   );

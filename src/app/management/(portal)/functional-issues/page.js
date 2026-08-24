@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import SellFlowBulkActions from '@/components/SellFlowBulkActions';
+import SellFlowImportModal from '@/components/SellFlowImportModal';
 
 // Issue names are short labels — split typed/pasted input on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -13,6 +15,7 @@ export default function MasterFunctionalIssuesPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
 
   const [modal, setModal] = useState(null); // { type: 'create' | 'edit', group? }
   const [deviceCategoryId, setDeviceCategoryId] = useState('');
@@ -21,26 +24,39 @@ export default function MasterFunctionalIssuesPage() {
   const [removedIds, setRemovedIds] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const load = async () => {
+  const reload = useCallback(async () => {
     setLoading(true);
     setError('');
-    try {
-      const data = await masterApi.get('/master/functional-issues');
+    const [issuesResult, categoriesResult] = await Promise.allSettled([
+      masterApi.get('/master/functional-issues'),
+      masterApi.get('/master/device-categories'),
+    ]);
+
+    let loadError = null;
+    if (issuesResult.status === 'fulfilled') {
+      const data = issuesResult.value;
       setList(Array.isArray(data) ? data : data?.content ?? []);
-    } catch (e) {
-      setError(e.message || 'Failed to load');
+    } else {
+      loadError = issuesResult.reason;
       setList([]);
-    } finally {
-      setLoading(false);
     }
-  };
+
+
+    if (categoriesResult.status === 'fulfilled') {
+      const data = categoriesResult.value;
+      setCategories(Array.isArray(data) ? data : data?.content ?? []);
+    } else {
+      loadError ||= categoriesResult.reason;
+      setCategories([]);
+    }
+
+    if (loadError) setError(loadError?.message || 'Failed to load');
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    load();
-    masterApi.get('/master/device-categories')
-      .then((d) => setCategories(Array.isArray(d) ? d : d?.content ?? []))
-      .catch(() => {});
-  }, []);
+    reload();
+  }, [reload]);
 
   const catName = (id) => categories.find((c) => c.id === id)?.name || 'All categories (shared)';
   const filtered = filterCategory ? list.filter((r) => r.deviceCategoryId === filterCategory) : list;
@@ -103,7 +119,7 @@ export default function MasterFunctionalIssuesPage() {
         });
       }
       closeModal();
-      load();
+      reload();
     } catch (e) {
       setError(e.body?.message || e.message || 'Request failed');
     } finally {
@@ -117,7 +133,7 @@ export default function MasterFunctionalIssuesPage() {
       for (const it of group.items) {
         await masterApi.delete(`/master/functional-issues/${it.id}`).catch(() => {});
       }
-      load();
+      reload();
     } catch (e) {
       setError(e.body?.message || e.message || 'Delete failed');
     }
@@ -142,7 +158,7 @@ export default function MasterFunctionalIssuesPage() {
     <div className="p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Functional Issues</h1>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
@@ -151,6 +167,14 @@ export default function MasterFunctionalIssuesPage() {
             <option value="">All categories</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
           </select>
+          <SellFlowBulkActions
+            kind="functionalIssues"
+            categories={categories}
+            rows={filtered}
+            filterCategory={filterCategory}
+            onRefresh={reload}
+            onImport={() => setImportOpen(true)}
+          />
           <button
             type="button"
             onClick={openCreate}
@@ -230,6 +254,14 @@ export default function MasterFunctionalIssuesPage() {
             </form>
           </div>
         </div>
+      )}
+      {importOpen && (
+        <SellFlowImportModal
+          kind="functionalIssues"
+          categories={categories}
+          onClose={() => setImportOpen(false)}
+          onImported={reload}
+        />
       )}
     </div>
   );

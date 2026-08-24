@@ -1,8 +1,14 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Download, FileSpreadsheet, RefreshCw, Upload } from 'lucide-react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import RepairServicesImportModal from '@/components/RepairServicesImportModal';
+import {
+  exportRepairServicesTemplateWorkbook,
+  exportRepairServicesWorkbook,
+} from '@/lib/repairServicesExcel';
 
 // Split a typed/pasted value into individual names on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -11,6 +17,11 @@ const mergeUnique = (prev, parts) => {
   for (const p of parts) if (!next.some((n) => n.toLowerCase() === p.toLowerCase())) next.push(p);
   return next;
 };
+const slugify = (value) => String(value || '')
+  .toLowerCase()
+  .trim()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
 
 export default function MasterRepairServicesPage() {
   const [categories, setCategories] = useState([]);   // device categories
@@ -23,9 +34,15 @@ export default function MasterRepairServicesPage() {
   const [error, setError] = useState('');
 
   const [modal, setModal] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportMenu, setExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
   const [deviceCategoryId, setDeviceCategoryId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [name, setName] = useState('');            // edit mode (single issue)
+  const [description, setDescription] = useState('');
+  const [iconUrl, setIconUrl] = useState('');
   const [issueInput, setIssueInput] = useState(''); // create mode typing buffer
   const [issueNames, setIssueNames] = useState([]); // create mode bulk list
   const [submitting, setSubmitting] = useState(false);
@@ -83,6 +100,8 @@ export default function MasterRepairServicesPage() {
     setDeviceCategoryId(filterCategory || categories[0]?.id || '');
     setCategoryId(filterMain || '');
     setName('');
+    setDescription('');
+    setIconUrl('');
     setIssueInput('');
     setIssueNames([]);
   };
@@ -91,6 +110,8 @@ export default function MasterRepairServicesPage() {
     setDeviceCategoryId(item.deviceCategoryId || '');
     setCategoryId(item.categoryId || '');
     setName(item.name || '');
+    setDescription(item.description || '');
+    setIconUrl(item.iconUrl || '');
   };
   const closeModal = () => setModal(null);
 
@@ -119,7 +140,11 @@ export default function MasterRepairServicesPage() {
       } else {
         if (!name.trim()) { setSubmitting(false); return; }
         await masterApi.put(`/master/repair-services/${modal.item.id}`, {
-          name: name.trim(), deviceCategoryId, categoryId,
+          name: name.trim(),
+          description: description.trim() || null,
+          iconUrl: iconUrl.trim(),
+          deviceCategoryId,
+          categoryId,
         });
       }
       closeModal();
@@ -140,6 +165,62 @@ export default function MasterRepairServicesPage() {
       setError(e.body?.message || e.message || 'Delete failed');
     }
   };
+
+  const exportFilename = () => {
+    const parts = ['ggfix-repair-services'];
+    const category = categories.find((item) => item.id === filterCategory)?.name;
+    const mainCategory = mainCats.find((item) => item.id === filterMain)?.name;
+    if (category) parts.push(slugify(category));
+    if (mainCategory) parts.push(slugify(mainCategory));
+    parts.push(new Date().toISOString().slice(0, 10));
+    return parts.join('-');
+  };
+
+  useEffect(() => {
+    if (!exportMenu) return undefined;
+    const onMouseDown = (event) => {
+      if (!exportMenuRef.current?.contains(event.target)) setExportMenu(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setExportMenu(false);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [exportMenu]);
+
+  const runExport = async (build) => {
+    setExportMenu(false);
+    setExporting(true);
+    setError('');
+    try {
+      await build();
+    } catch (exportError) {
+      setError(exportError.message || 'Could not build the Excel file.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleExport = () => list.length && runExport(() => exportRepairServicesWorkbook(
+    list,
+    { deviceCategory: deviceName, mainCategory: mainName },
+    exportFilename(),
+  ));
+
+  const handleExportEmpty = () => runExport(() => {
+    const categoryNameById = new Map(categories.map((category) => [category.id, category.name]));
+    return exportRepairServicesTemplateWorkbook({
+      categories: categories.map((category) => category.name),
+      mainCategories: mainCats.map((category) => ({
+        name: category.name,
+        category: categoryNameById.get(category.deviceCategoryId) || '',
+      })),
+    });
+  });
 
   const columns = useMemo(() => [
     { key: 'deviceCategoryId', label: 'Category', render: (r) => deviceName(r.deviceCategoryId) },
@@ -171,6 +252,80 @@ export default function MasterRepairServicesPage() {
           </select>
           <button
             type="button"
+            onClick={() => { loadRefData(); load(); }}
+            title="Reload Repair Services"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-admin-border bg-admin-card px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+            Refresh
+          </button>
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              type="button"
+              onClick={() => setExportMenu((open) => !open)}
+              disabled={exporting}
+              aria-haspopup="menu"
+              aria-expanded={exportMenu}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-admin-border bg-admin-card px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark disabled:opacity-50"
+            >
+              <Download size={16} />
+              {exporting ? 'Exporting…' : 'Export'}
+              <ChevronDown size={14} className={exportMenu ? 'rotate-180 transition-transform' : 'transition-transform'} />
+            </button>
+            {exportMenu && (
+              <div
+                role="menu"
+                className="absolute right-0 z-20 mt-1 w-72 overflow-hidden rounded-lg border border-admin-border bg-admin-card shadow-lg"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleExport}
+                  disabled={loading || !list.length}
+                  className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-admin-dark disabled:opacity-50 disabled:hover:bg-transparent"
+                >
+                  <Download size={16} className="mt-0.5 shrink-0 text-slate-500" />
+                  <span>
+                    <span className="block text-sm font-medium text-slate-900">
+                      Listed issues{list.length ? ' (' + list.length + ')' : ''}
+                    </span>
+                    <span className="block text-xs text-admin-muted">
+                      {list.length
+                        ? 'The rows the filters above select, with their data.'
+                        : 'Nothing matches the current filters.'}
+                    </span>
+                  </span>
+                </button>
+                <div className="border-t border-admin-border" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleExportEmpty}
+                  className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-admin-dark"
+                >
+                  <FileSpreadsheet size={16} className="mt-0.5 shrink-0 text-slate-500" />
+                  <span>
+                    <span className="block text-sm font-medium text-slate-900">Empty format</span>
+                    <span className="block text-xs text-admin-muted">
+                      Headers only, with Category / Main Category dropdowns. Fill it in, then Import.
+                    </span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            disabled={!categories.length || !mainCats.length}
+            title="Upload a filled-in Excel file to create or update Repair Services in bulk"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-admin-border bg-admin-card px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark disabled:opacity-50"
+          >
+            <Upload size={16} />
+            Import
+          </button>
+          <button
+            type="button"
             onClick={openCreate}
             disabled={!categories.length}
             className="rounded-lg bg-admin-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
@@ -181,7 +336,8 @@ export default function MasterRepairServicesPage() {
       </div>
       <p className="text-admin-muted text-sm mb-4">
         Issues live under a main category — e.g. <span className="text-slate-600">Mobile → Display &amp; Touch → "Screen Broken"</span>.
-        Create the main category first in <span className="text-slate-600">Repair Categories</span>.
+        {' '}Create the main category first in <span className="text-slate-600">Repair Categories</span>. Export writes the rows the
+        {' '}filters above select; Import reads that same sheet back, creating new issues and updating the ones it recognises.
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {loading ? (
@@ -259,17 +415,40 @@ export default function MasterRepairServicesPage() {
                   </p>
                 </div>
               ) : (
-                <div>
-                  <label className="block text-sm text-admin-muted mb-1">Issue name</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
-                    placeholder="e.g. Screen Broken"
-                    required
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="block text-sm text-admin-muted mb-1">Issue name</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
+                      placeholder="e.g. Screen Broken"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-admin-muted mb-1">Description</label>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
+                      placeholder="Optional customer-facing description"
+                      rows={3}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-admin-muted mb-1">Icon URL</label>
+                    <input
+                      type="url"
+                      value={iconUrl}
+                      onChange={(e) => setIconUrl(e.target.value)}
+                      className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
+                      placeholder="https://media.ggfix.in/repair-services/icon.png"
+                    />
+                    <p className="mt-1 text-xs text-admin-muted">Optional icon used in the customer repair-service picker.</p>
+                  </div>
+                </>
               )}
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={closeModal} className="rounded-lg px-4 py-2 text-slate-600 hover:bg-admin-dark">Cancel</button>
@@ -280,6 +459,14 @@ export default function MasterRepairServicesPage() {
             </form>
           </div>
         </div>
+      )}
+      {importOpen && (
+        <RepairServicesImportModal
+          categories={categories}
+          mainCategories={mainCats}
+          onClose={() => setImportOpen(false)}
+          onImported={() => { loadRefData(); load(); }}
+        />
       )}
     </div>
   );

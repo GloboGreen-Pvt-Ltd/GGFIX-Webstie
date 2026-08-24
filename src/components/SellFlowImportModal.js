@@ -361,6 +361,7 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
               <ClearWarning count={counts.clearsIcon}><strong>{counts.clearsIcon}</strong> existing icon URL{counts.clearsIcon === 1 ? '' : 's'} will be cleared by blank Icon URL cells.</ClearWarning>
               <ClearWarning count={counts.clearsOptions}><strong>{counts.clearsOptions}</strong> configuration field{counts.clearsOptions === 1 ? '' : 's'} will have all options removed by blank Options cells.</ClearWarning>
               <ClearWarning count={counts.replacesOptions}><strong>{counts.replacesOptions}</strong> configuration field{counts.replacesOptions === 1 ? '' : 's'} will replace its option list, which regenerates those option IDs.</ClearWarning>
+              <ClearWarning count={counts.migratesCompositeOptions}><strong>{counts.migratesCompositeOptions}</strong> legacy condition option{counts.migratesCompositeOptions === 1 ? '' : 's'} will be split: the original record becomes the first label and new records are created for the remaining labels.</ClearWarning>
               {kind === 'conditionGroups' && (
                 <p className="rounded-lg border border-admin-border bg-admin-dark px-3 py-2 text-xs text-admin-muted">Condition categories are saved first; their options are saved only after the parent group succeeds. Import adds or updates listed options—it never deletes options that are absent from the sheet.</p>
               )}

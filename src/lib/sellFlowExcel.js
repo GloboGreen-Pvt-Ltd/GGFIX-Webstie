@@ -110,8 +110,8 @@ const DEFINITIONS = {
       { key: 'groupName', header: 'Condition Category', width: 32, required: 'Yes for new groups', help: 'For example Screen Condition or Back Panel.' },
       { key: 'flow', header: 'Flow', width: 16, required: 'Yes for new groups', help: 'COMMON, WORKING or DEAD.' },
       { key: 'groupSortOrder', header: 'Group Sort Order', width: 18, required: 'Optional', help: 'Whole number ordering for the condition category.' },
-      { key: 'optionId', header: 'Option ID', width: 38, id: true, required: 'Keep for updates', help: 'Condition-option ID. It must already belong to this group; imports never move options between groups.' },
-      { key: 'optionLabel', header: 'Option Label', width: 32, required: 'Optional', help: 'For example No Damage or Screen Broken. Leave every option column blank to import only the group.' },
+      { key: 'optionId', header: 'Option ID', width: 38, id: true, required: 'Keep for updates', help: 'Condition-option ID. It must already belong to this group. Keep it only when this row has one Option Label.' },
+      { key: 'optionLabel', header: 'Option Label', width: 32, required: 'Optional', help: 'One selectable option per row, for example No Damage or Screen Broken. Legacy comma, pipe, semicolon or new-line values can be split only when Option ID is blank.' },
       { key: 'priceImpact', header: 'Price Impact', width: 16, required: 'Optional', help: 'Number, positive or negative. A blank value clears an existing optional price impact.' },
       { key: 'iconUrl', header: 'Icon URL', width: 58, required: 'Optional', help: 'Image URL for this option. A blank cell clears it; delete this column to preserve existing icon URLs.' },
       { key: 'optionSortOrder', header: 'Option Sort Order', width: 18, required: 'Optional', help: 'Whole number ordering within the condition category.' },
@@ -335,10 +335,12 @@ function rowsForExport(definition, rows, categories, optionsByGroup) {
 
   // Condition Groups are deliberately a flat parent/child export: a group with
   // N options occupies N rows, and a group without options still occupies one.
+  // Some older records have a delimiter-separated label in one option record.
+  // Those are canonicalised here so the workbook always has one label per row.
   const flat = [];
   for (const group of list) {
     const groupOptions = optionsForGroup(optionsByGroup, group.id, group.options);
-    const optionRows = groupOptions.length ? groupOptions : [null];
+    const optionRows = groupOptions.length ? expandConditionOptionsForExport(groupOptions) : [null];
     for (const option of optionRows) {
       const values = {
         groupId: idText(group.id),
@@ -347,11 +349,11 @@ function rowsForExport(definition, rows, categories, optionsByGroup) {
         groupName: text(group.name),
         flow: text(group.flow) || 'COMMON',
         groupSortOrder: numberCell(group.sortOrder),
-        optionId: idText(option?.id),
-        optionLabel: text(option?.label),
+        optionId: option?.optionId ?? idText(option?.id),
+        optionLabel: option?.optionLabel ?? optionLabel(option),
         priceImpact: numberCell(option?.priceImpact),
         iconUrl: option?.iconUrl ?? '',
-        optionSortOrder: numberCell(option?.sortOrder),
+        optionSortOrder: numberCell(option?.optionSortOrder ?? option?.sortOrder),
       };
       flat.push(definition.columns.map((column) => values[column.key] ?? ''));
     }
@@ -391,7 +393,11 @@ function buildGuideSheet(XLSX, definition, columns, template) {
       ? [['A blank Options cell clears all options. Delete the whole Options column to keep existing options unchanged.']]
       : []),
     ...(definition.kind === 'conditionGroups'
-      ? [['A blank Icon URL cell clears an option icon. Option IDs cannot be moved to a different condition group.']]
+      ? [
+        ['Use one Option Label per row. The importer splits comma, pipe, semicolon or new-line labels only when Option ID is blank.'],
+        ['A legacy combined option is migrated only when that exact combined label uniquely matches an existing option; it becomes the first label and the remaining labels are created.'],
+        ['A blank Icon URL cell clears an option icon. Option IDs cannot be moved to a different condition group.'],
+      ]
       : []),
     ['Do not rename the data sheet; that is the sheet the importer reads.'],
     [],
@@ -645,6 +651,60 @@ function optionsForGroup(optionsByGroup, groupId, fallback) {
     return asArray(optionsByGroup[key] ?? fallback);
   }
   return asArray(fallback);
+}
+
+function optionLabel(option) {
+  if (typeof option === 'string') return text(option);
+  return text(option?.label ?? option?.value);
+}
+
+function splitConditionOptionLabels(value) {
+  const values = text(value)
+    .split(/[|,;\n\r]+/)
+    .map((entry) => text(entry))
+    .filter(Boolean);
+  const seen = new Set();
+  const duplicates = [];
+  const unique = [];
+  for (const entry of values) {
+    const key = lower(entry);
+    if (seen.has(key)) duplicates.push(entry);
+    else {
+      seen.add(key);
+      unique.push(entry);
+    }
+  }
+  return { values: unique, duplicates };
+}
+
+/**
+ * Make the exported Condition Groups workbook canonical even when a legacy
+ * option record stores several labels in one delimited string. The original ID
+ * can only update one record, so it stays with the first label; added rows are
+ * intentionally new options. A monotonic sort sequence keeps those added rows
+ * ordered and avoids duplicate sort values after expansion.
+ */
+function expandConditionOptionsForExport(options) {
+  const expanded = [];
+  let nextSort = 0;
+  for (const option of asArray(options)) {
+    const parsed = splitConditionOptionLabels(optionLabel(option));
+    const labels = parsed.values.length ? parsed.values : [''];
+    const suppliedSort = Number(option?.sortOrder);
+    const startSort = Number.isInteger(suppliedSort)
+      ? Math.max(suppliedSort, nextSort)
+      : nextSort;
+    labels.forEach((label, index) => {
+      expanded.push({
+        ...(typeof option === 'object' && option ? option : {}),
+        optionId: index === 0 ? idText(option?.id) : '',
+        optionLabel: label,
+        optionSortOrder: startSort + index,
+      });
+    });
+    nextSort = startSort + labels.length;
+  }
+  return expanded;
 }
 
 function optionValues(options) {
@@ -943,10 +1003,11 @@ function optionGroupMap(groups, optionsByGroup) {
     const groupId = idText(group?.id);
     for (const option of optionsForGroup(optionsByGroup, groupId, group?.options)) {
       const id = idText(option?.id);
-      const identity = id || groupId + '::' + lower(option?.label) + '::' + String(all.length);
+      const label = optionLabel(option);
+      const identity = id || groupId + '::' + lower(label) + '::' + String(all.length);
       if (seen.has(identity)) continue;
       seen.add(identity);
-      all.push({ ...option, groupId: option?.groupId ?? groupId });
+      all.push({ ...(typeof option === 'object' && option ? option : {}), label, groupId: option?.groupId ?? groupId });
     }
   }
   return all;
@@ -1143,6 +1204,19 @@ function planConditionGroups({ parsed, rows, categories, optionsByGroup }) {
     return current;
   };
 
+  const addOptionError = (row, groupItem, message, values = row.values) => {
+    optionItems.push({
+      rowNumber: row.rowNumber,
+      values,
+      phase: 'option',
+      action: 'error',
+      groupKey: groupItem?.groupKey || ('error:' + row.rowNumber),
+      groupExistingId: groupItem?.existingId || null,
+      error: message,
+    });
+    errorRows.add(row.rowNumber);
+  };
+
   for (const row of inputRows) {
     const values = row.values;
     const context = sourceContext.get(row.rowNumber);
@@ -1150,96 +1224,159 @@ function planConditionGroups({ parsed, rows, categories, optionsByGroup }) {
       .some((key) => present.has(key) && Boolean(text(values[key])));
     if (!hasOption || !context?.valid) continue;
     const groupItem = context.item;
-    const item = {
-      rowNumber: row.rowNumber,
-      values,
-      phase: 'option',
-      action: 'error',
-      groupKey: groupItem.groupKey,
-      groupExistingId: groupItem.existingId || null,
-      error: '',
-    };
-    let existing = null;
-    if (present.has('optionId') && values.optionId) {
-      const matches = countAt(optionsById, idText(values.optionId));
-      if (!matches) {
-        item.error = 'No condition option has Option ID ' + values.optionId + '.';
-        optionItems.push(item); errorRows.add(row.rowNumber); continue;
-      }
-      if (matches > 1) {
-        item.error = 'More than one condition option has Option ID ' + values.optionId + '. Refresh the page and try again.';
-        optionItems.push(item); errorRows.add(row.rowNumber); continue;
-      }
-      existing = one(optionsById, idText(values.optionId));
-      if (!groupItem.existingId || !sameId(existing.groupId, groupItem.existingId)) {
-        item.error = 'Option ID ' + values.optionId + ' belongs to a different condition group. Imports never move options between groups.';
-        optionItems.push(item); errorRows.add(row.rowNumber); continue;
-      }
+    const rawOptionLabel = text(values.optionLabel);
+    const splitLabels = rawOptionLabel ? splitConditionOptionLabels(rawOptionLabel) : { values: [], duplicates: [] };
+    const hasMultipleLabels = splitLabels.values.length > 1;
+
+    if (rawOptionLabel && !splitLabels.values.length) {
+      addOptionError(row, groupItem, 'Option Label has no values. Enter one label per row or use a non-empty comma-separated list.');
+      continue;
     }
 
-    const suppliedLabel = text(values.optionLabel);
-    if (!existing && suppliedLabel && groupItem.existingId) {
-      const naturalKey = scopedKey(groupItem.existingId, suppliedLabel);
-      const matches = countAt(optionsByGroupAndLabel, naturalKey);
-      if (matches > 1) {
-        item.error = 'More than one option named "' + suppliedLabel + '" exists in ' + groupItem.label + '. Use Option ID.';
-        optionItems.push(item); errorRows.add(row.rowNumber); continue;
-      }
-      existing = one(optionsByGroupAndLabel, naturalKey);
+    // A UUID represents exactly one persisted option. Silently fanning it out
+    // would make the importer update the same row repeatedly, so stop for a
+    // review instead. Canonical exports keep the ID on the first line only.
+    if (hasMultipleLabels && present.has('optionId') && text(values.optionId)) {
+      addOptionError(row, groupItem, 'Option ID ' + values.optionId + ' cannot be used with multiple Option Labels. Put each label on its own row; only the first migrated row may keep the old ID.');
+      continue;
     }
-    const label = suppliedLabel || text(existing?.label);
-    if (!label) {
-      item.error = 'Option Label is empty. New options need an Option Label.';
-      optionItems.push(item); errorRows.add(row.rowNumber); continue;
-    }
-    if (existing && groupItem.existingId) {
-      const sameLabelElsewhere = (optionsByGroupAndLabel.get(scopedKey(groupItem.existingId, label)) || [])
-        .some((option) => !sameId(option.id, existing.id));
-      if (sameLabelElsewhere) {
-        item.error = 'Another option named "' + label + '" already exists in ' + groupItem.label + '.';
-        optionItems.push(item); errorRows.add(row.rowNumber); continue;
-      }
+    if (splitLabels.duplicates.length) {
+      addOptionError(row, groupItem, 'Option Label contains duplicates after splitting: ' + splitLabels.duplicates.join(', ') + '.');
+      continue;
     }
 
     const priceInput = present.has('priceImpact') ? parseNumber(values.priceImpact, 'Price Impact') : { empty: true };
     if (priceInput.error) {
-      item.error = priceInput.error;
-      optionItems.push(item); errorRows.add(row.rowNumber); continue;
+      addOptionError(row, groupItem, priceInput.error);
+      continue;
     }
-    const sortInput = present.has('optionSortOrder') ? parseNumber(values.optionSortOrder, 'Option Sort Order', true) : { empty: true };
-    if (sortInput.error) {
-      item.error = sortInput.error;
-      optionItems.push(item); errorRows.add(row.rowNumber); continue;
+    const sourceSortInput = present.has('optionSortOrder') ? parseNumber(values.optionSortOrder, 'Option Sort Order', true) : { empty: true };
+    if (sourceSortInput.error) {
+      addOptionError(row, groupItem, sourceSortInput.error);
+      continue;
     }
-    const duplicateKey = existing
-      ? 'id:' + idText(existing.id)
-      : 'new:' + groupItem.groupKey + '::' + lower(label);
-    const duplicate = seenOptions.get(duplicateKey);
-    if (duplicate) {
-      item.error = 'Duplicate of row ' + duplicate + ' - both rows point at the same condition option.';
-      optionItems.push(item); errorRows.add(row.rowNumber); continue;
-    }
-    seenOptions.set(duplicateKey, row.rowNumber);
 
-    item.action = existing ? 'update' : 'create';
-    item.existingId = existing ? idText(existing.id) : null;
-    item.payload = {
-      // This is ready for an existing parent. For a just-created parent the
-      // importer substitutes the UUID resolved by `groupKey` before POST/PUT.
-      groupId: groupItem.existingId || null,
-      label,
-      priceImpact: present.has('priceImpact')
-        ? (priceInput.empty ? (existing ? null : 0) : priceInput.value)
-        : (existing ? (existing.priceImpact ?? null) : 0),
-      iconUrl: present.has('iconUrl') ? (text(values.iconUrl) || null) : (existing?.iconUrl ?? null),
-    };
-    if (!existing || !sortInput.empty) {
-      item.payload.sortOrder = sortInput.empty ? nextOptionSort(groupItem) : sortInput.value;
+    const labels = rawOptionLabel ? splitLabels.values : [''];
+    const sourceLabel = rawOptionLabel;
+    let legacyComposite = null;
+    if (hasMultipleLabels && groupItem.existingId) {
+      const legacyKey = scopedKey(groupItem.existingId, sourceLabel);
+      const legacyMatches = countAt(optionsByGroupAndLabel, legacyKey);
+      if (legacyMatches > 1) {
+        addOptionError(row, groupItem, 'More than one legacy option exactly matches "' + sourceLabel + '" in ' + groupItem.label + '. Use separate rows and Option IDs.');
+        continue;
+      }
+      legacyComposite = one(optionsByGroupAndLabel, legacyKey);
+      if (legacyComposite) {
+        // The legacy row is renamed to the first value. That is only safe when
+        // the target label does not already belong to another option.
+        const firstTarget = optionsByGroupAndLabel.get(scopedKey(groupItem.existingId, labels[0])) || [];
+        if (firstTarget.some((option) => !sameId(option.id, legacyComposite.id))) {
+          addOptionError(row, groupItem, 'Cannot migrate legacy option "' + sourceLabel + '" because "' + labels[0] + '" already exists in ' + groupItem.label + '. Resolve the duplicate first.');
+          continue;
+        }
+        const ambiguousTarget = labels.find((label) => countAt(optionsByGroupAndLabel, scopedKey(groupItem.existingId, label)) > 1);
+        if (ambiguousTarget) {
+          addOptionError(row, groupItem, 'More than one option named "' + ambiguousTarget + '" exists in ' + groupItem.label + '. Use separate rows and Option IDs.');
+          continue;
+        }
+      }
     }
-    item.label = groupItem.label + ' -> ' + label;
-    item.clearsIcon = Boolean(existing?.iconUrl && present.has('iconUrl') && !text(values.iconUrl));
-    item.error = '';
-    optionItems.push(item);
+
+    for (let labelIndex = 0; labelIndex < labels.length; labelIndex += 1) {
+      const suppliedLabel = labels[labelIndex];
+      const itemValues = hasMultipleLabels
+        ? {
+          ...values,
+          optionId: '',
+          optionLabel: suppliedLabel,
+          optionSortOrder: sourceSortInput.empty ? values.optionSortOrder : String(sourceSortInput.value + labelIndex),
+        }
+        : values;
+      const item = {
+        rowNumber: row.rowNumber,
+        values: itemValues,
+        phase: 'option',
+        action: 'error',
+        groupKey: groupItem.groupKey,
+        groupExistingId: groupItem.existingId || null,
+        error: '',
+      };
+      let existing = legacyComposite && labelIndex === 0 ? legacyComposite : null;
+      if (!existing && present.has('optionId') && values.optionId) {
+        const matches = countAt(optionsById, idText(values.optionId));
+        if (!matches) {
+          item.error = 'No condition option has Option ID ' + values.optionId + '.';
+          optionItems.push(item); errorRows.add(row.rowNumber); continue;
+        }
+        if (matches > 1) {
+          item.error = 'More than one condition option has Option ID ' + values.optionId + '. Refresh the page and try again.';
+          optionItems.push(item); errorRows.add(row.rowNumber); continue;
+        }
+        existing = one(optionsById, idText(values.optionId));
+        if (!groupItem.existingId || !sameId(existing.groupId, groupItem.existingId)) {
+          item.error = 'Option ID ' + values.optionId + ' belongs to a different condition group. Imports never move options between groups.';
+          optionItems.push(item); errorRows.add(row.rowNumber); continue;
+        }
+      }
+
+      if (!existing && suppliedLabel && groupItem.existingId) {
+        const naturalKey = scopedKey(groupItem.existingId, suppliedLabel);
+        const matches = countAt(optionsByGroupAndLabel, naturalKey);
+        if (matches > 1) {
+          item.error = 'More than one option named "' + suppliedLabel + '" exists in ' + groupItem.label + '. Use Option ID.';
+          optionItems.push(item); errorRows.add(row.rowNumber); continue;
+        }
+        existing = one(optionsByGroupAndLabel, naturalKey);
+      }
+      const label = suppliedLabel || text(existing?.label);
+      if (!label) {
+        item.error = 'Option Label is empty. New options need an Option Label.';
+        optionItems.push(item); errorRows.add(row.rowNumber); continue;
+      }
+      if (existing && groupItem.existingId) {
+        const sameLabelElsewhere = (optionsByGroupAndLabel.get(scopedKey(groupItem.existingId, label)) || [])
+          .some((option) => !sameId(option.id, existing.id));
+        if (sameLabelElsewhere) {
+          item.error = 'Another option named "' + label + '" already exists in ' + groupItem.label + '.';
+          optionItems.push(item); errorRows.add(row.rowNumber); continue;
+        }
+      }
+
+      const sortOrder = sourceSortInput.empty
+        ? null
+        : sourceSortInput.value + (hasMultipleLabels ? labelIndex : 0);
+      const duplicateKey = existing
+        ? 'id:' + idText(existing.id)
+        : 'new:' + groupItem.groupKey + '::' + lower(label);
+      const duplicate = seenOptions.get(duplicateKey);
+      if (duplicate) {
+        item.error = 'Duplicate of row ' + duplicate + ' - both rows point at the same condition option.';
+        optionItems.push(item); errorRows.add(row.rowNumber); continue;
+      }
+      seenOptions.set(duplicateKey, row.rowNumber);
+
+      item.action = existing ? 'update' : 'create';
+      item.existingId = existing ? idText(existing.id) : null;
+      item.payload = {
+        // This is ready for an existing parent. For a just-created parent the
+        // importer substitutes the UUID resolved by `groupKey` before POST/PUT.
+        groupId: groupItem.existingId || null,
+        label,
+        priceImpact: present.has('priceImpact')
+          ? (priceInput.empty ? (existing ? null : 0) : priceInput.value)
+          : (existing ? (existing.priceImpact ?? null) : 0),
+        iconUrl: present.has('iconUrl') ? (text(values.iconUrl) || null) : (existing?.iconUrl ?? null),
+      };
+      if (!existing || !sourceSortInput.empty) {
+        item.payload.sortOrder = sourceSortInput.empty ? nextOptionSort(groupItem) : sortOrder;
+      }
+      item.label = groupItem.label + ' -> ' + label;
+      item.clearsIcon = Boolean(existing?.iconUrl && present.has('iconUrl') && !text(values.iconUrl));
+      item.migratesCompositeOption = Boolean(legacyComposite && labelIndex === 0);
+      item.error = '';
+      optionItems.push(item);
+    }
   }
 
   // Internal comparison fields are useful while grouping repeated option rows,
@@ -1270,6 +1407,7 @@ function planConditionGroups({ parsed, rows, categories, optionsByGroup }) {
       optionUpdate,
       optionError: optionItems.filter((item) => item.action === 'error').length,
       clearsIcon: optionItems.filter((item) => item.clearsIcon).length,
+      migratesCompositeOptions: optionItems.filter((item) => item.migratesCompositeOption).length,
     },
   };
 }

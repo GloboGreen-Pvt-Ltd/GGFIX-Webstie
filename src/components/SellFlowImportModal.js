@@ -29,6 +29,11 @@ const COPY = {
     noun: 'question',
     match: 'Rows match by ID first, then by Category + Flow + Question.',
   },
+  conditionCategories: {
+    title: 'Import condition categories from Excel',
+    noun: 'condition category',
+    match: 'Rows match by Condition Category ID first, then Group Code, then Category + Flow + Condition Category.',
+  },
   conditionGroups: {
     title: 'Import condition groups from Excel',
     noun: 'condition group',
@@ -79,6 +84,7 @@ function Stat({ label, value, tone = 'slate', active, onClick, hint }) {
     </button>
   );
 }
+
 function ClearWarning({ count, children }) {
   if (!count) return null;
   return (
@@ -122,6 +128,7 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
     }
     const path = {
       screeningQuestions: '/master/screening-questions',
+      conditionCategories: '/master/condition-groups',
       functionalIssues: '/master/functional-issues',
       deviceConfiguration: '/master/config-fields',
     }[kind];
@@ -178,6 +185,7 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
   const applyScalarPlan = async (items, failures) => {
     const path = {
       screeningQuestions: '/master/screening-questions',
+      conditionCategories: '/master/condition-groups',
       functionalIssues: '/master/functional-issues',
       deviceConfiguration: '/master/config-fields',
     }[kind];

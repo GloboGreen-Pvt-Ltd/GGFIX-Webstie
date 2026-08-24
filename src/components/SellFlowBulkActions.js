@@ -14,6 +14,12 @@ const COPY = {
     emptyHelp: 'Headers and Category / Flow dropdowns. Fill it in, then Import.',
     prefix: 'ggfix-screening-questions',
   },
+  conditionCategories: {
+    listed: 'Listed condition categories',
+    empty: 'Empty format',
+    emptyHelp: 'Headers and Category / Flow dropdowns. Fill it in, then Import.',
+    prefix: 'ggfix-condition-categories',
+  },
   conditionGroups: {
     listed: 'Listed condition groups',
     empty: 'Empty format',

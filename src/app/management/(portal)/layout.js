@@ -21,6 +21,7 @@ const SECTION_BY_SLUG = {
   'technician-work-statuses': 'Master Admin',
   // Sell Flow Master Data
   'screening-questions': 'Master Admin',
+  'condition-categories': 'Master Admin',
   'condition-groups': 'Master Admin',
   'functional-issues': 'Master Admin',
   'device-configuration': 'Master Admin',

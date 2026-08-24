@@ -21,6 +21,8 @@ const asArray = (value) => (Array.isArray(value) ? value : (Array.isArray(value?
 const KIND_ALIASES = {
   screeningquestions: 'screeningQuestions',
   screeningquestion: 'screeningQuestions',
+  conditioncategories: 'conditionCategories',
+  conditioncategory: 'conditionCategories',
   conditiongroups: 'conditionGroups',
   conditiongroup: 'conditionGroups',
   functionalissues: 'functionalIssues',
@@ -64,6 +66,34 @@ const DEFINITIONS = {
     example: {
       id: '', categoryName: 'Mobile', flow: 'COMMON', question: 'Does the device switch on?',
       description: 'Choose Yes only if it can power on.', sortOrder: '0', isActive: 'Yes',
+    },
+  },
+  conditionCategories: {
+    kind: 'conditionCategories',
+    label: 'Condition Categories',
+    sheetName: 'Condition Categories',
+    filenamePrefix: 'ggfix-condition-categories',
+    primaryKey: 'groupName',
+    hasFlow: true,
+    columns: [
+      { key: 'groupId', header: 'Condition Category ID', width: 38, id: true, required: 'Keep for updates', help: 'Database ID. Keep it to update this condition category; leave blank to create one.' },
+      { key: 'categoryName', header: 'Category', width: 26, required: 'Yes for new rows', help: 'Existing device category. Categories are never created by an import.' },
+      { key: 'groupCode', header: 'Group Code', width: 24, required: 'Optional', help: 'Stable group code. Keep it to recognise an exported row; leave it blank for a new category to create a code automatically.' },
+      { key: 'groupName', header: 'Condition Category', width: 36, required: 'Yes for new rows', help: 'For example Screen Condition or Back Panel.' },
+      { key: 'flow', header: 'Flow', width: 16, required: 'Yes for new rows', help: 'COMMON, WORKING or DEAD.' },
+      { key: 'groupSortOrder', header: 'Sort Order', width: 16, required: 'Optional', help: 'Whole number ordering. Blank keeps the old order on updates.' },
+    ],
+    aliases: {
+      groupId: ['conditioncategoryid', 'groupid', 'id', 'conditiongroupid'],
+      categoryName: ['category', 'categoryname', 'devicecategory', 'devicecategoryname'],
+      groupCode: ['groupcode', 'code', 'conditiongroupcode'],
+      groupName: ['conditioncategory', 'conditiongroup', 'groupname', 'name'],
+      flow: ['flow', 'groupflow'],
+      groupSortOrder: ['sortorder', 'groupsortorder', 'groupsort', 'grouporder'],
+    },
+    example: {
+      groupId: '', categoryName: 'Mobile', groupCode: 'SCREEN_CONDITION', groupName: 'Screen Condition',
+      flow: 'COMMON', groupSortOrder: '0',
     },
   },
   conditionGroups: {
@@ -171,6 +201,7 @@ export function getSellFlowDefinition(kind) {
   }
   return DEFINITIONS[key];
 }
+
 async function sheetjs() {
   return import('xlsx');
 }
@@ -291,6 +322,17 @@ function rowsForExport(definition, rows, categories, optionsByGroup) {
     });
   }
 
+  if (definition.kind === 'conditionCategories') {
+    return list.map((group) => definition.columns.map((column) => ({
+      groupId: idText(group.id),
+      categoryName: categoryCell(group.deviceCategoryId, indexes),
+      groupCode: text(group.code),
+      groupName: text(group.name),
+      flow: text(group.flow) || 'COMMON',
+      groupSortOrder: numberCell(group.sortOrder),
+    })[column.key] ?? ''));
+  }
+
   // Condition Groups are deliberately a flat parent/child export: a group with
   // N options occupies N rows, and a group without options still occupies one.
   const flat = [];
@@ -320,6 +362,8 @@ function rowsForExport(definition, rows, categories, optionsByGroup) {
 function buildGuideSheet(XLSX, definition, columns, template) {
   const matching = definition.kind === 'conditionGroups'
     ? 'Groups are matched by Group ID, then Group Code, then Category + Flow + Condition Category. Options are matched by Option ID, then by Group + Option Label.'
+    : definition.kind === 'conditionCategories'
+      ? 'Rows are matched by Condition Category ID, then Group Code, then Category + Flow + Condition Category.'
     : definition.kind === 'functionalIssues'
       ? 'Rows are matched by ID, then Category + Functional Issue.'
       : definition.kind === 'deviceConfiguration'
@@ -451,7 +495,7 @@ function aliasesFor(definition) {
 }
 
 function isImportIdentifier(definition, map) {
-  if (definition.kind === 'conditionGroups') {
+  if (definition.kind === 'conditionGroups' || definition.kind === 'conditionCategories') {
     return map.has('groupName') || map.has('groupId') || map.has('groupCode');
   }
   return map.has(definition.primaryKey);
@@ -1244,5 +1288,16 @@ export function planSellFlowImport({ kind, parsed, rows, categories, optionsByGr
   if (definition.kind === 'screeningQuestions') return planScreeningQuestions({ parsed, rows, categories });
   if (definition.kind === 'functionalIssues') return planFunctionalIssues({ parsed, rows, categories });
   if (definition.kind === 'deviceConfiguration') return planDeviceConfiguration({ parsed, rows, categories });
+  if (definition.kind === 'conditionCategories') {
+    const conditionPlan = planConditionGroups({ parsed, rows, categories, optionsByGroup: {} });
+    return {
+      items: conditionPlan.groupItems,
+      counts: {
+        create: conditionPlan.counts.groupCreate,
+        update: conditionPlan.counts.groupUpdate,
+        error: conditionPlan.counts.groupError,
+      },
+    };
+  }
   return planConditionGroups({ parsed, rows, categories, optionsByGroup });
 }

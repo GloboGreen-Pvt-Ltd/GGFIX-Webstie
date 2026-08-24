@@ -59,6 +59,7 @@ const nav = [
     icon: ShoppingCart,
     children: [
       { href: '/management/screening-questions', label: 'Screening Questions', icon: ClipboardList },
+      { href: '/management/condition-categories', label: 'Condition Categories', icon: FolderTree },
       { href: '/management/condition-groups', label: 'Condition Groups', icon: SlidersHorizontal },
       { href: '/management/functional-issues', label: 'Functional Issues', icon: AlertTriangle },
       { href: '/management/device-configuration', label: 'Device Configuration', icon: Settings2 },

@@ -38,7 +38,6 @@ export default function MasterScreeningQuestionsPage() {
       setList([]);
     }
 
-
     if (categoriesResult.status === 'fulfilled') {
       const data = categoriesResult.value;
       setCategories(Array.isArray(data) ? data : data?.content ?? []);

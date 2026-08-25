@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import TablePagination from '@/components/TablePagination';
+import { pageBounds } from '@/lib/pagination';
 import Link from 'next/link';
 import { authApi } from '@/lib/api';
 import { isAdmin as isAdminRole } from '@/lib/auth';
@@ -32,6 +34,8 @@ export default function ShopOwnerListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
   const [confirmingDelete, setConfirmingDelete] = useState(null);
   // Resolved after mount — localStorage is unavailable during SSR/export, and
   // reading it inline would make the first client render disagree with the
@@ -87,6 +91,14 @@ export default function ShopOwnerListPage() {
       ),
     );
   }, [list, query]);
+
+  const { safePage, start } = pageBounds(filtered.length, page, pageSize);
+  const visible = filtered.slice(start, start + pageSize);
+
+  // Searching or reloading can leave the current page past the end of the results;
+  // pageBounds would clamp the slice, but the footer would still read the old page
+  // until something else moved it.
+  useEffect(() => { setPage(0); }, [query, list.length, pageSize]);
 
   return (
     <div className="p-6 md:p-8 space-y-4">
@@ -150,9 +162,9 @@ export default function ShopOwnerListPage() {
                 <tr><td className="px-4 py-6 text-admin-muted" colSpan={14}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td className="px-4 py-6 text-admin-muted" colSpan={14}>No shop owners yet. Click "+ Add Shop Owner" to create one.</td></tr>
-              ) : filtered.map((r, i) => (
+              ) : visible.map((r, i) => (
                 <tr key={r.id} className="hover:bg-admin-dark/40">
-                  <td className="px-4 py-3 text-slate-600">{i + 1}</td>
+                  <td className="px-4 py-3 text-slate-600">{start + i + 1}</td>
                   <td className="px-4 py-3">
                     {r.avatarUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -222,6 +234,15 @@ export default function ShopOwnerListPage() {
             </tbody>
           </table>
         </div>
+        {!loading && filtered.length > 0 && (
+          <TablePagination
+            total={filtered.length}
+            page={safePage}
+            pageSize={pageSize}
+            onPageChange={setPage}
+            onPageSizeChange={setPageSize}
+          />
+        )}
       </div>
 
       {confirmingDelete && (

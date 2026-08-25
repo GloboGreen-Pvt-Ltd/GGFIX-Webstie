@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Search, Eye, Pencil, Power, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-
-const PAGE_SIZES = [10, 50, 100, 500, 1000];
+import { Search, Eye, Pencil, Power, Trash2 } from 'lucide-react';
+import TablePagination from './TablePagination';
+import { pageBounds } from '@/lib/pagination';
 
 /** Green/red status pill matching the reference table. */
 export function StatusPill({ active, activeLabel = 'Active', inactiveLabel = 'Inactive' }) {
@@ -78,9 +78,7 @@ export default function DataTable({
   useEffect(() => { setPage(0); }, [total, pageSize]);
 
   const hasActions = onView || onEdit || onToggle || onDelete;
-  const pageCount = paginate ? Math.max(1, Math.ceil(total / pageSize)) : 1;
-  const safePage = Math.min(page, pageCount - 1);
-  const start = paginate ? safePage * pageSize : 0;
+  const { safePage, start } = pageBounds(total, page, pageSize);
   const visible = paginate ? filtered.slice(start, start + pageSize) : filtered;
 
   return (
@@ -159,42 +157,13 @@ export default function DataTable({
           </div>
 
           {paginate && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-admin-border px-4 py-3">
-              <div className="flex items-center gap-2 text-sm text-admin-muted">
-                <span>Rows per page</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
-                  className="rounded-lg border border-admin-border bg-white px-2 py-1 text-slate-700 focus:border-admin-accent focus:outline-none"
-                >
-                  {PAGE_SIZES.map((s) => (<option key={s} value={s}>{s}</option>))}
-                </select>
-                <span className="ml-1">
-                  Showing {start + 1} to {Math.min(start + pageSize, total)} of {total} entries
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage(safePage - 1)}
-                  disabled={safePage <= 0}
-                  className="flex items-center gap-1 rounded-lg border border-admin-border px-3 py-1.5 text-sm text-slate-600 hover:bg-admin-dark disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="h-4 w-4" /> Previous
-                </button>
-                <span className="rounded-lg bg-admin-dark px-3 py-1.5 text-sm font-medium text-slate-700">
-                  {safePage + 1} / {pageCount}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPage(safePage + 1)}
-                  disabled={safePage >= pageCount - 1}
-                  className="flex items-center gap-1 rounded-lg border border-admin-border px-3 py-1.5 text-sm text-slate-600 hover:bg-admin-dark disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Next <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+            <TablePagination
+              total={total}
+              page={page}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+            />
           )}
         </>
       )}

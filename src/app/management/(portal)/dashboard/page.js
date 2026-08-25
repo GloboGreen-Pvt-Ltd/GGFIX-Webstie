@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Store, CheckCircle2, XCircle, Tag, Briefcase, Boxes } from 'lucide-react';
 import { masterApi, authApi } from '@/lib/api';
-import { mapPool } from '@/lib/concurrency';
 import PageHeader from '@/components/PageHeader';
 
 const asArray = (d) => (Array.isArray(d) ? d : d?.content ?? []);
@@ -35,10 +34,11 @@ export default function AdminDashboardPage() {
     shopsInactive: 0,
     categories: 0,
     brands: 0,
-    models: null, // null = not counted yet; see countModels below
     error: null,
   });
-  const [countingModels, setCountingModels] = useState(false);
+  // Kept out of `stats` because it lands on its own schedule: the shop and brand
+  // numbers are three small requests, the model count is one big one.
+  const [models, setModels] = useState({ value: null, loading: true, failed: false });
 
   useEffect(() => {
     const run = async () => {
@@ -74,30 +74,35 @@ export default function AdminDashboardPage() {
     run();
   }, []);
 
-  // master-data has no count endpoint for models, so a total means pulling every
-  // brand's FULL model list. That used to run eagerly here as a Promise.all over
-  // all ~55 brands — ~54 MB of JSON fired at once, which exhausted the service's
-  // 384 MB heap and took it down on every dashboard visit. It is opt-in now, and
-  // walks a few brands at a time. It gets cheap again once the base64 image_url
-  // rows are backfilled to Cloudinary URLs.
-  const countModels = async () => {
-    setCountingModels(true);
+  /**
+   * Total models, loaded automatically.
+   *
+   * This used to be a Count button, because a total meant pulling every brand's
+   * FULL model list — ~55 requests and tens of MB, most of it base64 images stored
+   * inline on the rows, which exhausted master-data's 384 MB heap and took the
+   * service down on each dashboard visit.
+   *
+   * GET /master/models is a projection with those images stripped, so the whole
+   * catalogue is now ONE request: 3226 models measured 1.4 MB in 0.44s against the
+   * live backend on 2026-08-20. That is well within what a dashboard tile can
+   * fetch on its own, so the button is gone.
+   *
+   * If it ever gets heavy again the honest fix is a count endpoint on master-data
+   * (SELECT count(*)), not another opt-in button — this one only exists client-side
+   * because there is no such endpoint to call.
+   */
+  const loadModelCount = async () => {
+    setModels({ value: null, loading: true, failed: false });
     try {
-      const brands = asArray(await masterApi.get('/master/brands'));
-      let total = 0;
-      await mapPool(brands, 3, async (b) => {
-        const id = b.id ?? b.brandId;
-        if (!id) return;
-        const rows = await masterApi.get(`/master/brands/${id}/models`).catch(() => null);
-        if (rows) total += asArray(rows).length;
-      });
-      setStats((s) => ({ ...s, models: total }));
-    } catch (e) {
-      setStats((s) => ({ ...s, error: e.message }));
-    } finally {
-      setCountingModels(false);
+      const rows = await masterApi.get('/master/models');
+      setModels({ value: asArray(rows).length, loading: false, failed: false });
+    } catch {
+      // Deliberately not folded into stats.error: the other tiles are fine, and a
+      // page-wide "check your backend URLs" banner would misdescribe the problem.
+      setModels({ value: null, loading: false, failed: true });
     }
   };
+  useEffect(() => { loadModelCount(); }, []);
 
   return (
     <div className="p-6 md:p-8">
@@ -127,20 +132,19 @@ export default function AdminDashboardPage() {
           <StatCard title="Brands" value={stats.brands} href="/management/brands" icon={Briefcase} iconBg="bg-amber-100" iconText="text-amber-600" />
           <StatCard
             title="Models"
-            value={stats.models ?? '—'}
+            value={models.loading ? '…' : models.failed ? '—' : models.value.toLocaleString()}
             href="/management/models"
             icon={Boxes}
             iconBg="bg-indigo-100"
             iconText="text-indigo-600"
-            action={stats.models === null ? (
+            action={models.failed ? (
               <button
                 type="button"
-                onClick={countModels}
-                disabled={countingModels}
-                title="Counting models downloads every brand's model list — run it only when you need the number."
-                className="shrink-0 rounded-lg border border-admin-border px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-admin-dark disabled:opacity-50"
+                onClick={loadModelCount}
+                title="Could not reach master-data. Try again."
+                className="shrink-0 rounded-lg border border-admin-border px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-admin-dark"
               >
-                {countingModels ? 'Counting…' : 'Count'}
+                Retry
               </button>
             ) : null}
           />

@@ -1,9 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Plus, RefreshCw, Upload } from 'lucide-react';
 import { masterApi } from '@/lib/api';
 import { mapPool } from '@/lib/concurrency';
+import TablePagination from '@/components/TablePagination';
+import { pageBounds } from '@/lib/pagination';
 import {
   exportErrorReport,
   exportTemplateWorkbook,
@@ -16,9 +18,18 @@ import {
 // thousand-row import moving without putting the service back into an OOM.
 const WRITE_CONCURRENCY = 4;
 
-// How many plan rows to render. A 1000-row import would otherwise mount 1000 table
-// rows just to be scrolled past — the counts above the table are the real summary.
-const PREVIEW_LIMIT = 200;
+// Page sizes for the preview. Capped well below the table default of 1000: these
+// rows live inside a modal, and mounting a thousand of them to be scrolled past is
+// what the paging is here to avoid.
+const PREVIEW_PAGE_SIZES = [25, 50, 100, 200];
+
+// Reads as "Showing 100 rows that cannot be imported of 3142 rows".
+const FILTER_LABELS = {
+  create: 'rows to create',
+  update: 'rows to update',
+  error: 'rows that cannot be imported',
+  newSeries: 'rows needing a new series',
+};
 
 const ACTION_STYLES = {
   create: 'bg-emerald-100 text-emerald-700',
@@ -26,19 +37,45 @@ const ACTION_STYLES = {
   error: 'bg-red-100 text-red-700',
 };
 
-function Stat({ label, value, tone = 'slate' }) {
-  const tones = {
-    slate: 'border-admin-border bg-admin-dark text-slate-700',
-    green: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-    blue: 'border-blue-200 bg-blue-50 text-blue-800',
-    red: 'border-red-200 bg-red-50 text-red-800',
-    amber: 'border-amber-200 bg-amber-50 text-amber-800',
-  };
+const STAT_TONES = {
+  slate: 'border-admin-border bg-admin-dark text-slate-700',
+  green: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+  blue: 'border-blue-200 bg-blue-50 text-blue-800',
+  red: 'border-red-200 bg-red-50 text-red-800',
+  amber: 'border-amber-200 bg-amber-50 text-amber-800',
+};
+
+/**
+ * A count tile. With `onClick` it becomes a filter for the row list below — the
+ * only practical way to see which 100 of 3142 rows cannot be imported, since they
+ * are scattered through the sheet.
+ */
+function Stat({ label, value, tone = 'slate', onClick, active, hint }) {
+  const base = `rounded-lg border px-3 py-2 text-left ${STAT_TONES[tone]}`;
+  if (!onClick) {
+    return (
+      <div className={base}>
+        <p className="text-lg font-semibold leading-tight">{value}</p>
+        <p className="text-xs">{label}</p>
+      </div>
+    );
+  }
   return (
-    <div className={`rounded-lg border px-3 py-2 ${tones[tone]}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      title={hint}
+      className={`${base} transition-shadow hover:shadow-md focus:outline-none ${
+        active ? 'ring-2 ring-admin-accent ring-offset-1' : ''
+      }`}
+    >
       <p className="text-lg font-semibold leading-tight">{value}</p>
-      <p className="text-xs">{label}</p>
-    </div>
+      <p className="text-xs">
+        {label}
+        <span className="ml-1 opacity-60">{active ? '— showing' : ''}</span>
+      </p>
+    </button>
   );
 }
 
@@ -69,6 +106,12 @@ export default function ModelsImportModal({
   const [error, setError] = useState('');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
+  // Which slice of the plan the row list is showing: null = everything.
+  const [rowFilter, setRowFilter] = useState(null); // null | create | update | error | newSeries
+  const [previewPage, setPreviewPage] = useState(0);
+  const [previewSize, setPreviewSize] = useState(50);
+  const [failPage, setFailPage] = useState(0);
+  const [failSize, setFailSize] = useState(50);
   const cancelRef = useRef(false);
 
   const buildPlan = (parsedFile, createSeries) => {
@@ -216,6 +259,31 @@ export default function ModelsImportModal({
   const counts = plan?.counts;
   const applyCount = counts ? counts.create + counts.update : 0;
 
+  const filteredRows = useMemo(() => {
+    const items = plan?.items || [];
+    if (!rowFilter) return items;
+    if (rowFilter === 'newSeries') return items.filter((i) => i.pendingSeriesKey);
+    return items.filter((i) => i.action === rowFilter);
+  }, [plan, rowFilter]);
+
+  const previewBounds = pageBounds(filteredRows.length, previewPage, previewSize);
+  const previewRows = filteredRows.slice(previewBounds.start, previewBounds.start + previewSize);
+
+  // Changing the filter or the page size can leave the current page past the end
+  // of what is now being shown.
+  useEffect(() => { setPreviewPage(0); }, [rowFilter, previewSize]);
+  // A re-plan (different file, or the create-series checkbox flipped) invalidates
+  // both — the row that was on screen may not even exist any more.
+  useEffect(() => { setPreviewPage(0); setRowFilter(null); }, [plan]);
+
+  // Toggle: clicking the tile that is already showing clears the filter.
+  const toggleFilter = (key) => setRowFilter((cur) => (cur === key ? null : key));
+
+  const failures = result?.failures || [];
+  const failBounds = pageBounds(failures.length, failPage, failSize);
+  const failRows = failures.slice(failBounds.start, failBounds.start + failSize);
+  useEffect(() => { setFailPage(0); }, [failSize, result]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-4xl flex flex-col max-h-[90vh] rounded-xl bg-admin-card border border-admin-border shadow-xl">
@@ -294,10 +362,26 @@ export default function ModelsImportModal({
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <Stat label="To create" value={counts.create} tone={counts.create ? 'green' : 'slate'} />
-                <Stat label="To update" value={counts.update} tone={counts.update ? 'blue' : 'slate'} />
-                <Stat label="Cannot import" value={counts.error} tone={counts.error ? 'red' : 'slate'} />
-                <Stat label="New series" value={counts.newSeries} tone={counts.newSeries ? 'amber' : 'slate'} />
+                <Stat
+                  label="To create" value={counts.create} tone={counts.create ? 'green' : 'slate'}
+                  active={rowFilter === 'create'} hint="Show only the rows that will be created"
+                  onClick={counts.create ? () => toggleFilter('create') : undefined}
+                />
+                <Stat
+                  label="To update" value={counts.update} tone={counts.update ? 'blue' : 'slate'}
+                  active={rowFilter === 'update'} hint="Show only the rows that will be updated"
+                  onClick={counts.update ? () => toggleFilter('update') : undefined}
+                />
+                <Stat
+                  label="Cannot import" value={counts.error} tone={counts.error ? 'red' : 'slate'}
+                  active={rowFilter === 'error'} hint="Show only the rows that cannot be imported, with the reason for each"
+                  onClick={counts.error ? () => toggleFilter('error') : undefined}
+                />
+                <Stat
+                  label="New series" value={counts.newSeries} tone={counts.newSeries ? 'amber' : 'slate'}
+                  active={rowFilter === 'newSeries'} hint="Show only the rows that need a new series"
+                  onClick={counts.newSeries ? () => toggleFilter('newSeries') : undefined}
+                />
               </div>
 
               <label className="flex items-start gap-2 rounded-lg border border-admin-border bg-admin-dark px-3 py-2.5 cursor-pointer">
@@ -334,6 +418,20 @@ export default function ModelsImportModal({
                 </div>
               )}
 
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-slate-700">
+                  {rowFilter
+                    ? <>Showing <span className="font-medium text-slate-900">{filteredRows.length}</span> {FILTER_LABELS[rowFilter]} of {plan.items.length} rows</>
+                    : <>All <span className="font-medium text-slate-900">{plan.items.length}</span> rows</>}
+                </p>
+                {rowFilter && (
+                  <button type="button" onClick={() => setRowFilter(null)}
+                    className="text-xs font-medium text-admin-accent hover:underline">
+                    Show all rows
+                  </button>
+                )}
+              </div>
+
               <div className="rounded-lg border border-admin-border overflow-hidden">
                 <table className="w-full text-sm">
                   <thead className="bg-admin-dark text-xs uppercase text-admin-muted">
@@ -344,7 +442,7 @@ export default function ModelsImportModal({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-admin-border">
-                    {plan.items.slice(0, PREVIEW_LIMIT).map((i) => (
+                    {previewRows.map((i) => (
                       <tr key={i.rowNumber} className={i.action === 'error' ? 'bg-red-50/40' : ''}>
                         <td className="px-3 py-1.5 text-admin-muted tabular-nums">{i.rowNumber}</td>
                         <td className="px-3 py-1.5">
@@ -361,11 +459,14 @@ export default function ModelsImportModal({
                     ))}
                   </tbody>
                 </table>
-                {plan.items.length > PREVIEW_LIMIT && (
-                  <p className="px-3 py-2 text-xs text-admin-muted bg-admin-dark border-t border-admin-border">
-                    Showing the first {PREVIEW_LIMIT} of {plan.items.length} rows — the counts above cover all of them.
-                  </p>
-                )}
+                <TablePagination
+                  total={filteredRows.length}
+                  page={previewBounds.safePage}
+                  pageSize={previewSize}
+                  onPageChange={setPreviewPage}
+                  onPageSizeChange={setPreviewSize}
+                  pageSizes={PREVIEW_PAGE_SIZES}
+                />
               </div>
             </>
           )}
@@ -414,7 +515,7 @@ export default function ModelsImportModal({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-admin-border">
-                      {result.failures.slice(0, PREVIEW_LIMIT).map((f, idx) => (
+                      {failRows.map((f, idx) => (
                         <tr key={`${f.rowNumber}-${idx}`}>
                           <td className="px-3 py-1.5 text-admin-muted tabular-nums">{f.rowNumber}</td>
                           <td className="px-3 py-1.5 text-red-700">{f.error}</td>
@@ -422,6 +523,14 @@ export default function ModelsImportModal({
                       ))}
                     </tbody>
                   </table>
+                  <TablePagination
+                    total={failures.length}
+                    page={failBounds.safePage}
+                    pageSize={failSize}
+                    onPageChange={setFailPage}
+                    onPageSizeChange={setFailSize}
+                    pageSizes={PREVIEW_PAGE_SIZES}
+                  />
                 </div>
               )}
             </>

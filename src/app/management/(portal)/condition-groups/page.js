@@ -131,7 +131,7 @@ export default function MasterConditionGroupsPage() {
     }
     setSubmitting(true);
     try {
-      for (const id of removed) await masterApi.delete(`/master/condition-options/${id}`).catch(() => {});
+      for (const id of removed) await masterApi.delete(`/master/condition-options/${id}`);
       const existing = optionsByCondition[conditionId] || [];
       let sortOrder = existing.length;
       for (const chip of all) {
@@ -161,7 +161,9 @@ export default function MasterConditionGroupsPage() {
       render: (row) => (
         <div className="flex flex-wrap gap-1.5">
           {(optionsByCondition[row.id] || []).map((option) => (
-            <span key={option.id} className="rounded-full border border-admin-border bg-admin-dark px-2.5 py-1 text-xs text-slate-800">{option.label}</span>
+            <span key={option.id} className="inline-flex rounded-full border border-admin-border bg-admin-dark px-2.5 py-1 text-xs text-slate-800">
+              {option.label}
+            </span>
           ))}
           {(!optionsByCondition[row.id] || optionsByCondition[row.id].length === 0) ? <span className="text-xs text-admin-muted">—</span> : null}
         </div>
@@ -184,7 +186,10 @@ export default function MasterConditionGroupsPage() {
         <div className="flex flex-wrap items-center gap-3">
           <select
             value={filterCategory}
-            onChange={(event) => setFilterCategory(event.target.value)}
+            onChange={(event) => {
+              setFilterCategory(event.target.value);
+              setSelectedOptionIds([]);
+            }}
             className="rounded-lg border border-admin-border bg-admin-card px-3 py-2 text-sm text-slate-800"
           >
             <option value="">All categories</option>

@@ -298,7 +298,7 @@ export default function RepairServicesImportModal({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-700">
                   <span className="font-medium text-slate-900">{file?.name}</span>
-                  <span className="text-admin-muted"> · sheet "{parsed?.sheetName}" · {plan.items.length} data rows</span>
+                  <span className="text-admin-muted"> · sheet &quot;{parsed?.sheetName}&quot; · {plan.items.length} data rows</span>
                 </p>
                 <button
                   type="button"

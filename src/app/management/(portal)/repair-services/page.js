@@ -335,7 +335,7 @@ export default function MasterRepairServicesPage() {
         </div>
       </div>
       <p className="text-admin-muted text-sm mb-4">
-        Issues live under a main category — e.g. <span className="text-slate-600">Mobile → Display &amp; Touch → "Screen Broken"</span>.
+        Issues live under a main category — e.g. <span className="text-slate-600">Mobile → Display &amp; Touch → &quot;Screen Broken&quot;</span>.
         {' '}Create the main category first in <span className="text-slate-600">Repair Categories</span>. Export writes the rows the
         {' '}filters above select; Import reads that same sheet back, creating new issues and updating the ones it recognises.
       </p>

@@ -161,7 +161,7 @@ export default function ShopOwnerListPage() {
               {loading ? (
                 <tr><td className="px-4 py-6 text-admin-muted" colSpan={14}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td className="px-4 py-6 text-admin-muted" colSpan={14}>No shop owners yet. Click "+ Add Shop Owner" to create one.</td></tr>
+                <tr><td className="px-4 py-6 text-admin-muted" colSpan={14}>No shop owners yet. Click &quot;+ Add Shop Owner&quot; to create one.</td></tr>
               ) : visible.map((r, i) => (
                 <tr key={r.id} className="hover:bg-admin-dark/40">
                   <td className="px-4 py-3 text-slate-600">{start + i + 1}</td>

@@ -13,7 +13,7 @@ import {
   FolderTree, Puzzle,
   ShoppingCart, ClipboardList, SlidersHorizontal, AlertTriangle, Settings2,
   ShoppingBag, Package,
-  Search, ChevronRight, ChevronDown, ChevronLeft, LogOut,
+  ChevronRight, ChevronDown, ChevronLeft, LogOut,
 } from 'lucide-react';
 
 const nav = [
@@ -198,25 +198,6 @@ export default function Sidebar({ onLogout }) {
           className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-admin-panel border border-white/15 text-slate-300 hover:text-white hover:bg-white/10"
         >
           <ChevronLeft className={`h-4 w-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
-        </button>
-      </div>
-
-      {/* Command search */}
-      <div className="px-3 pt-3">
-        <button
-          type="button"
-          className={`flex w-full items-center gap-2 rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-colors ${
-            collapsed ? 'justify-center' : ''
-          }`}
-          title="Open Anything"
-        >
-          <Search className="h-4 w-4 shrink-0" />
-          {!collapsed && (
-            <>
-              <span className="flex-1 text-left">Open Anything</span>
-              <kbd className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">Ctrl K</kbd>
-            </>
-          )}
         </button>
       </div>
 

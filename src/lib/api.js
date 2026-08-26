@@ -53,6 +53,30 @@ export const MEDIA_UPLOAD_URL = () => {
   const base = MASTER_BASE();
   return isDirectServiceOrigin(base) ? `${base}/media/upload` : `${base}/master/media/upload`;
 };
+
+// master-data-service requires an authenticated request on /media/upload (it
+// writes into the paid S3 bucket), so every caller must send the admin's
+// Bearer token — a plain `fetch(MEDIA_UPLOAD_URL())` 403s. Centralised here
+// after the same missing-header bug turned up independently in three admin
+// pages (shops/edit, shops/view, shops/new-owner).
+// `document: true` is for fields that are routinely scanned to PDF (KYC,
+// GST/Udyam certificates) — it tells the backend to allow application/pdf
+// alongside images. Leave it false for pure artwork (avatar, shop front/banner).
+export async function uploadMedia(file, folder, { document = false } = {}) {
+  if (!file) return null;
+  const fd = new FormData();
+  fd.append('file', file);
+  if (folder) fd.append('folder', folder);
+  if (document) fd.append('allowDocument', 'true');
+  const token = typeof window !== 'undefined' ? localStorage.getItem('admin_token') : null;
+  const res = await fetch(MEDIA_UPLOAD_URL(), {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: fd,
+  });
+  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+  return (await res.json())?.url || null;
+}
 export const AUTH_BASE = () => pick(process.env.NEXT_PUBLIC_AUTH_BASE, `${EDGE}/auth`);
 export const TICKET_BASE = () => pick(process.env.NEXT_PUBLIC_TICKET_BASE, `${EDGE}/ticket`);
 export const USER_BASE = () => pick(process.env.NEXT_PUBLIC_USER_BASE, `${EDGE}/user`);

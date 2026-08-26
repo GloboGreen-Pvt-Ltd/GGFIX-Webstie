@@ -255,7 +255,7 @@ export default function MasterSeriesPage() {
       </div>
       <p className="text-admin-muted text-sm mb-4">
         Series live under a (category, brand) pair — e.g. <span className="text-slate-600">Mobile + Vivo → Y Series</span>.
-        Create the pair first in <span className="text-slate-600">Category-Brand Mapping</span> if it's missing.
+        Create the pair first in <span className="text-slate-600">Category-Brand Mapping</span> if it&apos;s missing.
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {loading ? (

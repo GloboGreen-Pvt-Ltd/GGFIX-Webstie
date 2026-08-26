@@ -15,7 +15,7 @@ module.exports = {
         admin: {
           dark: '#f1f5f9', // page + input background (light gray)
           card: '#ffffff', // cards / modals / table surfaces (white)
-          panel: '#131426', // sidebar chrome (dark)
+          panel: '#004c40', // sidebar chrome (dark brand teal)
           border: '#e2e8f0', // hairline borders
           accent: '#2563eb', // primary blue — buttons, active nav, links
           muted: '#64748b', // secondary text

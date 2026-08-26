@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { authApi, MEDIA_UPLOAD_URL } from '@/lib/api';
+import { authApi, uploadMedia as uploadFile } from '@/lib/api';
+import BusinessLocationsManager from '@/components/BusinessLocationsManager';
 
 const EMPTY_OWNER = {
   name: '', email: '', phone: '', secondaryMobile: '', password: '', otpCode: '',
@@ -12,16 +13,6 @@ const EMPTY_OWNER = {
   // Owner KYC (users.kyc_document jsonb): Aadhar front/back + PAN.
   avatarUrl: '', aadharFrontUrl: '', aadharBackUrl: '', panUrl: '',
 };
-
-async function uploadFile(file, folder) {
-  if (!file) return null;
-  const fd = new FormData();
-  fd.append('file', file);
-  if (folder) fd.append('folder', folder);
-  const res = await fetch(MEDIA_UPLOAD_URL(), { method: 'POST', body: fd });
-  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-  return (await res.json())?.url || null;
-}
 
 export default function EditShopOwnerPage() {
   const router = useRouter();
@@ -44,7 +35,8 @@ export default function EditShopOwnerPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState({});
-  const [locationsCount, setLocationsCount] = useState(0);
+  const [locations, setLocations] = useState([]);
+  const [kycDocument, setKycDocument] = useState(null);
 
   useEffect(() => {
     if (!id) return;
@@ -70,7 +62,8 @@ export default function EditShopOwnerPage() {
           aadharBackUrl: data.kycDocument?.aadharBackUrl || '',
           panUrl: data.kycDocument?.panUrl || '',
         });
-        setLocationsCount(data.locations?.length || 0);
+        setLocations(data.locations || []);
+        setKycDocument(data.kycDocument || null);
       } catch (e) {
         setError(e.body?.message || e.message || 'Failed to load owner');
       } finally {
@@ -79,13 +72,26 @@ export default function EditShopOwnerPage() {
     })();
   }, [id]);
 
+  // Re-fetches only the locations/KYC slice after an add/edit/delete in
+  // BusinessLocationsManager, deliberately leaving `owner` alone — a full
+  // reload would clobber any Basic Info edits the admin hasn't saved yet.
+  const reloadLocations = async () => {
+    try {
+      const data = await authApi.get(`/auth/shop-owners/${id}`);
+      setLocations(data.locations || []);
+      setKycDocument(data.kycDocument || null);
+    } catch (e) {
+      setError(e.body?.message || e.message || 'Failed to reload business locations');
+    }
+  };
+
   const setField = (k, v) => setOwner((o) => ({ ...o, [k]: v }));
 
-  const handleUpload = async (field, file, folder) => {
+  const handleUpload = async (field, file, folder, opts) => {
     if (!file) return;
     setUploading((u) => ({ ...u, [field]: true }));
     try {
-      const url = await uploadFile(file, folder);
+      const url = await uploadFile(file, folder, opts);
       if (url) setField(field, url);
     } catch (e) { setError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [field]: false })); }
@@ -146,7 +152,7 @@ export default function EditShopOwnerPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Edit Shop Owner</h1>
-          <p className="text-sm text-admin-muted">Update the owner account profile. Business locations are managed from the View page.</p>
+          <p className="text-sm text-admin-muted">Update the owner account profile and business locations.</p>
         </div>
         <Link href={`/management/shops/view/?id=${id}`} className="text-sm text-admin-muted hover:text-slate-800">← Back to view</Link>
       </div>
@@ -211,25 +217,19 @@ export default function EditShopOwnerPage() {
             <p className="text-[11px] text-admin-muted mt-1">Owner KYC — Aadhar (front &amp; back) and PAN card.</p>
             <div className="mt-3 space-y-3">
               <UploadCard label="Avatar" hint="Profile image" url={owner.avatarUrl} uploading={!!uploading.avatarUrl} onFile={(f) => handleUpload('avatarUrl', f, 'owners/avatars')} accept="image/*" buttonText="Upload Avatar" />
-              <UploadCard label="Aadhar Card Front" hint="PDF or image" url={owner.aadharFrontUrl} uploading={!!uploading.aadharFrontUrl} onFile={(f) => handleUpload('aadharFrontUrl', f, 'owners/kyc')} accept="image/*,application/pdf" buttonText="Upload Aadhar Front" />
-              <UploadCard label="Aadhar Card Back" hint="PDF or image" url={owner.aadharBackUrl} uploading={!!uploading.aadharBackUrl} onFile={(f) => handleUpload('aadharBackUrl', f, 'owners/kyc')} accept="image/*,application/pdf" buttonText="Upload Aadhar Back" />
-              <UploadCard label="PAN Card" hint="PDF or image" url={owner.panUrl} uploading={!!uploading.panUrl} onFile={(f) => handleUpload('panUrl', f, 'owners/kyc')} accept="image/*,application/pdf" buttonText="Upload PAN Card" />
+              <UploadCard label="Aadhar Card Front" hint="PDF or image" url={owner.aadharFrontUrl} uploading={!!uploading.aadharFrontUrl} onFile={(f) => handleUpload('aadharFrontUrl', f, 'owners/kyc', { document: true })} accept="image/*,application/pdf" buttonText="Upload Aadhar Front" />
+              <UploadCard label="Aadhar Card Back" hint="PDF or image" url={owner.aadharBackUrl} uploading={!!uploading.aadharBackUrl} onFile={(f) => handleUpload('aadharBackUrl', f, 'owners/kyc', { document: true })} accept="image/*,application/pdf" buttonText="Upload Aadhar Back" />
+              <UploadCard label="PAN Card" hint="PDF or image" url={owner.panUrl} uploading={!!uploading.panUrl} onFile={(f) => handleUpload('panUrl', f, 'owners/kyc', { document: true })} accept="image/*,application/pdf" buttonText="Upload PAN Card" />
             </div>
           </div>
         </div>
 
-        {/* Business Locations callout */}
-        <div className="rounded-xl bg-admin-card border border-admin-border p-5 flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">🏪 Business Locations</h3>
-            <p className="text-xs text-admin-muted mt-0.5">
-              This owner has <span className="text-slate-800 font-semibold">{locationsCount}</span> business location{locationsCount === 1 ? '' : 's'}. Add, edit and delete them from the View page.
-            </p>
-          </div>
-          <Link href={`/management/shops/view/?id=${id}`} className="rounded-lg bg-admin-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-            Manage Locations →
-          </Link>
-        </div>
+        <BusinessLocationsManager
+          ownerId={id}
+          locations={locations}
+          kycDocument={kycDocument}
+          onChanged={reloadLocations}
+        />
 
         {error && <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-2 text-sm text-red-500">{error}</div>}
 

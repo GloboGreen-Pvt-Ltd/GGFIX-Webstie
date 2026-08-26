@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { authApi, MEDIA_UPLOAD_URL } from '@/lib/api';
+import { authApi, uploadMedia as uploadFile } from '@/lib/api';
 
 function detectTimezone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'; }
@@ -46,16 +46,6 @@ const EMPTY_OWNER = {
   // Owner KYC (stored in users.kyc_document jsonb): Aadhar front/back + PAN.
   avatarUrl: '', aadharFrontUrl: '', aadharBackUrl: '', panUrl: '',
 };
-
-async function uploadFile(file, folder) {
-  if (!file) return null;
-  const fd = new FormData();
-  fd.append('file', file);
-  if (folder) fd.append('folder', folder);
-  const res = await fetch(MEDIA_UPLOAD_URL(), { method: 'POST', body: fd });
-  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-  return (await res.json())?.url || null;
-}
 
 /**
  * Type-ahead address suggestions via OpenStreetMap Nominatim. Free, no API
@@ -237,21 +227,21 @@ export default function NewShopOwnerPage() {
   const setLocationField = (i, k, v) =>
     setLocations((arr) => arr.map((loc, idx) => (idx === i ? { ...loc, [k]: v } : loc)));
 
-  const handleOwnerUpload = async (field, file, folder) => {
+  const handleOwnerUpload = async (field, file, folder, opts) => {
     if (!file) return;
     setUploading((u) => ({ ...u, [`owner-${field}`]: true }));
     try {
-      const url = await uploadFile(file, folder);
+      const url = await uploadFile(file, folder, opts);
       if (url) setOwnerField(field, url);
     } catch (e) { setError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [`owner-${field}`]: false })); }
   };
-  const handleLocationUpload = async (i, field, file, folder) => {
+  const handleLocationUpload = async (i, field, file, folder, opts) => {
     if (!file) return;
     const key = `loc${i}-${field}`;
     setUploading((u) => ({ ...u, [key]: true }));
     try {
-      const url = await uploadFile(file, folder);
+      const url = await uploadFile(file, folder, opts);
       if (url) setLocationField(i, field, url);
     } catch (e) { setError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [key]: false })); }
@@ -409,7 +399,7 @@ export default function NewShopOwnerPage() {
                 hint="PDF or image"
                 url={owner.aadharFrontUrl}
                 uploading={!!uploading['owner-aadharFrontUrl']}
-                onFile={(f) => handleOwnerUpload('aadharFrontUrl', f, 'owners/kyc')}
+                onFile={(f) => handleOwnerUpload('aadharFrontUrl', f, 'owners/kyc', { document: true })}
                 accept="image/*,application/pdf"
                 buttonText="Upload Aadhar Front"
               />
@@ -418,7 +408,7 @@ export default function NewShopOwnerPage() {
                 hint="PDF or image"
                 url={owner.aadharBackUrl}
                 uploading={!!uploading['owner-aadharBackUrl']}
-                onFile={(f) => handleOwnerUpload('aadharBackUrl', f, 'owners/kyc')}
+                onFile={(f) => handleOwnerUpload('aadharBackUrl', f, 'owners/kyc', { document: true })}
                 accept="image/*,application/pdf"
                 buttonText="Upload Aadhar Back"
               />
@@ -427,7 +417,7 @@ export default function NewShopOwnerPage() {
                 hint="PDF or image"
                 url={owner.panUrl}
                 uploading={!!uploading['owner-panUrl']}
-                onFile={(f) => handleOwnerUpload('panUrl', f, 'owners/kyc')}
+                onFile={(f) => handleOwnerUpload('panUrl', f, 'owners/kyc', { document: true })}
                 accept="image/*,application/pdf"
                 buttonText="Upload PAN Card"
               />
@@ -473,7 +463,7 @@ export default function NewShopOwnerPage() {
                           {(suggestions[i] || []).length > 0 ? (
                             <>
                               <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-admin-muted bg-admin-dark/40 border-b border-admin-border">
-                                ⚠ Verify pincode before picking — OSM data isn't always current
+                                ⚠ Verify pincode before picking — OSM data isn&apos;t always current
                               </div>
                               {suggestions[i].map((sug, k) => (
                                 <button
@@ -674,7 +664,7 @@ export default function NewShopOwnerPage() {
                       hint="PDF or image"
                       url={loc.gstCertificateUrl}
                       uploading={!!uploading[`loc${i}-gstCertificateUrl`]}
-                      onFile={(f) => handleLocationUpload(i, 'gstCertificateUrl', f, 'shops/gst')}
+                      onFile={(f) => handleLocationUpload(i, 'gstCertificateUrl', f, 'shops/gst', { document: true })}
                       accept="image/*,application/pdf"
                       buttonText="Upload GST Proof"
                     />
@@ -683,7 +673,7 @@ export default function NewShopOwnerPage() {
                       hint="PDF or image"
                       url={loc.udyamCertificateUrl}
                       uploading={!!uploading[`loc${i}-udyamCertificateUrl`]}
-                      onFile={(f) => handleLocationUpload(i, 'udyamCertificateUrl', f, 'shops/udyam')}
+                      onFile={(f) => handleLocationUpload(i, 'udyamCertificateUrl', f, 'shops/udyam', { document: true })}
                       accept="image/*,application/pdf"
                       buttonText="Upload Udyam Proof"
                     />

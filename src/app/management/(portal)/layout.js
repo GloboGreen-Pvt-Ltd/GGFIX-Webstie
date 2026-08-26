@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Search, Bell } from 'lucide-react';
+import { Bell } from 'lucide-react';
 import { getToken, setToken, setRole } from '@/lib/auth';
 import Sidebar from '@/components/Sidebar';
 
@@ -98,21 +98,12 @@ export default function AdminLayout({ children }) {
         <header className="h-16 shrink-0 flex items-center justify-between gap-4 border-b border-admin-border bg-white px-6">
           <h1 className="text-lg font-semibold text-slate-900">{section}</h1>
           <div className="flex items-center gap-3">
-            <div className="relative hidden sm:block">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search…"
-                className="w-56 rounded-lg border border-admin-border bg-admin-dark py-2 pl-9 pr-3 text-sm text-slate-700 placeholder:text-slate-400 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
-              />
-            </div>
             <button
               type="button"
-              className="relative flex h-9 w-9 items-center justify-center rounded-lg border border-admin-border text-slate-500 hover:bg-admin-dark hover:text-slate-700"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-admin-border text-slate-500 hover:bg-admin-dark hover:text-slate-700"
               aria-label="Notifications"
             >
               <Bell className="h-[18px] w-[18px]" />
-              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">3</span>
             </button>
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-admin-accent text-sm font-semibold text-white" title="Account">
               {initial}

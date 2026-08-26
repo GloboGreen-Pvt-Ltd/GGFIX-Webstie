@@ -105,7 +105,7 @@ export default function MasterTechnicianWorkStatusesPage() {
         </button>
       </div>
       <p className="text-admin-muted text-sm mb-4">
-        Options shown in the employee app's <span className="text-slate-600">Technician Work Status</span> dropdown.
+        Options shown in the employee app&apos;s <span className="text-slate-600">Technician Work Status</span> dropdown.
         <span className="text-slate-600"> Label</span> is what the technician sees;
         <span className="text-slate-600"> Ticket Status</span> is the backend status the PATCH applies.
       </p>

@@ -69,7 +69,7 @@ import {
 import { MEDIA_UPLOAD_URL, SHOP_BASE, masterApi } from '@/lib/api';
 import { Button, cx } from '@/components/site/ui';
 import LoginModal from '@/components/site/LoginModal';
-import { isLoggedIn } from '@/lib/customerAuth';
+import { isLoggedIn, readCustomer } from '@/lib/customerAuth';
 import {
   createAddress,
   createRepairBooking,
@@ -1217,8 +1217,17 @@ async function uploadDevicePhoto(file, slot) {
   fd.append('file', file);
   fd.append('folder', 'repair-bookings');
   if (slot) fd.append('slot', slot);
+  // /media/upload requires an authenticated request; this step only ever shows
+  // to a logged-in customer (see the comment above), so their Bearer is always
+  // available here.
+  const customer = readCustomer();
   // No Content-Type header — the browser sets the multipart boundary itself.
-  const res = await fetch(MEDIA_UPLOAD_URL(), { method: 'POST', body: fd, credentials: 'omit' });
+  const res = await fetch(MEDIA_UPLOAD_URL(), {
+    method: 'POST',
+    credentials: 'omit',
+    headers: customer?.token ? { Authorization: `Bearer ${customer.token}` } : undefined,
+    body: fd,
+  });
   if (!res.ok) throw new Error(`upload failed ${res.status}`);
   const data = await res.json();
   const url = data && data.url;

@@ -145,11 +145,17 @@ jobs:
           done < <(find out -name index.html)
           echo "published $count directory-key aliases (both /path/ and /path)"
 
+      # Must not fail the job: the S3 sync above already succeeded, so the new
+      # build is live. A missing cloudfront:CreateInvalidation permission for this
+      # distribution would otherwise turn a cache-staleness issue into a full
+      # deploy failure.
       - name: Invalidate CloudFront
         if: env.DISTRIBUTION != ''
         run: |
-          aws cloudfront create-invalidation \
-            --distribution-id "$DISTRIBUTION" --paths "/*"
+          if ! aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION" --paths "/*"; then
+            echo "::warning::CloudFront invalidation failed (often a missing cloudfront:CreateInvalidation permission for distribution $DISTRIBUTION). S3 is already updated — CloudFront may keep serving cached assets until they expire or invalidation is retried with the right permissions."
+          fi
 
       - name: Summary
         run: |

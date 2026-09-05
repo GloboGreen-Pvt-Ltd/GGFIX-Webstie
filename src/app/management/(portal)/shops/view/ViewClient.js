@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, subscriptionApi } from '@/lib/api';
 import BusinessLocationsManager from '@/components/BusinessLocationsManager';
+import SafeImage from '@/components/SafeImage';
 
 function initialsOf(name) {
   if (!name) return '?';
@@ -100,14 +101,16 @@ export default function ShopOwnerViewPage() {
 
       {/* Header card */}
       <div className="rounded-xl bg-admin-card border border-admin-border p-5 flex items-center gap-5">
-        {data.avatarUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={data.avatarUrl} alt={data.name} className="h-16 w-16 rounded-full object-cover" />
-        ) : (
-          <div className="h-16 w-16 rounded-full bg-admin-accent/20 text-admin-accent text-xl font-bold flex items-center justify-center">
-            {initialsOf(data.name)}
-          </div>
-        )}
+        <SafeImage
+          src={data.avatarUrl}
+          alt={data.name}
+          className="h-16 w-16 rounded-full object-cover"
+          fallback={
+            <div className="h-16 w-16 rounded-full bg-admin-accent/20 text-admin-accent text-xl font-bold flex items-center justify-center">
+              {initialsOf(data.name)}
+            </div>
+          }
+        />
         <div className="flex-1">
           <h2 className="text-xl font-semibold text-slate-900">{data.name || '—'}</h2>
           <p className="text-sm text-admin-muted">View personal details, verification status, documents, and linked business locations.</p>
@@ -252,8 +255,13 @@ export default function ShopOwnerViewPage() {
                   >
                     <div className="relative h-24 w-28 rounded-lg overflow-hidden border border-admin-border bg-admin-dark flex items-center justify-center">
                       {isImageUrl(d.url) ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={d.url} alt={d.label} className="h-full w-full object-cover" />
+                        <SafeImage
+                          src={d.url}
+                          alt={d.label}
+                          className="h-full w-full object-cover"
+                          placeholderClassName="text-[11px] text-admin-muted text-center px-1"
+                          placeholderText="Image unavailable"
+                        />
                       ) : (
                         <span className="text-[11px] text-admin-muted">Open file</span>
                       )}
@@ -319,8 +327,13 @@ function DocPreview({ label, url }) {
       </div>
       {url ? (
         isImageUrl(url) ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt={label} className="max-h-32 w-full object-contain rounded bg-black/20" />
+          <SafeImage
+            src={url}
+            alt={label}
+            className="max-h-32 w-full object-contain rounded bg-black/20"
+            placeholderClassName="text-xs text-admin-muted italic h-32 flex items-center justify-center rounded bg-black/20"
+            placeholderText="Image unavailable"
+          />
         ) : (
           <div className="text-xs text-slate-600 truncate">{url.split('/').pop() || 'File'}</div>
         )

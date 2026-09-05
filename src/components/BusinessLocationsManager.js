@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
+import SafeImage from '@/components/SafeImage';
 
 /**
  * The full "Business Locations" table + add/edit/view/delete flow for one
@@ -125,8 +126,13 @@ function DocPreview({ label, url }) {
       </div>
       {url ? (
         isImageUrl(url) ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={url} alt={label} className="max-h-32 w-full object-contain rounded bg-black/20" />
+          <SafeImage
+            src={url}
+            alt={label}
+            className="max-h-32 w-full object-contain rounded bg-black/20"
+            placeholderClassName="text-xs text-admin-muted italic h-32 flex items-center justify-center rounded bg-black/20"
+            placeholderText="Image unavailable"
+          />
         ) : (
           <div className="text-xs text-slate-600 truncate">{url.split('/').pop() || 'File'}</div>
         )
@@ -250,8 +256,13 @@ function UploadCard({ label, hint, url, uploading, onFile, accept }) {
       <div className="flex-1 flex items-center justify-center w-full">
         {url ? (
           isImageUrl(url) ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt={label} className="max-h-20 object-contain rounded" />
+            <SafeImage
+              src={url}
+              alt={label}
+              className="max-h-20 object-contain rounded"
+              placeholderClassName="text-[11px] text-admin-muted italic text-center px-2"
+              placeholderText="Image unavailable"
+            />
           ) : (
             <span className="text-[11px] text-slate-600 truncate max-w-full">{url.split('/').pop() || 'File'}</span>
           )

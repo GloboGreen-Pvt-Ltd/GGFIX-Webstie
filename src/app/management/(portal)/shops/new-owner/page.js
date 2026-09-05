@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
+import SafeImage from '@/components/SafeImage';
 
 function detectTimezone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'; }
@@ -746,8 +747,13 @@ function UploadCard({ label, hint, url, uploading, onFile, accept, buttonText })
       <div className="flex-1 flex items-center justify-center min-h-[80px] rounded bg-admin-dark/60">
         {url ? (
           isImg ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt={label} className="max-h-20 object-contain" />
+            <SafeImage
+              src={url}
+              alt={label}
+              className="max-h-20 object-contain"
+              placeholderClassName="text-[11px] text-admin-muted italic px-2 text-center"
+              placeholderText="Image unavailable"
+            />
           ) : (
             <span className="text-[11px] text-slate-600 truncate max-w-full px-2">{url.split('/').pop() || 'File'}</span>
           )

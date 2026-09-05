@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
 import BusinessLocationsManager from '@/components/BusinessLocationsManager';
+import SafeImage from '@/components/SafeImage';
 
 const EMPTY_OWNER = {
   name: '', email: '', phone: '', secondaryMobile: '', password: '', otpCode: '',
@@ -118,10 +119,11 @@ export default function EditShopOwnerPage() {
         addrArea: owner.addrArea.trim(),
         addrStreet: owner.addrStreet.trim(),
         addrPincode: owner.addrPincode.trim(),
-        avatarUrl: owner.avatarUrl,
-        // Owner KYC — only send a field when it has a value, so a partial edit
-        // never clears an existing document. A non-null value resets KYC status
-        // to PENDING_REVIEW on the backend.
+        // Media/KYC — only send a field when it has a value, so a partial edit
+        // (e.g. just the phone number) never clears an existing document. A
+        // non-null KYC value also resets that KYC status to PENDING_REVIEW on
+        // the backend, so an unchanged value must stay omitted, not resent.
+        ...(owner.avatarUrl ? { avatarUrl: owner.avatarUrl } : {}),
         ...(owner.aadharFrontUrl ? { aadharFrontUrl: owner.aadharFrontUrl } : {}),
         ...(owner.aadharBackUrl ? { aadharBackUrl: owner.aadharBackUrl } : {}),
         ...(owner.panUrl ? { panUrl: owner.panUrl } : {}),
@@ -291,8 +293,13 @@ function UploadCard({ label, hint, url, uploading, onFile, accept, buttonText })
       <div className="flex-1 flex items-center justify-center min-h-[80px] rounded bg-admin-dark/60">
         {url ? (
           isImg ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt={label} className="max-h-20 object-contain" />
+            <SafeImage
+              src={url}
+              alt={label}
+              className="max-h-20 object-contain"
+              placeholderClassName="text-[11px] text-admin-muted italic px-2 text-center"
+              placeholderText="Image unavailable"
+            />
           ) : (
             <span className="text-[11px] text-slate-600 truncate max-w-full px-2">{url.split('/').pop() || 'File'}</span>
           )

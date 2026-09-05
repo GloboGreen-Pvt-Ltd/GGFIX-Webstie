@@ -6,6 +6,7 @@ import { pageBounds } from '@/lib/pagination';
 import Link from 'next/link';
 import { authApi } from '@/lib/api';
 import { isAdmin as isAdminRole } from '@/lib/auth';
+import SafeImage from '@/components/SafeImage';
 
 function initialsOf(name) {
   if (!name) return '?';
@@ -166,14 +167,16 @@ export default function ShopOwnerListPage() {
                 <tr key={r.id} className="hover:bg-admin-dark/40">
                   <td className="px-4 py-3 text-slate-600">{start + i + 1}</td>
                   <td className="px-4 py-3">
-                    {r.avatarUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={r.avatarUrl} alt={r.name} className="h-9 w-9 rounded-full object-cover" />
-                    ) : (
-                      <div className="h-9 w-9 rounded-full bg-admin-accent/20 text-admin-accent text-xs font-bold flex items-center justify-center">
-                        {initialsOf(r.name)}
-                      </div>
-                    )}
+                    <SafeImage
+                      src={r.avatarUrl}
+                      alt={r.name}
+                      className="h-9 w-9 rounded-full object-cover"
+                      fallback={
+                        <div className="h-9 w-9 rounded-full bg-admin-accent/20 text-admin-accent text-xs font-bold flex items-center justify-center">
+                          {initialsOf(r.name)}
+                        </div>
+                      }
+                    />
                   </td>
                   <td className="px-4 py-3 font-medium text-slate-900">{r.name || '—'}</td>
                   <td className="px-4 py-3 text-slate-600">{r.phone || '—'}</td>

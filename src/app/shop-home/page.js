@@ -1,238 +1,335 @@
 'use client';
 
 /**
- * /shop-home — the GGFIX shop-owner home dashboard (web), matched to the mobile
- * shop app's Home screen. "Design first": every data block is a SAMPLE constant
- * so the real backend can be wired in later without touching layout:
- *   stats/summary   -> order-service dashboard counts + revenue
- *   latest bookings -> GET /repair-bookings/shop (shop token) + master-data images
- *   marketplace/sell-> master-data categories
+ * /shop-home — the GGFIX Partner Dashboard home page.
  *
- * Section order mirrors the app: header · search · hero · stats · today's summary
- * · quick actions · latest bookings · marketplace · sell by category, over an
- * app-style bottom tab bar. It lives OUTSIDE the (site) group so it gets its own
- * app chrome, not the marketing SiteHeader/SiteFooter.
+ * The auth guard and chrome (sidebar, top navbar) live in
+ * src/app/shop-home/layout.js -> DashboardShell now, shared across every
+ * /shop-home/* route — this file is just the Dashboard's own content.
+ *
+ * Every KPI/list below is real data, fetched with the shop-owner's own
+ * token (src/lib/shopApi.js) and aggregated in src/lib/shopDashboard.js —
+ * see that file's header comment for exactly which endpoints back which
+ * tile, and where the numbers are a client-side aggregate because no
+ * single backend endpoint exists yet for it.
+ *
+ * "Today's Tasks" has no backing concept anywhere in the schema (bookings,
+ * tickets, technicians, chat) — it stays an honest empty state rather than
+ * inventing a task list, the same "don't fake it" rule the Shift Timer
+ * below already followed.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  BarChart3,
   Bell,
-  Box,
+  CheckCircle2,
   ChevronRight,
   ClipboardList,
-  Clock,
-  FileText,
-  Grid2x2,
-  Headphones,
   IndianRupee,
-  Laptop,
+  ListChecks,
   MessageSquare,
-  Mic,
   Package,
-  Plus,
+  Pause,
+  Play,
   PlusCircle,
-  Search,
-  Settings,
-  ShieldCheck,
-  ShoppingBag,
-  SlidersHorizontal,
+  RotateCcw,
   Smartphone,
-  Tablet,
-  Tag,
   Truck,
   Users,
+  Wrench,
+  Zap,
 } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
-
-/* -------------------------------------------------------------------------- */
-/* Sample data (replace each block with a live fetch later)                    */
-/* -------------------------------------------------------------------------- */
-
-const SHOP = { name: 'Globo Green', initials: 'GG', verified: true, greeting: 'Good afternoon' };
-
-const STATS = [
-  { label: 'Bookings', sub: 'All time', value: '7', icon: ClipboardList, tone: 'green', trend: [0.3, 0.5, 0.4, 0.7, 0.6, 0.9] },
-  { label: 'Active', sub: 'In pipeline', value: '8', icon: Clock, tone: 'blue', trend: [0.4, 0.35, 0.5, 0.45, 0.7, 0.8] },
-  { label: 'Delivered', sub: 'Completed', value: '0', icon: Package, tone: 'orange', trend: [0.2, 0.3, 0.25, 0.4, 0.5, 0.6] },
-  { label: 'Revenue', sub: 'This month', value: '₹12,450', icon: IndianRupee, tone: 'violet', trend: [0.3, 0.45, 0.4, 0.6, 0.75, 0.95] },
-  { label: 'Pickup', sub: 'Scheduled', value: '3', icon: Truck, tone: 'teal', trend: [0.25, 0.4, 0.35, 0.55, 0.5, 0.7] },
-];
-
-const TODAY_SUMMARY = [
-  { label: 'Total Bookings', value: '12', icon: Users, tone: 'green' },
-  { label: 'New Customers', value: '8', icon: Users, tone: 'blue' },
-  { label: "Today's Revenue", value: '₹5,760', icon: IndianRupee, tone: 'orange' },
-  { label: 'Conversion Rate', value: '18%', icon: BarChart3, tone: 'violet' },
-];
+import { readShopOwner, subscribe } from '@/lib/shopAuth';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
+import CardShell from '@/components/shop-dashboard/CardShell';
+import StatCard from '@/components/shop-dashboard/StatCard';
+import QuickAction from '@/components/shop-dashboard/QuickAction';
+import { deriveDisplayName } from '@/components/shop-dashboard/ProfileDropdown';
+import {
+  fetchShopBookings,
+  fetchTicketCounts,
+  fetchShopChats,
+  fetchTechnicians,
+  fetchTicketsPaged,
+  pendingPickups,
+  openEnquiries,
+  sumActiveRepairs,
+  sumReadyForDelivery,
+  completionRate,
+  weeklyBookings,
+  nextPickup,
+  recentBookings,
+  teamActivity,
+  todaysRevenue,
+  yesterdaysRevenue,
+  trendFromYesterday,
+  isToday,
+} from '@/lib/shopDashboard';
 
 const QUICK_ACTIONS = [
-  { label: 'New Booking', icon: PlusCircle },
-  { label: 'Pickup', icon: Truck },
-  { label: 'All Bookings', icon: ClipboardList },
-  { label: 'Invoices', icon: FileText },
-  { label: 'Customers', icon: Users },
-  { label: 'Enquiry', icon: MessageSquare },
-  { label: 'Inventory', icon: Box },
-  { label: 'Reports', icon: BarChart3 },
+  { label: 'Book Service', href: '/shop-home/services/book-service', icon: PlusCircle },
+  { label: 'Create Pickup', href: '/shop-home/services/pickups', icon: Truck },
+  { label: 'Add Customer', href: '/shop-home/services/customers', icon: Users },
+  { label: 'New Enquiry', href: '/shop-home/services/enquiries', icon: MessageSquare },
+  { label: 'View Deliveries', href: '/shop-home/services/delivery', icon: Package },
+  { label: 'Assign Task', href: '/shop-home/employee/tasks', icon: ListChecks },
 ];
 
-const LATEST_BOOKINGS = [
-  { id: 'CSPEN7627519', device: 'Vivo T1', customer: 'Nandhakumar S', when: 'Today, 10:30 AM', status: 'Created' },
-  { id: 'CSPEN7626488', device: 'iPhone 13', customer: 'Karthik R', when: 'Today, 09:45 AM', status: 'In Progress' },
-  { id: 'CSPEN7625310', device: 'Samsung S23', customer: 'Praveen K', when: 'Today, 09:15 AM', status: 'Pickup' },
-  { id: 'CSPEN7624901', device: 'OnePlus Nord', customer: 'Vignesh V', when: 'Yesterday, 06:30 PM', status: 'Completed' },
-];
-
-const MARKETPLACE = [
-  { label: 'Mobiles', icon: Smartphone },
-  { label: 'Laptops', icon: Laptop },
-  { label: 'Tablets', icon: Tablet },
-  { label: 'Accessories', icon: Package },
-  { label: 'Audio', icon: Headphones },
-  { label: 'More', icon: Grid2x2 },
-];
-
-const SELL_CATEGORIES = [
-  { label: 'Mobiles', icon: Smartphone },
-  { label: 'Laptops', icon: Laptop },
-  { label: 'Tablets', icon: Tablet },
-  { label: 'Audio', icon: Headphones },
-  { label: 'Accessories', icon: Package },
-  { label: 'More', icon: Grid2x2 },
-];
-
-const TABS = [
-  { label: 'Home', icon: Grid2x2, active: true },
-  { label: 'Bookings', icon: FileText },
-  { label: 'Buy', icon: ShoppingBag },
-  { label: 'Sell', icon: Tag },
-  { label: 'Settings', icon: Settings },
-];
-
-/* -------------------------------------------------------------------------- */
-/* Tone maps                                                                   */
-/* -------------------------------------------------------------------------- */
-
-const TONE_CHIP = {
-  green: 'bg-brand-soft text-brand-700',
-  blue: 'bg-sky-100 text-sky-600',
-  orange: 'bg-orange-100 text-orange-600',
-  violet: 'bg-violet-100 text-violet-600',
-  teal: 'bg-teal-100 text-teal-600',
-};
-const TONE_LINE = {
-  green: '#16A34A',
-  blue: '#0EA5E9',
-  orange: '#F97316',
-  violet: '#8B5CF6',
-  teal: '#14B8A6',
-};
 const STATUS_BADGE = {
-  Created: 'bg-brand-soft text-brand-700',
-  New: 'bg-brand-soft text-brand-700',
+  Created: 'bg-[#DCFCE7] text-[#15803D]',
   'In Progress': 'bg-sky-100 text-sky-700',
   Pickup: 'bg-orange-100 text-orange-700',
   Completed: 'bg-violet-100 text-violet-700',
+  Cancelled: 'bg-red-100 text-red-700',
 };
 
+const TEAM_STATUS_BADGE = {
+  'In Progress': 'bg-sky-100 text-sky-700',
+  Pending: 'bg-orange-100 text-orange-700',
+};
+
+const DASH = '—';
+
+function formatCurrency(amount) {
+  return `₹${Math.round(amount || 0).toLocaleString('en-IN')}`;
+}
+
+function getGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function initialsOf(name) {
+  return name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+}
+
 /* -------------------------------------------------------------------------- */
-/* Small pieces                                                                */
+/* Sub-sections                                                                */
 /* -------------------------------------------------------------------------- */
 
-function Sparkline({ color, data }) {
-  const w = 52;
-  const h = 20;
-  const step = w / Math.max(1, data.length - 1);
-  const pts = data.map((p, i) => `${(i * step).toFixed(1)},${(h - p * h).toFixed(1)}`).join(' ');
+function WeeklyBookingsChart({ data, loading }) {
   return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} fill="none" aria-hidden="true">
-      <polyline points={pts} stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    <CardShell title="Weekly Bookings">
+      {loading ? (
+        <div className="flex h-40 items-center justify-center text-sm text-[#98A2B3]">Loading…</div>
+      ) : (
+        <div className="flex h-40 items-end justify-between gap-2.5">
+          {data.map((bar, index) => (
+            <div key={`${bar.day}-${index}`} className="flex flex-1 flex-col items-center gap-2">
+              <div className="flex h-32 w-full items-end justify-center" title={`${bar.count} booking${bar.count === 1 ? '' : 's'}`}>
+                <div
+                  className={cx('w-full max-w-[26px] rounded-full transition-all', bar.today ? 'bg-[#15803D]' : 'bg-[#DCFCE7]')}
+                  style={{ height: `${Math.round(bar.value * 100)}%` }}
+                />
+              </div>
+              <span className={cx('text-xs font-semibold', bar.today ? 'text-[#15803D]' : 'text-[#98A2B3]')}>{bar.day}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </CardShell>
   );
 }
 
-function StatCard({ stat }) {
-  const Icon = stat.icon;
+function ReminderCard({ pickup, loading }) {
   return (
-    <div className="h-full rounded-2xl border border-brand-line bg-white p-3.5 shadow-soft">
-      <div className="flex items-start justify-between gap-1">
-        <span className={cx('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', TONE_CHIP[stat.tone])}>
-          <Icon className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <span className="text-xl font-extrabold leading-none tracking-tight text-brand-ink">{stat.value}</span>
-      </div>
-      <p className="mt-2.5 text-sm font-bold text-brand-ink">{stat.label}</p>
-      <div className="mt-0.5 flex items-end justify-between gap-1">
-        <p className="text-xs text-brand-muted">{stat.sub}</p>
-        <Sparkline color={TONE_LINE[stat.tone]} data={stat.trend} />
-      </div>
-    </div>
+    <CardShell title="Reminders">
+      {loading ? (
+        <p className="text-sm text-[#98A2B3]">Loading…</p>
+      ) : pickup ? (
+        <>
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#DCFCE7] text-[#15803D]">
+              <Bell className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-[#101828]">{pickup.title}</p>
+              <p className="mt-0.5 text-xs text-[#667085]">{pickup.subtitle}</p>
+              <p className="mt-1 text-xs font-semibold text-[#15803D]">{pickup.time}</p>
+            </div>
+          </div>
+          <Link
+            href="/shop-home/services/pickups"
+            className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534]"
+          >
+            View Pickup
+          </Link>
+        </>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-4 text-center">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#F0FDF4] text-[#98A2B3]">
+            <Bell className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <p className="mt-3 text-sm font-semibold text-[#101828]">No pickups scheduled</p>
+          <p className="mt-0.5 text-xs text-[#667085]">You&apos;re all caught up.</p>
+        </div>
+      )}
+    </CardShell>
   );
 }
 
-function QuickAction({ action }) {
-  const Icon = action.icon;
+/** No backend concept for a personal task list exists yet — honest empty state, not sample tasks. */
+function TaskListCard() {
   return (
-    <button type="button" className="group flex flex-col items-center gap-2 text-center focus-visible:outline-none">
-      <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-brand-line bg-white text-brand-600 shadow-soft transition group-hover:border-brand-300 group-hover:shadow-lift group-focus-visible:ring-2 group-focus-visible:ring-brand-700 group-focus-visible:ring-offset-2">
-        <Icon className="h-6 w-6" aria-hidden="true" />
-      </span>
-      <span className="text-[0.7rem] font-semibold leading-tight text-brand-ink">{action.label}</span>
-    </button>
+    <CardShell
+      title="Today's Tasks"
+      action={
+        <Link
+          href="/shop-home/employee/tasks"
+          className="inline-flex items-center gap-1 rounded-full bg-[#F0FDF4] px-2.5 py-1 text-xs font-bold text-[#15803D] transition hover:bg-[#DCFCE7]"
+        >
+          <PlusCircle className="h-3.5 w-3.5" aria-hidden="true" />
+          New
+        </Link>
+      }
+    >
+      <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[#EAECF0] py-8 text-center">
+        <ListChecks className="h-6 w-6 text-[#98A2B3]" aria-hidden="true" />
+        <p className="mt-2 text-sm font-semibold text-[#101828]">Task tracking isn&apos;t set up yet</p>
+        <p className="mt-0.5 max-w-[220px] text-xs text-[#667085]">This card will list real tasks once task management is wired up.</p>
+      </div>
+    </CardShell>
   );
 }
 
-function BookingCard({ booking }) {
+function TeamActivityCard({ team, loading }) {
   return (
-    <article className="w-44 shrink-0 overflow-hidden rounded-2xl border border-brand-line bg-white shadow-soft">
-      <div className="px-3 pt-3">
-        <span className={cx('inline-block rounded-full px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide', STATUS_BADGE[booking.status] || 'bg-brand-soften text-brand-muted')}>
-          {booking.status}
-        </span>
-      </div>
-      <div className="mx-3 mt-2 flex h-28 items-center justify-center rounded-xl bg-brand-50">
-        <Smartphone className="h-12 w-12 text-brand-600/50" aria-hidden="true" />
-      </div>
-      <div className="p-3">
-        <p className="text-xs font-bold text-brand-muted">#{booking.id}</p>
-        <p className="mt-0.5 truncate text-sm font-bold text-brand-ink">{booking.device}</p>
-        <p className="truncate text-xs text-brand-muted">{booking.customer}</p>
-        <p className="mt-0.5 text-[0.68rem] text-brand-subtle">{booking.when}</p>
-      </div>
-    </article>
+    <CardShell
+      title="Team Activity"
+      action={
+        <Link href="/shop-home/employee/team" className="text-xs font-bold text-[#15803D] hover:underline">
+          View Team
+        </Link>
+      }
+    >
+      {loading ? (
+        <p className="text-sm text-[#98A2B3]">Loading…</p>
+      ) : team.length === 0 ? (
+        <p className="py-4 text-center text-sm text-[#667085]">No active jobs right now.</p>
+      ) : (
+        <ul className="space-y-3.5">
+          {team.map((member) => (
+            <li key={member.name} className="flex items-center gap-3">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
+                {initialsOf(member.name)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-[#101828]">{member.name}</p>
+                <p className="truncate text-xs text-[#667085]">{member.task}</p>
+              </div>
+              <span className={cx('shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide', TEAM_STATUS_BADGE[member.status])}>
+                {member.status}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </CardShell>
   );
 }
 
-function SectionHead({ title, subtitle, action }) {
+function CompletionGauge({ rate, loading }) {
+  const radius = 46;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - (loading ? 0 : rate) / 100);
+
   return (
-    <div className="mb-3 flex items-start justify-between gap-3">
-      <div className="min-w-0">
-        <h2 className="text-base font-extrabold tracking-tight text-brand-ink">{title}</h2>
-        {subtitle ? <p className="text-xs text-brand-muted">{subtitle}</p> : null}
+    <CardShell title="Completion Rate">
+      <div className="flex flex-col items-center py-1">
+        <div className="relative h-[130px] w-[130px]">
+          <svg width="130" height="130" viewBox="0 0 130 130" className="-rotate-90">
+            <circle cx="65" cy="65" r={radius} fill="none" stroke="#F0FDF4" strokeWidth="12" />
+            <circle
+              cx="65"
+              cy="65"
+              r={radius}
+              fill="none"
+              stroke="#15803D"
+              strokeWidth="12"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={offset}
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-2xl font-bold text-[#101828]">{loading ? DASH : `${rate}%`}</span>
+            <span className="text-[10px] font-medium text-[#667085]">Completed</span>
+          </div>
+        </div>
+        <div className="mt-6 flex items-center gap-4 text-xs">
+          <span className="flex items-center gap-1.5 text-[#667085]">
+            <span className="h-2 w-2 rounded-full bg-[#15803D]" /> Completed
+          </span>
+          <span className="flex items-center gap-1.5 text-[#667085]">
+            <span className="h-2 w-2 rounded-full bg-[#DCFCE7]" /> Remaining
+          </span>
+        </div>
       </div>
-      {action ? (
-        <button type="button" className="inline-flex shrink-0 items-center gap-0.5 text-sm font-bold text-brand-700">
-          {action}
-          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+    </CardShell>
+  );
+}
+
+/**
+ * ShiftTimer — the one genuinely live thing on this page even before this
+ * rewrite. It counts real elapsed seconds since this dashboard was opened,
+ * via a real setInterval, with a real working pause/resume — it does not
+ * claim to track an actual clock-in/clock-out shift record (there is no
+ * backend for that), so the label says exactly what it is.
+ */
+function ShiftTimer() {
+  const [seconds, setSeconds] = useState(0);
+  const [running, setRunning] = useState(true);
+
+  useEffect(() => {
+    if (!running) return undefined;
+    const id = setInterval(() => setSeconds((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [running]);
+
+  const format = (total) => {
+    const h = String(Math.floor(total / 3600)).padStart(2, '0');
+    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
+  return (
+    <section className="rounded-3xl bg-gradient-to-br from-[#166534] to-[#14532D] p-5 text-white shadow-[0_4px_16px_rgba(20,83,45,0.25)]">
+      <p className="text-sm font-bold text-white/90">Shift Timer</p>
+      <p className="mt-0.5 text-xs text-white/60">Time since you opened the dashboard</p>
+      <p className="mt-5 text-3xl font-bold tabular-nums tracking-wide">{format(seconds)}</p>
+      <div className="mt-5 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setRunning((v) => !v)}
+          aria-label={running ? 'Pause timer' : 'Resume timer'}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25"
+        >
+          {running ? <Pause className="h-4 w-4" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
         </button>
-      ) : null}
-    </div>
-  );
-}
-
-/** A category tile used by Marketplace + Sell by category. */
-function CategoryTile({ item }) {
-  const Icon = item.icon;
-  return (
-    <button type="button" className="flex flex-col items-center gap-1.5">
-      <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl border border-brand-line bg-white text-brand-ink shadow-soft">
-        <Icon className="h-6 w-6" aria-hidden="true" />
-      </span>
-      <span className="text-[0.68rem] font-medium text-brand-muted">{item.label}</span>
-    </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSeconds(0);
+            setRunning(true);
+          }}
+          aria-label="Reset timer"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25"
+        >
+          <RotateCcw className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -240,174 +337,230 @@ function CategoryTile({ item }) {
 /* Page                                                                        */
 /* -------------------------------------------------------------------------- */
 
+const EMPTY_DATA = {
+  bookings: [],
+  counts: {},
+  chats: [],
+  tickets: [],
+  technicians: [],
+};
+
 export default function ShopHomePage() {
-  const [query, setQuery] = useState('');
+  const [shopOwner, setShopOwner] = useState(null);
+  const [data, setData] = useState(EMPTY_DATA);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setShopOwner(readShopOwner());
+    const unsub = subscribe((session) => setShopOwner(session));
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      const [bookingsRes, countsRes, chatsRes, techniciansRes, ticketsRes] = await Promise.allSettled([
+        fetchShopBookings(),
+        fetchTicketCounts(),
+        fetchShopChats(),
+        fetchTechnicians(),
+        fetchTicketsPaged(),
+      ]);
+      if (cancelled) return;
+      setData({
+        bookings: bookingsRes.status === 'fulfilled' ? bookingsRes.value : [],
+        counts: countsRes.status === 'fulfilled' ? countsRes.value : {},
+        chats: chatsRes.status === 'fulfilled' ? chatsRes.value : [],
+        technicians: techniciansRes.status === 'fulfilled' ? techniciansRes.value : [],
+        tickets: ticketsRes.status === 'fulfilled' ? ticketsRes.value : [],
+      });
+      setLoading(false);
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const name = shopOwner ? deriveDisplayName(shopOwner) : 'Partner';
+
+  const { bookings, counts, chats, technicians, tickets } = data;
+  const bookingsToday = bookings.filter((b) => isToday(b.createdAt));
+  const bookingsYesterday = bookings.filter((b) => {
+    const d = new Date(b.createdAt || 0);
+    const y = new Date();
+    y.setDate(y.getDate() - 1);
+    return d.toDateString() === y.toDateString();
+  });
+  const pending = pendingPickups(bookings);
+  const pendingToday = pending.filter((b) => b.pickupDate === new Date().toISOString().slice(0, 10));
+  const revenueToday = todaysRevenue(tickets);
+  const revenueYesterday = yesterdaysRevenue(tickets);
+  const enquiries = openEnquiries(chats);
+
+  const kpiCards = [
+    {
+      key: 'bookings',
+      label: "Today's Bookings",
+      value: loading ? DASH : String(bookingsToday.length),
+      trend: loading ? null : trendFromYesterday(bookingsToday.length, bookingsYesterday.length),
+      icon: ClipboardList,
+      tone: 'green',
+      href: '/shop-home/services/bookings',
+      featured: true,
+    },
+    {
+      key: 'pickups',
+      label: 'Pending Pickups',
+      value: loading ? DASH : String(pending.length),
+      trend: loading ? null : pendingToday.length > 0 ? `${pendingToday.length} scheduled today` : null,
+      icon: Truck,
+      tone: 'orange',
+      href: '/shop-home/services/pickups',
+    },
+    {
+      key: 'repairs',
+      label: 'Active Repairs',
+      value: loading ? DASH : String(sumActiveRepairs(counts)),
+      trend: loading ? null : 'In progress',
+      icon: Wrench,
+      tone: 'blue',
+      href: '/shop-home/services/service-status',
+    },
+    {
+      key: 'delivery',
+      label: 'Ready for Delivery',
+      value: loading ? DASH : String(sumReadyForDelivery(counts)),
+      trend: loading ? null : 'Awaiting pickup',
+      icon: Package,
+      tone: 'violet',
+      href: '/shop-home/services/delivery',
+    },
+    {
+      key: 'revenue',
+      label: "Today's Revenue",
+      value: loading ? DASH : formatCurrency(revenueToday),
+      trend: loading ? null : trendFromYesterday(revenueToday, revenueYesterday),
+      icon: IndianRupee,
+      tone: 'green',
+      href: '/shop-home/reports/revenue',
+    },
+    {
+      key: 'enquiries',
+      label: 'Open Enquiries',
+      value: loading ? DASH : String(enquiries.length),
+      trend: loading ? null : enquiries.length > 0 ? 'Needs response' : 'All caught up',
+      icon: MessageSquare,
+      tone: 'red',
+      href: '/shop-home/services/enquiries',
+    },
+  ];
+
+  const weekly = weeklyBookings(bookings);
+  const pickupReminder = nextPickup(bookings);
+  const team = teamActivity(technicians, tickets);
+  const rate = completionRate(counts);
+  const recent = recentBookings(bookings);
 
   return (
-    <div className="min-h-screen bg-[#F6F7F9]">
-      <div className="mx-auto w-full max-w-3xl px-4 pb-28 pt-4 sm:px-6">
-        {/* ---- Header ---------------------------------------------------- */}
-        <header className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-extrabold text-white">
-              {SHOP.initials}
-            </span>
-            <div className="min-w-0">
-              <p className="text-xs text-brand-muted">{SHOP.greeting},</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="text-lg font-extrabold leading-tight text-brand-ink">{SHOP.name}</p>
-                {SHOP.verified ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-brand-700">
-                    <ShieldCheck className="h-3 w-3" aria-hidden="true" />
-                    Verified
-                  </span>
-                ) : null}
-              </div>
-            </div>
-          </div>
-          <button type="button" aria-label="Notifications" className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-brand-ink shadow-soft">
-            <Bell className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </header>
+    <div className="space-y-6">
+      <PageHeader title={`${getGreeting()}, ${name}`} subtitle="Here's what's happening with your business today." />
 
-        {/* ---- Search ---------------------------------------------------- */}
-        <div className="mt-4 flex items-center gap-2 rounded-full border border-brand-line bg-white px-4 py-3 shadow-soft">
-          <Search className="h-5 w-5 shrink-0 text-brand-subtle" aria-hidden="true" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search bookings, customers, devices…"
-            className="min-w-0 flex-1 bg-transparent text-sm text-brand-ink outline-none placeholder:text-brand-subtle"
+      {/* ---- KPI cards ---------------------------------------------------- */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {kpiCards.map((card) => (
+          <StatCard
+            key={card.key}
+            icon={card.icon}
+            label={card.label}
+            value={card.value}
+            trend={card.trend}
+            tone={card.tone}
+            href={card.href}
+            featured={card.featured}
           />
-          <Mic className="h-5 w-5 shrink-0 text-brand-subtle" aria-hidden="true" />
-        </div>
-
-        {/* ---- Promo banner (real GGFIX hero art) ------------------------ */}
-        <button
-          type="button"
-          aria-label="Grow your business with GGFIX — Repair, Buy, Sell"
-          className="mt-4 block w-full overflow-hidden rounded-3xl shadow-soft transition hover:shadow-lift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://res.cloudinary.com/dg6c0g4gi/image/upload/f_auto,q_auto,w_1200/v1784700061/hero_z8j4sg.png"
-            alt="Grow your business with GGFIX — one platform for Repair, Buy and Sell"
-            className="block w-full"
-            loading="eager"
-            decoding="async"
-          />
-        </button>
-
-        {/* ---- Stat cards (scroll on mobile, 5-up on desktop) ------------ */}
-        <div className="mt-4 flex gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-5 sm:overflow-visible sm:pb-0">
-          {STATS.map((s) => (
-            <div key={s.label} className="w-32 shrink-0 sm:w-auto">
-              <StatCard stat={s} />
-            </div>
-          ))}
-        </div>
-
-        {/* ---- Today's Summary (moved before Quick Actions) -------------- */}
-        <section className="mt-5 rounded-3xl border border-brand-line bg-white p-4 shadow-soft">
-          <SectionHead title="Today's Summary" action="View report" />
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {TODAY_SUMMARY.map((t) => {
-              const Icon = t.icon;
-              return (
-                <div key={t.label} className="flex items-center gap-2.5">
-                  <span className={cx('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full', TONE_CHIP[t.tone])}>
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-extrabold text-brand-ink">{t.value}</p>
-                    <p className="truncate text-[0.68rem] text-brand-muted">{t.label}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* ---- Quick Actions (grid-5, light-bordered icons) -------------- */}
-        <section className="mt-5 rounded-3xl border border-brand-line bg-white p-4 shadow-soft">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-extrabold tracking-tight text-brand-ink">Quick Actions</h2>
-            <button type="button" className="inline-flex items-center gap-1.5 text-sm font-bold text-brand-700">
-              Customise
-              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-          <div className="grid grid-cols-5 gap-x-2 gap-y-4">
-            {QUICK_ACTIONS.map((a) => (
-              <QuickAction key={a.label} action={a} />
-            ))}
-          </div>
-        </section>
-
-        {/* ---- Latest Bookings (four) ------------------------------------ */}
-        <section className="mt-6">
-          <SectionHead title="Latest Bookings" action="View all" />
-          <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
-            {LATEST_BOOKINGS.map((b) => (
-              <BookingCard key={b.id} booking={b} />
-            ))}
-          </div>
-        </section>
-
-        {/* ---- Marketplace ----------------------------------------------- */}
-        <section className="mt-6 rounded-3xl border border-brand-line bg-white p-4 shadow-soft">
-          <SectionHead title="Marketplace" subtitle="Browse devices and accessories by category" action="View all" />
-          <div className="grid grid-cols-6 gap-2">
-            {MARKETPLACE.map((c) => (
-              <CategoryTile key={c.label} item={c} />
-            ))}
-          </div>
-        </section>
-
-        {/* ---- Sell by category ------------------------------------------ */}
-        <section className="mt-6 rounded-3xl border border-brand-line bg-white p-4 shadow-soft">
-          <SectionHead title="Sell by category" subtitle="Create a listing for the device category you have" action="See all" />
-          <div className="grid grid-cols-6 gap-2">
-            {SELL_CATEGORIES.map((c) => (
-              <CategoryTile key={c.label} item={c} />
-            ))}
-          </div>
-        </section>
+        ))}
       </div>
 
-      {/* ---- Floating New Booking ---------------------------------------- */}
-      <button
-        type="button"
-        aria-label="New Booking"
-        className="fixed bottom-24 right-4 z-40 inline-flex flex-col items-center justify-center rounded-full bg-brand-600 px-4 py-3 text-white shadow-lift transition hover:bg-brand-700"
-      >
-        <Plus className="h-6 w-6" aria-hidden="true" />
-        <span className="text-[0.6rem] font-bold">New Booking</span>
-      </button>
+      {/* ---- Weekly Bookings / Reminders / Today's Tasks ------------------ */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <WeeklyBookingsChart data={weekly} loading={loading} />
+        <ReminderCard pickup={pickupReminder} loading={loading} />
+        <TaskListCard />
+      </div>
 
-      {/* ---- Bottom tab bar ---------------------------------------------- */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-brand-line bg-white">
-        <ul className="mx-auto flex max-w-3xl items-stretch justify-between px-4 py-2">
-          {TABS.map((t) => {
-            const Icon = t.icon;
-            return (
-              <li key={t.label} className="flex-1">
-                <Link
-                  href="#"
+      {/* ---- Team Activity / Completion Rate / Shift Timer ----------------- */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <TeamActivityCard team={team} loading={loading} />
+        <CompletionGauge rate={rate} loading={loading} />
+        <ShiftTimer />
+      </div>
+
+      {/* ---- Quick Actions --------------------------------------------- */}
+      <section>
+        <div className="mb-3 flex items-center gap-2">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[#DCFCE7] text-[#15803D]">
+            <Zap className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+          <h2 className="text-base font-bold text-[#101828]">Quick Actions</h2>
+        </div>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+          {QUICK_ACTIONS.map((action) => (
+            <QuickAction key={action.label} icon={action.icon} label={action.label} href={action.href} />
+          ))}
+        </div>
+      </section>
+
+      {/* ---- Recent Bookings --------------------------------------------- */}
+      <section className="rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+        <div className="flex items-center justify-between border-b border-[#EAECF0] px-4 py-4 sm:px-5">
+          <h2 className="text-base font-bold text-[#101828]">Recent Bookings</h2>
+          <Link
+            href="/shop-home/services/bookings"
+            className="inline-flex items-center gap-1 rounded-full bg-[#F0FDF4] px-3 py-1.5 text-xs font-bold text-[#15803D] transition hover:bg-[#DCFCE7]"
+          >
+            View all
+            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </Link>
+        </div>
+        <div className="divide-y divide-[#EAECF0]">
+          {loading ? (
+            <p className="px-4 py-6 text-center text-sm text-[#98A2B3] sm:px-5">Loading…</p>
+          ) : recent.length === 0 ? (
+            <div className="flex flex-col items-center px-4 py-10 text-center sm:px-5">
+              <CheckCircle2 className="h-6 w-6 text-[#98A2B3]" aria-hidden="true" />
+              <p className="mt-2 text-sm text-[#667085]">No bookings yet.</p>
+            </div>
+          ) : (
+            recent.map((booking) => (
+              <div key={booking.id} className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4]">
+                  <Smartphone className="h-5 w-5 text-[#15803D]" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold text-[#101828]">{booking.issueSummary || 'Service booking'}</p>
+                  <p className="truncate text-xs text-[#667085]">
+                    {booking.customerName || 'Customer'} · #{booking.bookingNumber}
+                  </p>
+                </div>
+                <div className="hidden shrink-0 text-right text-xs text-[#667085] sm:block">
+                  {booking.createdAt ? new Date(booking.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+                </div>
+                <span
                   className={cx(
-                    'flex flex-col items-center gap-1 rounded-xl py-1 text-[0.68rem] font-semibold transition',
-                    t.active ? 'text-brand-700' : 'text-brand-subtle hover:text-brand-ink',
+                    'shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide',
+                    STATUS_BADGE[booking.statusLabel] || 'bg-[#F0FDF4] text-[#667085]',
                   )}
                 >
-                  <Icon className="h-5 w-5" aria-hidden="true" />
-                  {t.label}
-                  {t.active ? <span className="mt-0.5 h-0.5 w-5 rounded-full bg-brand-600" /> : null}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
+                  {booking.statusLabel}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </section>
     </div>
   );
 }

@@ -33,8 +33,17 @@ export async function shopRequest(base, path, options = {}) {
     },
   });
   if (!res.ok) {
-    const err = new Error(`Request failed (${res.status}): ${path}`);
+    const raw = await res.text().catch(() => '');
+    let body = raw;
+    if (raw) {
+      try { body = JSON.parse(raw); } catch { /* keep raw text */ }
+    }
+    const apiMsg =
+      (body && typeof body === 'object' && (body.message || body.error)) ||
+      (typeof body === 'string' && body.trim() ? body : null);
+    const err = new Error(apiMsg || `Request failed (${res.status}): ${path}`);
     err.status = res.status;
+    err.body = body;
     throw err;
   }
   if (res.status === 204) return null;

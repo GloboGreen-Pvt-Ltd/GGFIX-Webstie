@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, LogOut, Settings, Store, User } from 'lucide-react';
+import { ChevronDown, LogOut, Settings, Store } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
 import { logout } from '@/lib/shopAuth';
@@ -71,7 +71,6 @@ export function initialsOf(name) {
 }
 
 const MENU_LINKS = [
-  { href: '/shop-home/account/profile', label: 'My Profile', icon: User },
   { href: '/shop-home/account/business-profile', label: 'Business Profile', icon: Store },
   { href: '/shop-home/account/settings', label: 'Account Settings', icon: Settings },
 ];

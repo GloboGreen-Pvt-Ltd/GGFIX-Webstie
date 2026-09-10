@@ -1,10 +1,24 @@
 /**
- * shopProfile.js — the shop owner's own profile (/shop-home/account/profile).
+ * shopProfile.js — the shop owner's own profile, read by the header/rail
+ * avatar and by /shop-home/account/settings' Personal Information tab.
  *
  * Backed by auth-service's existing "me" self-service routes:
- *   GET  {AUTH_BASE}/auth/me                        -> ShopOwnerView (live profile)
- *   POST {AUTH_BASE}/auth/me/kyc-documents/upload    -> { url }  (type=avatar)
- *   PUT  {AUTH_BASE}/auth/me/avatar                  -> ShopOwnerView (persists it)
+ *   GET   {AUTH_BASE}/auth/me                        -> ShopOwnerView (live profile)
+ *   POST  {AUTH_BASE}/auth/me/kyc-documents/upload    -> { url }  (type=avatar)
+ *   PUT   {AUTH_BASE}/auth/me/avatar                  -> ShopOwnerView (persists it)
+ *   PATCH {AUTH_BASE}/auth/me                         { name?, personalAddress?, addrState?, addrDistrict?,
+ *                                                        addrTaluk?, addrArea?, addrStreet?, addrPincode? }
+ *                                                      -> ShopOwnerView (partial — only sent fields are applied)
+ *   POST  {AUTH_BASE}/auth/me/email/otp/send          { email } -> { sent, devOtp }
+ *   POST  {AUTH_BASE}/auth/me/email/otp/verify        { email, otp } -> ShopOwnerView
+ *   POST  {AUTH_BASE}/auth/me/mobile/otp/send         { mobile } -> { sent, defaultOtp }
+ *   POST  {AUTH_BASE}/auth/me/mobile/otp/verify       { mobile, otp } -> ShopOwnerView
+ *
+ * Email and mobile are NOT a plain PATCH like name — they're also the login
+ * identifiers, so each goes through a send-OTP-to-the-NEW-value step before
+ * the backend will persist it. Mobile OTP is always "123456": no SMS gateway
+ * exists anywhere in this codebase, same limitation every other mobile-OTP
+ * flow here already has.
  *
  * AUTH_BASE() already ends in "/auth" (see src/lib/api.js) — nginx strips that
  * prefix before proxying, and the Spring controller is @RequestMapping("/auth"),
@@ -50,5 +64,49 @@ export async function saveMyAvatar(avatarUrl) {
   return shopRequest(base(), '/auth/me/avatar', {
     method: 'PUT',
     body: JSON.stringify({ avatarUrl }),
+  });
+}
+
+/**
+ * Partial update of name and/or personal address. Pass only the fields you
+ * want to change — e.g. updateMyProfile({ name }) or
+ * updateMyProfile({ addrState, addrDistrict, ... }). Returns the refreshed profile.
+ */
+export async function updateMyProfile(fields) {
+  return shopRequest(base(), '/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify(fields || {}),
+  });
+}
+
+/** Sends an OTP to a NEW email address to verify before it becomes the login email. */
+export async function sendChangeEmailOtp(email) {
+  return shopRequest(base(), '/auth/me/email/otp/send', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Verifies the email-change OTP and persists the new email. Returns the refreshed profile. */
+export async function verifyChangeEmailOtp(email, otp) {
+  return shopRequest(base(), '/auth/me/email/otp/verify', {
+    method: 'POST',
+    body: JSON.stringify({ email, otp }),
+  });
+}
+
+/** "Sends" the mobile-change OTP (always 123456 — no SMS gateway exists yet). */
+export async function sendChangeMobileOtp(mobile) {
+  return shopRequest(base(), '/auth/me/mobile/otp/send', {
+    method: 'POST',
+    body: JSON.stringify({ mobile }),
+  });
+}
+
+/** Verifies the mobile-change OTP and persists the new number. Returns the refreshed profile. */
+export async function verifyChangeMobileOtp(mobile, otp) {
+  return shopRequest(base(), '/auth/me/mobile/otp/verify', {
+    method: 'POST',
+    body: JSON.stringify({ mobile, otp }),
   });
 }

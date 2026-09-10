@@ -30,7 +30,6 @@ import {
   Smartphone,
   Store,
   Truck,
-  User,
   Users,
   Wallet,
   Wrench,
@@ -100,13 +99,16 @@ export const PARTNER_NAV = [
 ];
 
 /**
- * The profile-dropdown destinations (My Profile / Business Profile /
- * Account Settings). Not shown in the sidebar, but routed through the same
- * catch-all + ComingSoon pattern as every other unbuilt destination — see
+ * The profile-dropdown destinations (Business Profile / Account Settings).
+ * Not shown in the sidebar, but routed through the same catch-all +
+ * ComingSoon pattern as every other unbuilt destination — see
  * findNavItemBySlug below.
+ *
+ * "My Profile" (account/profile) used to be a third item here — removed as
+ * redundant with Account Settings' own Personal Information tab, which now
+ * also owns the profile-photo upload that page used to be the only home for.
  */
 export const ACCOUNT_ITEMS = [
-  { key: 'my-profile', label: 'My Profile', slug: 'account/profile', icon: User, description: 'Your personal partner-account details.' },
   { key: 'business-profile', label: 'Business Profile', slug: 'account/business-profile', icon: Store, description: 'Your shop/business information.' },
   { key: 'account-settings', label: 'Account Settings', slug: 'account/settings', icon: Settings, description: 'Account preferences and security settings.' },
 ];
@@ -141,9 +143,9 @@ export function resolveNavContext(pathname) {
     };
   }
 
-  // Not a sidebar item — check the account-menu destinations (My Profile,
-  // Business Profile, Account Settings) so the navbar title/breadcrumb is
-  // still correct for real pages under /shop-home/account/*.
+  // Not a sidebar item — check the account-menu destinations (Business
+  // Profile, Account Settings) so the navbar title/breadcrumb is still
+  // correct for real pages under /shop-home/account/*.
   const accountMatch = ACCOUNT_ITEMS_WITH_HREF.find((item) => item.href === clean);
   if (accountMatch) {
     return { title: accountMatch.label, breadcrumb: [accountMatch.label], sectionKey: null };

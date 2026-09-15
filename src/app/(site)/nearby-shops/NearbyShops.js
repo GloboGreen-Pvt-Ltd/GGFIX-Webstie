@@ -36,6 +36,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ExternalLink,
+  List,
+  Map as MapIcon,
   MapPin,
   Navigation,
   Phone,
@@ -46,6 +48,7 @@ import { AUTH_BASE, SHOP_BASE } from '@/lib/api';
 import { Button, cx } from '@/components/site/ui';
 import { readGeo, subscribe } from '@/components/site/geo';
 import { NEARBY } from '@/lib/siteContent';
+import ShopMap from '@/components/site/nearby-shops/ShopMap';
 
 /* -------------------------------------------------------------------------- */
 /* Transport                                                                   */
@@ -125,7 +128,8 @@ async function getShopPublic(id, signal) {
  * Fold the public detail into a list shop WITHOUT clobbering the list-only fields
  * that the public DTO gets wrong for this context: distanceKm (public returns
  * 0.0) and isOpen (public omits it). Only the genuinely-missing pieces — image,
- * phone, and the fuller address — are copied across, and only when present.
+ * phone, the fuller address, and (below) the location/pickup fields the sparse
+ * /shops(/nearby) DTO never carried — are copied across, and only when present.
  */
 function mergePublicDetail(shop, pub) {
   if (!pub) return shop;
@@ -138,6 +142,13 @@ function mergePublicDetail(shop, pub) {
   // shopTimings() only when the shop has actually set it (null for most today).
   if (pub.pickupFromTime) merged.pickupFromTime = pub.pickupFromTime;
   if (pub.pickupToTime) merged.pickupToTime = pub.pickupToTime;
+  // District/pincode/state were already being fetched here and thrown away —
+  // this just keeps them, for a fuller address line and future PIN display.
+  if (pub.district) merged.district = pub.district;
+  if (pub.pincode) merged.pincode = pub.pincode;
+  if (pub.state) merged.state = pub.state;
+  if (pub.pickupDistanceKm != null) merged.pickupDistanceKm = pub.pickupDistanceKm;
+  if (pub.pickupEnabled != null) merged.pickupEnabled = pub.pickupEnabled;
   return merged;
 }
 
@@ -535,6 +546,7 @@ export default function NearbyShops({ className }) {
   const [shops, setShops] = useState([]);
   const [mode, setMode] = useState('all'); // which query produced `shops`
   const [errorKind, setErrorKind] = useState(null); // 'network' | 'mixed-content'
+  const [view, setView] = useState('list'); // 'list' | 'map'
 
   /* Set when the visitor, having been told there is nothing within the radius,
      asks to see the whole directory anyway. Reset whenever the location moves. */
@@ -734,11 +746,46 @@ export default function NearbyShops({ className }) {
               </p>
             </div>
 
-            <ShopGrid count={shops.length}>
-              {shops.map((shop, index) => (
-                <ShopCard key={shopKey(shop, index)} shop={shop} />
-              ))}
-            </ShopGrid>
+            {/* List / Map toggle. Map markers come from this SAME `shops` array
+                — no second request, and never from Google's own place search. */}
+            <div className="mt-6 flex justify-center">
+              <div className="inline-flex rounded-full border border-brand-line bg-white p-1 shadow-soft">
+                <button
+                  type="button"
+                  onClick={() => setView('list')}
+                  aria-pressed={view === 'list'}
+                  className={cx(
+                    'inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition',
+                    view === 'list' ? 'bg-brand-600 text-white' : 'text-brand-muted hover:text-brand-ink',
+                  )}
+                >
+                  <List className="h-4 w-4" aria-hidden="true" />
+                  List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView('map')}
+                  aria-pressed={view === 'map'}
+                  className={cx(
+                    'inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition',
+                    view === 'map' ? 'bg-brand-600 text-white' : 'text-brand-muted hover:text-brand-ink',
+                  )}
+                >
+                  <MapIcon className="h-4 w-4" aria-hidden="true" />
+                  Map
+                </button>
+              </div>
+            </div>
+
+            {view === 'map' ? (
+              <ShopMap shops={shops} geo={geo} className="mx-auto mt-6 max-w-6xl" />
+            ) : (
+              <ShopGrid count={shops.length}>
+                {shops.map((shop, index) => (
+                  <ShopCard key={shopKey(shop, index)} shop={shop} />
+                ))}
+              </ShopGrid>
+            )}
 
             {/* Escape hatch back to the full directory once a nearby search has
                 narrowed it — otherwise the only way out is clearing the location. */}

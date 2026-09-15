@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Info, LoaderCircle, MapPin } from 'lucide-react';
+import { Check, ChevronDown, Info, LoaderCircle, MapPin, Search } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
 import {
@@ -9,9 +9,11 @@ import {
   formatGeo,
   lookupPlaceName,
   readGeo,
+  reverseGeocodeBackend,
   subscribe,
   writeGeo,
 } from '@/components/site/geo';
+import { loadGoogleMaps } from '@/components/site/googleMapsLoader';
 
 /* -------------------------------------------------------------------------- */
 /* Messages                                                                    */
@@ -70,6 +72,115 @@ function detectUnavailable() {
   if (!('geolocation' in navigator) || !navigator.geolocation) return 'unsupported';
   if (window.isSecureContext === false) return 'insecure';
   return null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Places search                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * "Search area, city or PIN code" — a Google Places Autocomplete input,
+ * restricted to India. Loads the Maps JS API lazily (only once this input is
+ * actually mounted, i.e. a popover containing it is open) rather than on
+ * every page view.
+ *
+ * On selection this reads only the place's coordinates + formatted address
+ * (minimal `fields`, per Google's guidance against over-fetching), then asks
+ * reverseGeocodeBackend() for the structured pincode/area/district
+ * breakdown — reusing the one address-parsing implementation (server-side)
+ * instead of duplicating Google's address_components logic here too. If that
+ * backend call fails, the selection still succeeds with real coordinates and
+ * Google's own formatted address as the label — never blocked on it.
+ */
+function PlacesSearchInput({ onSelect, placeholder }) {
+  const inputRef = useRef(null);
+  const [scriptState, setScriptState] = useState('loading'); // 'loading' | 'ready' | 'unavailable'
+  const [busy, setBusy] = useState(false);
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+
+  useEffect(() => {
+    let cancelled = false;
+    loadGoogleMaps()
+      .then(() => {
+        if (!cancelled) setScriptState('ready');
+      })
+      .catch(() => {
+        if (!cancelled) setScriptState('unavailable');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (scriptState !== 'ready' || !inputRef.current || !window.google) return undefined;
+
+    const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+      componentRestrictions: { country: 'in' },
+      fields: ['place_id', 'geometry', 'formatted_address'],
+      types: ['geocode'],
+    });
+
+    const listener = autocomplete.addListener('place_changed', async () => {
+      const place = autocomplete.getPlace();
+      const loc = place && place.geometry && place.geometry.location;
+      if (!loc) return; // Enter pressed with no selection made — nothing to do
+
+      const lat = loc.lat();
+      const lng = loc.lng();
+      setBusy(true);
+      const resolved = await reverseGeocodeBackend(lat, lng);
+      setBusy(false);
+
+      onSelectRef.current({
+        lat,
+        lng,
+        placeId: place.place_id,
+        formattedAddress: place.formatted_address,
+        source: 'google_places',
+        label: (resolved && resolved.label) || place.formatted_address,
+        ...(resolved || {}),
+      });
+    });
+
+    return () => {
+      if (window.google && window.google.maps && window.google.maps.event) {
+        window.google.maps.event.removeListener(listener);
+      }
+    };
+  }, [scriptState]);
+
+  // Degrade silently when the key is missing or the script fails to load —
+  // GPS and Clear still work without it, this just isn't offered.
+  if (scriptState === 'unavailable') return null;
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        placeholder={placeholder || 'Search area, city or PIN code'}
+        disabled={scriptState !== 'ready'}
+        className={cx(
+          'w-full rounded-xl border border-brand-line bg-white px-3 py-2 text-sm text-brand-ink placeholder:text-brand-subtle',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700',
+          'disabled:cursor-not-allowed disabled:opacity-60',
+        )}
+      />
+      {busy ? (
+        <LoaderCircle
+          className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted motion-safe:animate-spin"
+          aria-hidden="true"
+        />
+      ) : (
+        <Search
+          className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted"
+          aria-hidden="true"
+        />
+      )}
+    </div>
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -196,11 +307,20 @@ export default function LocationControl({ className }) {
 
           // Reverse-geocode SECOND, and never block on it. The coordinates are
           // already stored and /nearby-shops can already query with them; the
-          // place name is presentation only. Resolving '' (offline, blocked,
-          // timed out) simply leaves the chip reading "Near you".
-          lookupPlaceName(entry.lat, entry.lng).then((label) => {
-            if (!aliveRef.current || !label) return;
-            setGeo(writeGeo({ ...entry, label }) || entry);
+          // address is presentation only. Google (via our own backend, key
+          // never reaches the browser) is tried first for the full
+          // pincode/area/district breakdown; BigDataCloud is a same-shape
+          // fallback so the chip keeps working even if the backend call fails.
+          reverseGeocodeBackend(entry.lat, entry.lng).then((place) => {
+            if (!aliveRef.current) return;
+            if (place) {
+              setGeo(writeGeo({ ...entry, ...place, source: 'gps' }) || entry);
+              return;
+            }
+            lookupPlaceName(entry.lat, entry.lng).then((label) => {
+              if (!aliveRef.current || !label) return;
+              setGeo(writeGeo({ ...entry, label, source: 'gps' }) || entry);
+            });
           });
         } else {
           setMessageKey('failed');
@@ -228,6 +348,17 @@ export default function LocationControl({ className }) {
     setMessageKey(null);
     setOpen(false);
     if (triggerRef.current) triggerRef.current.focus();
+  }, []);
+
+  /** A Places Autocomplete selection — write it straight through, same as a GPS fix. */
+  const handlePlaceSelected = useCallback((place) => {
+    if (!aliveRef.current) return;
+    const entry = writeGeo(place);
+    if (entry) {
+      setGeo(entry);
+      setMessageKey(null);
+      setOpen(false);
+    }
   }, []);
 
   /* -- shared classes ----------------------------------------------------- */
@@ -289,30 +420,48 @@ export default function LocationControl({ className }) {
           />
         </button>
       ) : (
-        <button
-          ref={triggerRef}
-          type="button"
-          onClick={requestLocation}
-          disabled={locating}
-          className={cx(
-            chipBase,
-            'border-brand-line bg-white text-brand-ink hover:border-brand-600 hover:text-brand-700',
-            'disabled:cursor-not-allowed disabled:opacity-70',
-          )}
-        >
-          {locating ? (
-            // motion-safe: a perpetual spin is exactly what prefers-reduced-motion
-            // is for. Without motion the icon still reads as "busy" beside the
-            // changed label.
-            <LoaderCircle
-              className="h-4 w-4 shrink-0 motion-safe:animate-spin"
-              aria-hidden="true"
-            />
-          ) : (
-            <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
-          )}
-          <span className="truncate">{locating ? 'Locating…' : 'Set location'}</span>
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            ref={triggerRef}
+            type="button"
+            onClick={requestLocation}
+            disabled={locating}
+            className={cx(
+              chipBase,
+              'border-brand-line bg-white text-brand-ink hover:border-brand-600 hover:text-brand-700',
+              'disabled:cursor-not-allowed disabled:opacity-70',
+            )}
+          >
+            {locating ? (
+              // motion-safe: a perpetual spin is exactly what prefers-reduced-motion
+              // is for. Without motion the icon still reads as "busy" beside the
+              // changed label.
+              <LoaderCircle
+                className="h-4 w-4 shrink-0 motion-safe:animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
+            )}
+            <span className="truncate">{locating ? 'Locating…' : 'Set location'}</span>
+          </button>
+
+          {/* Search is a separate, equally-weighted way in — GPS above keeps its
+              existing one-click behaviour untouched. */}
+          <button
+            type="button"
+            onClick={() => setOpen((prev) => !prev)}
+            aria-expanded={open}
+            aria-label="Search area, city or PIN code"
+            title="Search area, city or PIN code"
+            className={cx(
+              'inline-flex h-[2.375rem] w-[2.375rem] shrink-0 items-center justify-center rounded-full border border-brand-line bg-white text-brand-ink transition hover:border-brand-600 hover:text-brand-700',
+              focusRing,
+            )}
+          >
+            <Search className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
       )}
 
       {/* Status + errors.
@@ -349,17 +498,40 @@ export default function LocationControl({ className }) {
         ) : null}
       </div>
 
+      {/* Search panel — reachable before any location is set, via the search
+          icon button above. Its own popover rather than folded into the "Set
+          location" button so that button's existing one-click GPS behaviour
+          never changes. */}
+      {!geo && open ? (
+        <div className="absolute right-0 top-full z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-brand-line bg-white p-4 shadow-lift">
+          <p className="text-sm font-semibold text-brand-ink">Search area, city or PIN code</p>
+          <p className="mt-1 text-xs leading-relaxed text-brand-muted">
+            e.g. Velachery, Anna Nagar, Chennai, or 600042.
+          </p>
+          <div className="mt-3">
+            <PlacesSearchInput onSelect={handlePlaceSelected} />
+          </div>
+        </div>
+      ) : null}
+
       {/* Detail panel — only reachable once a location is set. */}
       {geo && open ? (
-        <div className="absolute right-0 top-full z-40 mt-2 w-[min(17rem,calc(100vw-2rem))] rounded-2xl border border-brand-line bg-white p-4 shadow-lift">
+        <div className="absolute right-0 top-full z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-brand-line bg-white p-4 shadow-lift">
           <p className="text-sm font-semibold text-brand-ink">Using your location</p>
-          {/* Coordinates, and only coordinates. We cannot name this place — see
-              the component doc. Rendered muted and monospaced so it reads as
-              raw numbers rather than as an address. */}
-          <p className="mt-1 font-mono text-xs text-brand-subtle">{formatGeo(geo)}</p>
+          {/* Reverse geocoding (Google via our backend, BigDataCloud as
+              fallback) usually gives a real address now; fall back to raw
+              coordinates, rendered monospaced, when neither resolved. */}
+          <p className="mt-1 text-xs text-brand-subtle">
+            {geo.formattedAddress || <span className="font-mono">{formatGeo(geo)}</span>}
+          </p>
           <p className="mt-2 text-xs leading-relaxed text-brand-muted">
             Shops are matched by distance from this point. It stays on this device.
           </p>
+
+          <div className="mt-3">
+            <p className="mb-1.5 text-xs font-semibold text-brand-ink">Search a different area</p>
+            <PlacesSearchInput onSelect={handlePlaceSelected} />
+          </div>
 
           <div className="mt-3 flex flex-wrap gap-2">
             <button

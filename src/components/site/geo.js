@@ -8,8 +8,13 @@
  * on a window CustomEvent rather than through context or props.
  *
  * Contract — do not change these without updating BOTH consumers:
- *   storage key   'ggfix_geo'  -> JSON { lat:number, lng:number, at:number }
+ *   storage key   'ggfix_geo'  -> JSON { lat:number, lng:number, at:number, label?, ...place }
  *   event name    'ggfix:geo'  -> CustomEvent, detail = the entry, or null on clear
+ *
+ * The entry always has lat/lng/at; every other field is optional and additive
+ * — placeId, pincode, area, city, district, state, country, formattedAddress,
+ * source ('gps' | 'google_places' | 'pincode'). A GPS-only entry from before
+ * this feature existed still normalizes fine with just lat/lng/at/label.
  *
  * This module is import-safe from a server component: it declares no 'use client'
  * directive, holds no React state, and every window/localStorage access is
@@ -17,6 +22,8 @@
  * `window` does not exist — an unguarded access here would fail the build, not
  * just the browser.
  */
+
+import { AUTH_BASE } from '@/lib/api';
 
 export const GEO_STORAGE_KEY = 'ggfix_geo';
 export const GEO_EVENT = 'ggfix:geo';
@@ -74,7 +81,38 @@ function normalize(raw) {
   // coordinates — the whole point of the entry is the /shops/nearby query.
   const label = typeof raw.label === 'string' && raw.label.trim() ? raw.label.trim() : '';
 
-  return { lat, lng, at, label };
+  // The rest of a structured place — all optional, all additive. Every field
+  // is trimmed-string-or-undefined so a partial Google/backend result (a
+  // point with no sublocality, no postal_code) never poisons the entry;
+  // omitted keys just don't appear in the persisted JSON.
+  const str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+  const placeId = str(raw.placeId);
+  const pincode = str(raw.pincode);
+  const area = str(raw.area);
+  const city = str(raw.city);
+  const district = str(raw.district);
+  const state = str(raw.state);
+  const country = str(raw.country);
+  const formattedAddress = str(raw.formattedAddress);
+  const source = raw.source === 'gps' || raw.source === 'google_places' || raw.source === 'pincode'
+    ? raw.source
+    : undefined;
+
+  return {
+    lat,
+    lng,
+    at,
+    label,
+    ...(placeId && { placeId }),
+    ...(pincode && { pincode }),
+    ...(area && { area }),
+    ...(city && { city }),
+    ...(district && { district }),
+    ...(state && { state }),
+    ...(country && { country }),
+    ...(formattedAddress && { formattedAddress }),
+    ...(source && { source }),
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -128,6 +166,63 @@ export async function lookupPlaceName(lat, lng) {
     // Offline, CORS, abort, blocked by a tracker blocker, junk body — all the
     // same outcome. The coordinates still work; only the pretty name is lost.
     return '';
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
+ * Reverse-geocode via GGFIX's own backend (Google Geocoding, server-side —
+ * the API key never reaches the browser). This is the PRIMARY path; callers
+ * fall back to lookupPlaceName() (BigDataCloud) only when this returns null,
+ * so the location chip keeps working even if the key isn't configured yet or
+ * the backend call fails for any reason.
+ *
+ * @returns {Promise<object|null>} a partial geo entry — {pincode, area, city,
+ *   district, state, country, formattedAddress, placeId} — to spread into
+ *   writeGeo() alongside {lat, lng, source}. Never throws; null on ANY
+ *   failure (network, non-2xx, {success:false}, malformed body).
+ *
+ * AUTH_BASE() + call site both carry '/auth' — the edge nginx location
+ * strips one prefix, and the Spring mapping expects the other, the same
+ * doubling every other AUTH_BASE() call in this codebase already relies on
+ * (see NearbyShops.js's getShopPublic).
+ */
+export async function reverseGeocodeBackend(lat, lng) {
+  if (!isBrowser() || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
+
+  try {
+    const base = String(AUTH_BASE() || '').replace(/\/$/, '');
+    const res = await fetch(`${base}/auth/location/reverse-geocode`, {
+      method: 'POST',
+      credentials: 'omit',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ latitude: lat, longitude: lng }),
+      signal: controller ? controller.signal : undefined,
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || data.success !== true || !data.location || typeof data.location !== 'object') return null;
+
+    const loc = data.location;
+    return {
+      placeId: loc.placeId,
+      pincode: loc.pincode,
+      area: loc.area,
+      city: loc.city,
+      district: loc.district,
+      state: loc.state,
+      country: loc.country,
+      formattedAddress: loc.formattedAddress,
+      // formattedAddress reads better as the chip label than a bare area name
+      // when we have it; callers still prefer their own label if they build one.
+      label: loc.area || loc.city || loc.formattedAddress,
+    };
+  } catch {
+    return null;
   } finally {
     if (timer) clearTimeout(timer);
   }

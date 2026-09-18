@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, Headphones, Laptop, Smartphone, Tablet, Watch } from 'lucide-react';
+import { ChevronDown, Headphones, Laptop, Smartphone, Tablet, Watch, Wrench } from 'lucide-react';
 
 import { cx } from './ui';
 import { DEVICE_CATEGORIES } from '@/lib/siteContent';
@@ -72,8 +72,11 @@ export default function RepairNavMenu({ active, variant = 'desktop', onNavigate 
     setOpen(false);
   }, []);
 
+  // Filled pill, matching SiteHeader's navLinkClass — the icon has no colour
+  // class of its own, so it inherits text-brand-700 (active) or
+  // text-brand-muted (inactive) from this same className via currentColor.
   const activeClass = active
-    ? 'text-brand-700 shadow-[inset_0_-2px_0_0_#16A34A]'
+    ? 'bg-brand-soft text-brand-700'
     : 'text-brand-muted hover:bg-brand-soften hover:text-brand-ink';
 
   if (variant === 'mobile') {
@@ -89,7 +92,10 @@ export default function RepairNavMenu({ active, variant = 'desktop', onNavigate 
             active ? 'bg-brand-soft text-brand-700' : 'text-brand-muted hover:bg-brand-soften hover:text-brand-ink',
           )}
         >
-          Repair
+          <span className="flex items-center gap-2.5">
+            <Wrench className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Repair
+          </span>
           <ChevronDown
             className={cx('h-4 w-4 shrink-0 transition-transform', open && 'rotate-180')}
             aria-hidden="true"
@@ -143,8 +149,9 @@ export default function RepairNavMenu({ active, variant = 'desktop', onNavigate 
         onFocus={() => setOpen(true)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className={cx('inline-flex items-center gap-1 rounded-lg px-3.5 py-2 text-sm font-semibold transition', FOCUS_RING, activeClass)}
+        className={cx('inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold transition', FOCUS_RING, activeClass)}
       >
+        <Wrench className="h-4 w-4 shrink-0" aria-hidden="true" />
         Repair
         <ChevronDown className={cx('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')} aria-hidden="true" />
       </Link>

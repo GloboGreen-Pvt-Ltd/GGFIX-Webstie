@@ -1,19 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Info, LoaderCircle, MapPin, Search } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Check, ChevronDown, Info, LoaderCircle, MapPin, X } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
 import {
   clearGeo,
   formatGeo,
+  geocodePincode,
   lookupPlaceName,
   readGeo,
   reverseGeocodeBackend,
   subscribe,
   writeGeo,
 } from '@/components/site/geo';
-import { loadGoogleMaps } from '@/components/site/googleMapsLoader';
 
 /* -------------------------------------------------------------------------- */
 /* Messages                                                                    */
@@ -26,13 +27,14 @@ import { loadGoogleMaps } from '@/components/site/googleMapsLoader';
 
 const MESSAGES = {
   denied:
-    'Location is blocked for this site. Allow it in your browser’s address-bar settings, or open Near Shops to browse every shop.',
+    'Location is blocked for this site. Allow it in your browser’s address-bar settings, or enter your PIN code above.',
   unavailable: 'Couldn’t work out where you are just now. Try again in a moment.',
   timeout: 'That took too long. Check your connection and try again.',
   failed: 'Couldn’t get your location. Try again in a moment.',
-  unsupported: 'This browser can’t share a location. You can still browse every shop on Near Shops.',
-  insecure:
-    'Location sharing needs a secure (https) connection. On this address you can still browse every shop on Near Shops.',
+  unsupported: 'This browser can’t share a location. Enter your PIN code above instead.',
+  insecure: 'Location sharing needs a secure (https) connection. Enter your PIN code above instead.',
+  pincodeInvalid: 'Enter a valid 6-digit PIN code.',
+  pincodeNotFound: 'Couldn’t find that PIN code. Double-check it and try again.',
 };
 
 /**
@@ -75,135 +77,30 @@ function detectUnavailable() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Places search                                                              */
-/* -------------------------------------------------------------------------- */
-
-/**
- * "Search area, city or PIN code" — a Google Places Autocomplete input,
- * restricted to India. Loads the Maps JS API lazily (only once this input is
- * actually mounted, i.e. a popover containing it is open) rather than on
- * every page view.
- *
- * On selection this reads only the place's coordinates + formatted address
- * (minimal `fields`, per Google's guidance against over-fetching), then asks
- * reverseGeocodeBackend() for the structured pincode/area/district
- * breakdown — reusing the one address-parsing implementation (server-side)
- * instead of duplicating Google's address_components logic here too. If that
- * backend call fails, the selection still succeeds with real coordinates and
- * Google's own formatted address as the label — never blocked on it.
- */
-function PlacesSearchInput({ onSelect, placeholder }) {
-  const inputRef = useRef(null);
-  const [scriptState, setScriptState] = useState('loading'); // 'loading' | 'ready' | 'unavailable'
-  const [busy, setBusy] = useState(false);
-  const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
-
-  useEffect(() => {
-    let cancelled = false;
-    loadGoogleMaps()
-      .then(() => {
-        if (!cancelled) setScriptState('ready');
-      })
-      .catch(() => {
-        if (!cancelled) setScriptState('unavailable');
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (scriptState !== 'ready' || !inputRef.current || !window.google) return undefined;
-
-    const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
-      componentRestrictions: { country: 'in' },
-      fields: ['place_id', 'geometry', 'formatted_address'],
-      types: ['geocode'],
-    });
-
-    const listener = autocomplete.addListener('place_changed', async () => {
-      const place = autocomplete.getPlace();
-      const loc = place && place.geometry && place.geometry.location;
-      if (!loc) return; // Enter pressed with no selection made — nothing to do
-
-      const lat = loc.lat();
-      const lng = loc.lng();
-      setBusy(true);
-      const resolved = await reverseGeocodeBackend(lat, lng);
-      setBusy(false);
-
-      onSelectRef.current({
-        lat,
-        lng,
-        placeId: place.place_id,
-        formattedAddress: place.formatted_address,
-        source: 'google_places',
-        label: (resolved && resolved.label) || place.formatted_address,
-        ...(resolved || {}),
-      });
-    });
-
-    return () => {
-      if (window.google && window.google.maps && window.google.maps.event) {
-        window.google.maps.event.removeListener(listener);
-      }
-    };
-  }, [scriptState]);
-
-  // Degrade silently when the key is missing or the script fails to load —
-  // GPS and Clear still work without it, this just isn't offered.
-  if (scriptState === 'unavailable') return null;
-
-  return (
-    <div className="relative">
-      <input
-        ref={inputRef}
-        type="text"
-        placeholder={placeholder || 'Search area, city or PIN code'}
-        disabled={scriptState !== 'ready'}
-        className={cx(
-          'w-full rounded-xl border border-brand-line bg-white px-3 py-2 text-sm text-brand-ink placeholder:text-brand-subtle',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700',
-          'disabled:cursor-not-allowed disabled:opacity-60',
-        )}
-      />
-      {busy ? (
-        <LoaderCircle
-          className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted motion-safe:animate-spin"
-          aria-hidden="true"
-        />
-      ) : (
-        <Search
-          className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-muted"
-          aria-hidden="true"
-        />
-      )}
-    </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /* Component                                                                   */
 /* -------------------------------------------------------------------------- */
 
 /**
  * LocationControl — the navbar location affordance.
  *
- * Unset: a compact "Set location" button that asks the browser for coordinates.
- * Set:   a chip showing the reverse-geocoded place name ("Cuddalore"), which
- *        opens a small panel with the coordinates plus Update / Clear.
+ * Unset: a compact "Set location" chip. Set: a chip showing the reverse-
+ * geocoded "PIN - place" label (e.g. "608501 - Cuddalore"). Either way,
+ * clicking it opens a "Choose your delivery location" dialog with two ways in:
+ * typing a 6-digit PIN code (forward-geocoded via Nominatim/OpenStreetMap —
+ * free, keyless, the same source BusinessLocationsManager already uses for
+ * postcode -> coordinates), or "Use my current location" (browser GPS,
+ * reverse-geocoded via geo.js's Google-then-BigDataCloud chain).
  *
- * The place name comes from lookupPlaceName() in geo.js, which calls a THIRD
- * PARTY (BigDataCloud) with the visitor's coordinates — disclosed in /privacy.
- * That call is fire-and-forget and deliberately runs AFTER the coordinates are
- * stored: it is presentation only, so when it fails, is blocked by a tracker
- * blocker, or times out, the chip falls back to "Near you" and everything that
- * actually depends on position keeps working.
+ * The dialog is portalled to document.body rather than rendered in place:
+ * SiteHeader is `sticky ... backdrop-blur-md`, and a backdrop-filter other
+ * than `none` makes an element the CONTAINING BLOCK for its position:fixed
+ * descendants, which would otherwise pin a `fixed inset-0` overlay to the
+ * header's own box instead of the viewport (see LoginModal.js, which hit the
+ * same thing first).
  *
  * The value is written through geo.js, which the /nearby-shops page subscribes
- * to — so setting a location in the navbar updates that page live, and this
- * control updates itself if the location is changed from there.
+ * to — so setting a location here updates that page live, and this control
+ * updates itself if the location is changed from there.
  *
  * @param {object} props
  * @param {string} [props.className] Applied to the positioning wrapper.
@@ -214,13 +111,22 @@ export default function LocationControl({ className }) {
   const [messageKey, setMessageKey] = useState(null);
   const [unavailable, setUnavailable] = useState(null);
   const [open, setOpen] = useState(false);
+  const [pincode, setPincode] = useState('');
+  const [pincodeBusy, setPincodeBusy] = useState(false);
 
-  const wrapRef = useRef(null);
   const triggerRef = useRef(null);
-  // Guards the async geolocation callbacks against firing setState after the
-  // control has unmounted (route change mid-prompt — the browser permission
-  // dialog can sit open for a long time).
+  const pincodeInputRef = useRef(null);
+  // Guards the async geolocation/geocoding callbacks against firing setState
+  // after the control has unmounted (route change mid-prompt — the browser
+  // permission dialog can sit open for a long time).
   const aliveRef = useRef(true);
+
+  // The dialog renders into document.body via a portal — see the component
+  // doc for why. `mounted` also keeps this SSR-safe: the site is a static
+  // export, so `document` does not exist at build time, and the first client
+  // render must match the server's.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   /* -- hydrate ------------------------------------------------------------ */
   /* Read AFTER mount, never as a useState initialiser: the server prerender has
@@ -243,50 +149,48 @@ export default function LocationControl({ className }) {
     };
   }, []);
 
-  /* -- dismissal ---------------------------------------------------------- */
+  /* -- dialog open/close --------------------------------------------------- */
 
+  const closeModal = useCallback(() => {
+    setOpen(false);
+    setMessageKey(null);
+    if (triggerRef.current) triggerRef.current.focus();
+  }, []);
+
+  // Reset the pincode field each time the dialog opens, and focus it once the
+  // portal has painted.
   useEffect(() => {
-    if (!open) return undefined;
-
-    // pointerdown, not click: it fires before focus moves, so the panel is
-    // already closed by the time a click lands on whatever is underneath.
-    const onPointerDown = (event) => {
-      if (wrapRef.current && !wrapRef.current.contains(event.target)) setOpen(false);
-    };
-    const onKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
-      // Mark the key consumed. Below lg this control renders INSIDE the header's
-      // mobile menu panel, which has its own document-level Escape handler; that
-      // handler skips a defaultPrevented event, so one press closes this popover
-      // instead of collapsing the whole menu around it.
-      event.preventDefault();
-      setOpen(false);
-      // Focus must come back to the trigger, or a keyboard user is dumped at
-      // the top of the document (WCAG 2.4.3).
-      if (triggerRef.current) triggerRef.current.focus();
-    };
-
-    document.addEventListener('pointerdown', onPointerDown);
-    // Capture phase, deliberately. The menu panel's Escape listener is
-    // registered when the panel opens — i.e. BEFORE this one, since the popover
-    // can only be opened from inside an already-open panel — so in the bubble
-    // phase it would run first and close the menu before this ran at all.
-    // Capture puts this ahead of every bubble-phase listener regardless of
-    // registration order, which is what makes the guard above reliable.
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown, true);
-    };
+    if (!open) return;
+    setPincode('');
+    setMessageKey(null);
+    const t = setTimeout(() => pincodeInputRef.current && pincodeInputRef.current.focus(), 60);
+    return () => clearTimeout(t);
   }, [open]);
 
-  /* -- request ------------------------------------------------------------ */
+  // Esc to close, and lock body scroll while open — mirrors LoginModal.js.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        closeModal();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, closeModal]);
+
+  /* -- GPS ------------------------------------------------------------------ */
 
   const requestLocation = useCallback(() => {
     const blocked = detectUnavailable();
     if (blocked) {
       setUnavailable(blocked);
-      setOpen(false);
       return;
     }
 
@@ -342,23 +246,33 @@ export default function LocationControl({ className }) {
     );
   }, []);
 
+  /* -- pincode --------------------------------------------------------------- */
+
+  const applyPincode = useCallback(async () => {
+    if (!/^\d{6}$/.test(pincode)) {
+      setMessageKey('pincodeInvalid');
+      return;
+    }
+    setPincodeBusy(true);
+    setMessageKey(null);
+    const hit = await geocodePincode(pincode);
+    if (!aliveRef.current) return;
+    setPincodeBusy(false);
+    if (!hit) {
+      setMessageKey('pincodeNotFound');
+      return;
+    }
+    const entry = writeGeo(hit);
+    if (entry) {
+      setGeo(entry);
+      setOpen(false);
+    }
+  }, [pincode]);
+
   const handleClear = useCallback(() => {
     clearGeo();
     setGeo(null);
     setMessageKey(null);
-    setOpen(false);
-    if (triggerRef.current) triggerRef.current.focus();
-  }, []);
-
-  /** A Places Autocomplete selection — write it straight through, same as a GPS fix. */
-  const handlePlaceSelected = useCallback((place) => {
-    if (!aliveRef.current) return;
-    const entry = writeGeo(place);
-    if (entry) {
-      setGeo(entry);
-      setMessageKey(null);
-      setOpen(false);
-    }
   }, []);
 
   /* -- shared classes ----------------------------------------------------- */
@@ -370,201 +284,235 @@ export default function LocationControl({ className }) {
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2';
 
   const chipBase = cx(
-    'inline-flex max-w-full items-center gap-1.5 rounded-full border px-3 py-2 text-sm font-semibold transition',
+    'inline-flex max-w-full items-center gap-2 rounded-xl border px-3 py-1.5 text-left transition',
     focusRing,
   );
 
-  /* -- unavailable: no button at all -------------------------------------- */
-  /* An insecure origin or a browser without the API can never succeed, so we do
-   * not render a button that is guaranteed to fail. A short static note takes
-   * its place; the full explanation rides along as the title/aria-label so the
-   * navbar stays narrow. */
-
-  if (unavailable) {
-    return (
-      <div className={cx('flex min-w-0 items-center', className)}>
-        <span
-          className="inline-flex max-w-[13rem] items-center gap-1.5 rounded-full border border-brand-line bg-brand-soften px-3 py-2 text-sm font-medium text-brand-muted"
-          title={MESSAGES[unavailable]}
-        >
-          <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="truncate">
-            {unavailable === 'insecure' ? 'Location needs https' : 'Location unavailable'}
-          </span>
-          {/* The visible label is clipped for space; screen readers get all of it. */}
-          <span className="sr-only">{MESSAGES[unavailable]}</span>
-        </span>
-      </div>
-    );
-  }
-
-  /* -- normal ------------------------------------------------------------- */
-
   const locating = status === 'locating';
+  const currentLabel = geo && geo.label ? geo.label : null;
 
   return (
-    <div ref={wrapRef} className={cx('relative flex min-w-0 items-center', className)}>
+    <div className={cx('relative flex min-w-0 items-center', className)}>
       {geo ? (
         <button
           ref={triggerRef}
           type="button"
-          onClick={() => setOpen((prev) => !prev)}
+          onClick={() => setOpen(true)}
           aria-expanded={open}
           className={cx(chipBase, 'border-brand-200 bg-brand-soft text-brand-700 hover:bg-brand-100')}
         >
-          <Check className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="truncate">{geo && geo.label ? geo.label : 'Near you'}</span>
-          <ChevronDown
-            className={cx('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-180')}
-            aria-hidden="true"
-          />
+          <Check className="h-5 w-5 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 leading-tight">
+            <span className="block text-[11px] font-medium text-brand-700/80">Deliver to</span>
+            <span className="block max-w-[9rem] truncate text-sm font-bold">
+              {currentLabel || 'Near you'}
+            </span>
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         </button>
       ) : (
-        <div className="flex items-center gap-1.5">
-          <button
-            ref={triggerRef}
-            type="button"
-            onClick={requestLocation}
-            disabled={locating}
-            className={cx(
-              chipBase,
-              'border-brand-line bg-white text-brand-ink hover:border-brand-600 hover:text-brand-700',
-              'disabled:cursor-not-allowed disabled:opacity-70',
-            )}
-          >
-            {locating ? (
-              // motion-safe: a perpetual spin is exactly what prefers-reduced-motion
-              // is for. Without motion the icon still reads as "busy" beside the
-              // changed label.
-              <LoaderCircle
-                className="h-4 w-4 shrink-0 motion-safe:animate-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <MapPin className="h-4 w-4 shrink-0" aria-hidden="true" />
-            )}
-            <span className="truncate">{locating ? 'Locating…' : 'Set location'}</span>
-          </button>
-
-          {/* Search is a separate, equally-weighted way in — GPS above keeps its
-              existing one-click behaviour untouched. */}
-          <button
-            type="button"
-            onClick={() => setOpen((prev) => !prev)}
-            aria-expanded={open}
-            aria-label="Search area, city or PIN code"
-            title="Search area, city or PIN code"
-            className={cx(
-              'inline-flex h-[2.375rem] w-[2.375rem] shrink-0 items-center justify-center rounded-full border border-brand-line bg-white text-brand-ink transition hover:border-brand-600 hover:text-brand-700',
-              focusRing,
-            )}
-          >
-            <Search className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-expanded={open}
+          className={cx(
+            chipBase,
+            'border-brand-line bg-white text-brand-ink hover:border-brand-600 hover:bg-brand-soften',
+          )}
+        >
+          <MapPin className="h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />
+          <span className="min-w-0 leading-tight">
+            <span className="block text-[11px] font-medium text-brand-muted">Deliver to</span>
+            <span className="block max-w-[9rem] truncate text-sm font-bold text-brand-ink">
+              Set location
+            </span>
+          </span>
+        </button>
       )}
 
-      {/* Status + errors.
-          role="status" (aria-live="polite") so the outcome of a button press is
-          announced — a sighted user sees the chip change, a screen-reader user
-          would otherwise get nothing at all. The node is always mounted, empty
-          when idle: live regions only announce changes to a region that already
-          existed, so mounting it on demand can go unread.
-          Absolutely positioned so a two-line error can never reflow the header. */}
-      <div
-        role="status"
-        aria-live="polite"
-        className={cx(
-          'absolute right-0 top-full z-40 mt-2 w-[min(17rem,calc(100vw-2rem))]',
-          !messageKey && 'pointer-events-none',
-        )}
-      >
-        {messageKey ? (
-          <div className="rounded-2xl border border-brand-line bg-white p-3 text-xs leading-relaxed text-brand-muted shadow-lift">
-            <p>{MESSAGES[messageKey]}</p>
-            {messageKey !== 'denied' ? (
+      {/* Dialog — "Choose your delivery location". Portalled; see component doc. */}
+      {mounted && open
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto p-4 sm:p-6"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="ggfix-location-title"
+            >
               <button
                 type="button"
-                onClick={requestLocation}
-                className={cx(
-                  'mt-2 rounded-full px-2 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-soft',
-                  focusRing,
-                )}
-              >
-                Try again
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+                aria-label="Close"
+                onClick={closeModal}
+                className="absolute inset-0 h-full w-full cursor-default bg-brand-ink/60 backdrop-blur-sm"
+                tabIndex={-1}
+              />
 
-      {/* Search panel — reachable before any location is set, via the search
-          icon button above. Its own popover rather than folded into the "Set
-          location" button so that button's existing one-click GPS behaviour
-          never changes. */}
-      {!geo && open ? (
-        <div className="absolute right-0 top-full z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-brand-line bg-white p-4 shadow-lift">
-          <p className="text-sm font-semibold text-brand-ink">Search area, city or PIN code</p>
-          <p className="mt-1 text-xs leading-relaxed text-brand-muted">
-            e.g. Velachery, Anna Nagar, Chennai, or 600042.
-          </p>
-          <div className="mt-3">
-            <PlacesSearchInput onSelect={handlePlaceSelected} />
-          </div>
-        </div>
-      ) : null}
+              <div className="relative z-10 my-auto w-full max-w-sm rounded-3xl bg-white p-6 shadow-lift">
+                <div className="flex items-start justify-between gap-3">
+                  <h2 id="ggfix-location-title" className="text-lg font-bold text-brand-ink">
+                    Choose your delivery location
+                  </h2>
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    onClick={closeModal}
+                    className={cx(
+                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-brand-muted transition hover:bg-brand-soft hover:text-brand-ink',
+                      focusRing,
+                    )}
+                  >
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
 
-      {/* Detail panel — only reachable once a location is set. */}
-      {geo && open ? (
-        <div className="absolute right-0 top-full z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-brand-line bg-white p-4 shadow-lift">
-          <p className="text-sm font-semibold text-brand-ink">Using your location</p>
-          {/* Reverse geocoding (Google via our backend, BigDataCloud as
-              fallback) usually gives a real address now; fall back to raw
-              coordinates, rendered monospaced, when neither resolved. */}
-          <p className="mt-1 text-xs text-brand-subtle">
-            {geo.formattedAddress || <span className="font-mono">{formatGeo(geo)}</span>}
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-brand-muted">
-            Shops are matched by distance from this point. It stays on this device.
-          </p>
+                {geo ? (
+                  <div className="mt-4 rounded-2xl border border-brand-line bg-brand-soften p-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-muted">
+                      Current location
+                    </p>
+                    <p className="mt-0.5 text-sm font-bold text-brand-ink">
+                      {currentLabel || <span className="font-mono font-normal">{formatGeo(geo)}</span>}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={requestLocation}
+                        disabled={locating || !!unavailable}
+                        title={unavailable ? MESSAGES[unavailable] : undefined}
+                        className={cx(
+                          'inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700',
+                          'disabled:cursor-not-allowed disabled:opacity-70',
+                          focusRing,
+                        )}
+                      >
+                        {locating ? (
+                          <LoaderCircle className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
+                        ) : (
+                          <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                        )}
+                        {locating ? 'Updating…' : 'Update'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClear}
+                        className={cx(
+                          'inline-flex items-center gap-1.5 rounded-full border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-muted transition hover:border-brand-strong hover:text-brand-ink',
+                          focusRing,
+                        )}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
-          <div className="mt-3">
-            <p className="mb-1.5 text-xs font-semibold text-brand-ink">Search a different area</p>
-            <PlacesSearchInput onSelect={handlePlaceSelected} />
-          </div>
+                <div className="mt-5">
+                  <label htmlFor="ggfix-location-pincode" className="block text-sm font-semibold text-brand-ink">
+                    Enter Pincode
+                  </label>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      id="ggfix-location-pincode"
+                      ref={pincodeInputRef}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      maxLength={6}
+                      placeholder="6-digit pincode"
+                      value={pincode}
+                      onChange={(e) => {
+                        setPincode(e.target.value.replace(/\D/g, '').slice(0, 6));
+                        setMessageKey(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          applyPincode();
+                        }
+                      }}
+                      className="min-w-0 flex-1 rounded-full border border-brand-line bg-white px-4 py-2.5 text-sm text-brand-ink placeholder:text-brand-subtle focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                    />
+                    <button
+                      type="button"
+                      onClick={applyPincode}
+                      disabled={pincode.length !== 6 || pincodeBusy}
+                      className={cx(
+                        'shrink-0 rounded-full bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700',
+                        'disabled:cursor-not-allowed disabled:bg-brand-200',
+                        focusRing,
+                      )}
+                    >
+                      {pincodeBusy ? (
+                        <LoaderCircle className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+                      ) : (
+                        'Apply'
+                      )}
+                    </button>
+                  </div>
+                </div>
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={requestLocation}
-              disabled={locating}
-              className={cx(
-                'inline-flex items-center gap-1.5 rounded-full bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700',
-                'disabled:cursor-not-allowed disabled:opacity-70',
-                focusRing,
-              )}
-            >
-              {locating ? (
-                <LoaderCircle className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
-              ) : (
-                <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-              {locating ? 'Updating…' : 'Update'}
-            </button>
+                <div className="mt-5 flex items-center gap-3" aria-hidden="true">
+                  <span className="h-px flex-1 bg-brand-line" />
+                  <span className="text-xs font-medium uppercase tracking-wide text-brand-subtle">or</span>
+                  <span className="h-px flex-1 bg-brand-line" />
+                </div>
 
-            <button
-              type="button"
-              onClick={handleClear}
-              className={cx(
-                'inline-flex items-center gap-1.5 rounded-full border border-brand-line px-3 py-1.5 text-xs font-semibold text-brand-muted transition hover:border-brand-strong hover:text-brand-ink',
-                focusRing,
-              )}
-            >
-              Clear
-            </button>
-          </div>
-        </div>
-      ) : null}
+                <div className="mt-4">
+                  {unavailable ? (
+                    <p className="flex items-start gap-2 rounded-2xl border border-brand-line bg-brand-soften p-3 text-xs leading-relaxed text-brand-muted">
+                      <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      {MESSAGES[unavailable]}
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={requestLocation}
+                      disabled={locating}
+                      className={cx(
+                        'flex w-full items-center justify-center gap-2 rounded-full border border-brand-line px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:border-brand-600 hover:bg-brand-soften',
+                        'disabled:cursor-not-allowed disabled:opacity-70',
+                        focusRing,
+                      )}
+                    >
+                      {locating ? (
+                        <LoaderCircle className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+                      ) : (
+                        <MapPin className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      {locating ? 'Locating…' : 'Use my current location'}
+                    </button>
+                  )}
+
+                  {/* role="status" (aria-live="polite") so the outcome of a press is
+                      announced — a sighted user sees the text change, a screen-reader
+                      user would otherwise get nothing at all. */}
+                  <div role="status" aria-live="polite">
+                    {messageKey ? (
+                      <p className="mt-2 text-xs font-medium text-red-600">
+                        {MESSAGES[messageKey]}
+                        {messageKey !== 'denied' && messageKey !== 'pincodeInvalid' ? (
+                          <button
+                            type="button"
+                            onClick={messageKey === 'pincodeNotFound' ? applyPincode : requestLocation}
+                            className="ml-1.5 font-semibold underline underline-offset-2"
+                          >
+                            Try again
+                          </button>
+                        ) : null}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <p className="mt-4 text-[11px] leading-relaxed text-brand-subtle">
+                  Shops are matched by distance from this point. It stays on this device.
+                </p>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

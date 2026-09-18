@@ -229,6 +229,61 @@ export async function reverseGeocodeBackend(lat, lng) {
 }
 
 /**
+ * Nominatim (OpenStreetMap) — free, keyless, and already the geocoder this
+ * codebase trusts for the same postcode -> coordinates need (see the address
+ * search in BusinessLocationsManager.js). Used here for FORWARD geocoding
+ * (a typed PIN code -> coordinates) so manual entry keeps working regardless
+ * of the Google Maps key's API restrictions.
+ */
+const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
+
+/**
+ * Forward-geocode a 6-digit Indian PIN code to coordinates + a "PIN - place"
+ * label.
+ *
+ * @param {string} pincode
+ * @returns {Promise<{lat:number, lng:number, label:string, pincode:string, source:'pincode'}|null>}
+ *   null when the input isn't a 6-digit PIN or nothing matched it. Never throws.
+ */
+export async function geocodePincode(pincode) {
+  if (!isBrowser()) return null;
+  const pin = String(pincode || '').trim();
+  if (!/^\d{6}$/.test(pin)) return null;
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 6000) : null;
+
+  try {
+    const url = `${NOMINATIM_SEARCH_URL}?q=${encodeURIComponent(
+      pin,
+    )}&format=json&addressdetails=1&countrycodes=in&limit=1`;
+    const res = await fetch(url, {
+      headers: { 'Accept-Language': 'en' },
+      signal: controller ? controller.signal : undefined,
+    });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) return null;
+
+    const lat = Number(row.lat);
+    const lng = Number(row.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+    const addr = row.address || {};
+    const name =
+      addr.suburb || addr.neighbourhood || addr.village || addr.town || addr.city || addr.state_district || '';
+    const resolvedPincode = addr.postcode || pin;
+    const label = resolvedPincode && name ? `${resolvedPincode} - ${name}` : name || resolvedPincode || '';
+    return { lat, lng, label, pincode: resolvedPincode, source: 'pincode' };
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * Read the stored location.
  *
  * @returns {{lat:number, lng:number, at:number}|null} null when unset, when

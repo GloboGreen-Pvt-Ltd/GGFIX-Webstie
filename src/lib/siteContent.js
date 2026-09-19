@@ -52,8 +52,8 @@ export const BRAND = {
 export const SITE_NAV = [
   { href: '/', label: 'Home' },
   { href: '/repair', label: 'Repair' },
-  { href: '/#sell', label: 'Sell' },
-  { href: '/#buy', label: 'Buy' },
+  { href: '/#sell', label: 'Sell Device' },
+  { href: '/#buy', label: 'Buy Devices' },
   { href: '/nearby-shops', label: 'Nearby Shops' },
   { href: '/about', label: 'About' },
   { href: '/faq', label: 'FAQ' },
@@ -958,6 +958,11 @@ export const CTA = {
   contact: { label: 'Contact us', href: '/contact' },
   forShops: { label: 'For Shops', href: '/shop' },
   seePricing: { label: 'See pricing', href: '/pricing' },
+  /* The shop-owner sign-in door — POST /auth/login, gated to SHOP_OWNER /
+     SHOP_LOGIN accounts by src/lib/shopAuth.js. Kept distinct from
+     `forShops` (the marketing page selling the idea of joining) since they
+     are different destinations for different audiences. */
+  businessLogin: { label: 'Sell with Us', href: '/shopmanagement' },
 };
 
 /* -------------------------------------------------------------------------- */

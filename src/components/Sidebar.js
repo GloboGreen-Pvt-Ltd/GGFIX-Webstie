@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Store, Users, CreditCard,
   Smartphone, Image as ImageIcon, Phone, HelpCircle, FileText,
   Database, Tag, Briefcase, Link2, Layers, Boxes, Wrench,
-  FolderTree, Puzzle,
+  FolderTree, Puzzle, LayoutGrid,
   ShoppingCart, ClipboardList, SlidersHorizontal, AlertTriangle, Settings2,
   ShoppingBag, Package,
   ChevronRight, ChevronDown, ChevronLeft, LogOut,
@@ -42,6 +42,7 @@ const nav = [
       },
       { href: '/management/repair-services', label: 'Repair Services', icon: Wrench },
       { href: '/management/repair-categories', label: 'Repair Categories', icon: FolderTree },
+      { href: '/management/category-menu', label: 'Category Menu', icon: LayoutGrid },
     ],
   },
   {

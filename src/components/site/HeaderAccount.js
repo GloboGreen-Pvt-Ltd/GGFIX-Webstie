@@ -10,9 +10,13 @@
  * ADMIN portal — wrong door for a customer. This owns the customer door instead;
  * the admin portal still lives in the footer ("Admin Portal").
  *
- * Renders two layouts via `variant`:
+ * Renders three layouts via `variant`:
  *   • "desktop" (default) — compact control for header row 1 (lg+)
  *   • "mobile"            — full-width block for the disclosure panel (below lg)
+ *   • "icon"              — single icon button for the mobile row-1 quick-access
+ *                           cluster (below lg, alongside the hamburger); opens
+ *                           the same LoginModal signed out, links to the
+ *                           profile page signed in
  *
  * Hydration: the server (and the very first client render) cannot know the
  * localStorage session, so it renders the signed-out shell until mounted, then
@@ -29,6 +33,7 @@ import {
   ShoppingBag,
   ShoppingCart,
   Smartphone,
+  User,
 } from 'lucide-react';
 
 import { Button, cx } from './ui';
@@ -82,7 +87,7 @@ function CustomerAvatar({ customer, className, textClassName = 'text-xs' }) {
   );
 }
 
-export default function HeaderAccount({ variant = 'desktop', onNavigate }) {
+export default function HeaderAccount({ variant = 'desktop', onNavigate, className }) {
   const [mounted, setMounted] = useState(false);
   const [customer, setCustomer] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -120,6 +125,47 @@ export default function HeaderAccount({ variant = 'desktop', onNavigate }) {
     logout();
     if (onNavigate) onNavigate();
   };
+
+  /* ----------------------------------------------------------------------- */
+  /* Icon — single button for the mobile row-1 quick-access cluster           */
+  /* ----------------------------------------------------------------------- */
+  if (variant === 'icon') {
+    return (
+      <>
+        {signedIn ? (
+          <Link
+            href="/account/profile"
+            aria-label="My Account"
+            className={cx(
+              'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand-line transition hover:bg-brand-soften',
+              FOCUS_RING,
+              className,
+            )}
+          >
+            <CustomerAvatar customer={customer} className="h-7 w-7" textClassName="text-[11px]" />
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setLoginOpen(true)}
+            aria-label="Login"
+            className={cx(
+              'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand-line text-brand-ink transition hover:bg-brand-soften',
+              FOCUS_RING,
+              className,
+            )}
+          >
+            <User className="h-5 w-5" aria-hidden="true" />
+          </button>
+        )}
+        <LoginModal
+          open={loginOpen}
+          onClose={() => setLoginOpen(false)}
+          onSuccess={() => setLoginOpen(false)}
+        />
+      </>
+    );
+  }
 
   /* ----------------------------------------------------------------------- */
   /* Mobile — full-width block inside the header disclosure panel             */
@@ -199,12 +245,13 @@ export default function HeaderAccount({ variant = 'desktop', onNavigate }) {
           type="button"
           onClick={() => setLoginOpen(true)}
           className={cx(
-            'hidden rounded-full px-3.5 py-2 text-sm font-semibold text-brand-muted transition',
-            'hover:bg-brand-soften hover:text-brand-ink lg:inline-flex',
+            'hidden items-center gap-2 rounded-xl border border-brand-line px-3 py-1.5 text-left transition',
+            'hover:border-brand-300 hover:bg-brand-soften lg:inline-flex',
             FOCUS_RING,
           )}
         >
-          Login
+          <User className="h-5 w-5 shrink-0 text-brand-muted" aria-hidden="true" />
+          <span className="text-sm font-bold text-brand-ink">Login</span>
         </button>
         <LoginModal
           open={loginOpen}
@@ -223,15 +270,20 @@ export default function HeaderAccount({ variant = 'desktop', onNavigate }) {
         aria-expanded={menuOpen}
         aria-haspopup="menu"
         className={cx(
-          'inline-flex items-center gap-2 rounded-full border border-brand-line bg-white py-1.5 pl-1.5 pr-3',
-          'text-sm font-semibold text-brand-ink transition hover:border-brand-300 hover:bg-brand-soften',
+          'inline-flex items-center gap-2 rounded-xl border border-brand-line bg-white py-1.5 pl-2 pr-3',
+          'text-left transition hover:border-brand-300 hover:bg-brand-soften',
           FOCUS_RING,
         )}
       >
-        <CustomerAvatar customer={customer} className="h-7 w-7" />
-        <span className="max-w-[7rem] truncate">{firstName(customer.fullName)}</span>
+        <CustomerAvatar customer={customer} className="h-8 w-8" />
+        <span className="leading-tight">
+          <span className="block max-w-[7rem] truncate text-[11px] font-medium text-brand-muted">
+            Hello, {firstName(customer.fullName)}
+          </span>
+          <span className="block text-sm font-bold text-brand-ink">My Account</span>
+        </span>
         <ChevronDown
-          className={cx('h-4 w-4 text-brand-muted transition', menuOpen && 'rotate-180')}
+          className={cx('h-4 w-4 shrink-0 text-brand-muted transition', menuOpen && 'rotate-180')}
           aria-hidden="true"
         />
       </button>

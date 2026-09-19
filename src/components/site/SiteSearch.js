@@ -294,6 +294,24 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
     if (inputRef.current) inputRef.current.focus();
   }, []);
 
+  /* The visible search button mirrors Enter: take the top (or highlighted)
+   * result once the panel has something to offer, open the panel if there's
+   * a searchable query not yet shown, or just refocus the field if it's
+   * empty. Same activation path as the keyboard, just reachable by pointer. */
+  const handleSearchButtonClick = useCallback(() => {
+    if (!isSearchable) {
+      if (inputRef.current) inputRef.current.focus();
+      return;
+    }
+    if (!panelOpen) {
+      setOpen(true);
+      return;
+    }
+    if (!results.length) return;
+    const target = results[activeIndex >= 0 ? activeIndex : 0];
+    if (target) goTo(target.href);
+  }, [isSearchable, panelOpen, results, activeIndex, goTo]);
+
   const focusRing =
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2';
 
@@ -304,11 +322,13 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
 
   return (
     <div ref={wrapRef} className={cx('relative w-full min-w-0', className)} onBlur={handleBlur}>
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-subtle"
-          aria-hidden="true"
-        />
+      <div
+        className={cx(
+          'flex items-center gap-1 rounded-2xl border border-brand-line bg-brand-page pl-4 pr-1.5 transition',
+          'focus-within:border-brand-600 focus-within:bg-white focus-within:shadow-soft',
+        )}
+      >
+        <Search className="h-4 w-4 shrink-0 text-brand-subtle" aria-hidden="true" />
 
         <input
           ref={inputRef}
@@ -341,13 +361,7 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
             if (isSearchable) setOpen(true);
           }}
           onKeyDown={handleKeyDown}
-          className={cx(
-            'w-full rounded-full border border-brand-line bg-white py-2 pl-9 text-sm text-brand-ink',
-            'placeholder:text-brand-subtle',
-            query ? 'pr-9' : 'pr-3',
-            'transition hover:border-brand-strong',
-            focusRing,
-          )}
+          className="w-full min-w-0 bg-transparent py-2.5 pl-2.5 text-sm text-brand-ink outline-none placeholder:text-brand-subtle"
         />
 
         {query ? (
@@ -356,7 +370,7 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
             onClick={handleClear}
             aria-label="Clear search"
             className={cx(
-              'absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
               'text-brand-subtle transition hover:bg-brand-soften hover:text-brand-ink',
               focusRing,
             )}
@@ -364,6 +378,19 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : null}
+
+        <button
+          type="button"
+          onClick={handleSearchButtonClick}
+          aria-label="Search"
+          className={cx(
+            'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white transition',
+            'hover:bg-brand-700',
+            focusRing,
+          )}
+        >
+          <Search className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
 
       {/* The listbox is always in the DOM so aria-controls always resolves to a

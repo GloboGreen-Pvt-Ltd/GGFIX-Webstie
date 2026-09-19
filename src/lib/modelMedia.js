@@ -226,3 +226,18 @@ export async function uploadCompatibilityImage(compatibilityId, file) {
   );
   return unwrap(res);
 }
+
+/**
+ * Upload or replace a Category Menu tile image (Repair/Sell/Buy customer-app
+ * menu tiles). Id-scoped like the others above — a new row has to be saved and
+ * have an id before its image can be uploaded.
+ */
+export async function uploadCategoryMenuImage(categoryMenuId, file) {
+  const form = new FormData();
+  form.append('image', file);
+  const res = await fetch(
+    `${trim(MASTER_BASE())}/master/category-menu/${encodeURIComponent(categoryMenuId)}/image`,
+    { method: 'POST', headers: authHeaders(), body: form },
+  );
+  return unwrap(res);
+}

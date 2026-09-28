@@ -852,7 +852,7 @@ export default function ShopHomePage() {
               return (
                 <Link
                   key={booking.id}
-                  href={`/shop-home/services/bookings/${booking.id}`}
+                  href={`/shop-home/services/bookings/view/?id=${encodeURIComponent(booking.id)}`}
                   className={cx(
                     'group flex items-center gap-3 px-3.5 py-3 transition duration-200 ease-out hover:translate-x-0.5 hover:bg-gradient-to-r hover:from-[#E7F9EF]/65 hover:to-white sm:px-5',
                     index === 0 && 'bg-gradient-to-r from-[#E8F9EF]/80 to-white/95',

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /shop-home/services/bookings/[id]/qr — QR E-Print for one booking.
+ * /shop-home/services/bookings/view/qr/?id=… — QR E-Print for one booking.
  *
  * This is what the Bookings list's "Barcode" action opens (previously a
  * disabled placeholder — there's no barcode/label-printing endpoint on the
@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import QRCode from 'qrcode';
 import {
   AlertTriangle,
@@ -73,7 +73,7 @@ function formatSlipDate(value) {
 }
 
 export default function BookingQrPage() {
-  const { id } = useParams();
+  const id = useSearchParams().get('id');
   const router = useRouter();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);

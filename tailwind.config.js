@@ -107,11 +107,17 @@ module.exports = {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
         },
+        shake: {
+          '0%, 100%': { transform: 'translateX(0)' },
+          '20%, 60%': { transform: 'translateX(-6px)' },
+          '40%, 80%': { transform: 'translateX(6px)' },
+        },
       },
 
       animation: {
         'fade-up': 'fade-up 0.5s ease-out both',
         'fade-in': 'fade-in 0.4s ease-out both',
+        shake: 'shake 0.35s ease-in-out',
       },
     },
   },

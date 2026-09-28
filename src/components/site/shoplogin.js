@@ -29,6 +29,7 @@ import { BRAND } from '@/lib/siteContent';
 import { cx } from '@/components/site/ui';
 import { writeSession } from '@/lib/shopAuth';
 import { normalizeMobile, sendMobileOtp, verifyMobileOtp } from '@/lib/shopMobileAuth';
+import Icon3D from '@/components/shop-dashboard/Icon3D';
 
 const RESEND_SECONDS = 30;
 const OTP_LENGTH = 6;
@@ -161,6 +162,14 @@ export default function ShopLogin() {
   const [resending, setResending] = useState(false);
 
   const mobileInputRef = useRef(null);
+  // The OTP value already attempted (success or failure) — guards the
+  // auto-verify effect below against re-firing for the same code. Set
+  // synchronously, before the async verify call, not inside a dependency
+  // array — see that effect's doc comment for why.
+  const attemptedOtpRef = useRef('');
+  // Hard lock against a second verify call landing while one is already in
+  // flight (e.g. the auto-effect and a manual button click in the same tick).
+  const verifyLockRef = useRef(false);
 
   const digits = normalizeMobile(mobile);
   const otpValue = otp.join('');
@@ -198,44 +207,77 @@ export default function ShopLogin() {
     }
     setOtp(Array(OTP_LENGTH).fill(''));
     setOtpError('');
+    attemptedOtpRef.current = '';
     setResendSeconds(RESEND_SECONDS);
     setStep('otp');
   }
 
   async function handleVerify() {
+    // Hard guard: covers the auto-effect and a manual button click landing
+    // in the same tick, which `verifying` state alone can't prevent (state
+    // updates aren't visible until the next render).
+    if (verifyLockRef.current) return;
     if (otpValue.length !== OTP_LENGTH) {
       setOtpError('Enter the complete 6-digit OTP.');
       triggerShake();
       return;
     }
+    verifyLockRef.current = true;
     setVerifying(true);
     setOtpError('');
-    const result = await verifyMobileOtp(digits, otpValue);
-    setVerifying(false);
-    if (!result.ok) {
-      setOtpError(result.message || 'The OTP you entered is incorrect. Please try again.');
-      triggerShake();
-      return;
+    try {
+      const result = await verifyMobileOtp(digits, otpValue);
+      if (!result.ok) {
+        setOtpError(result.message || 'The OTP you entered is incorrect. Please try again.');
+        triggerShake();
+        return;
+      }
+      setVerified(true);
+      // result.session is the real POST /auth/login response, passed
+      // straight through — see shopMobileAuth.js.
+      writeSession(result.session);
+      setTimeout(() => {
+        router.replace('/shop-home');
+      }, 900);
+    } finally {
+      // Always runs — success, a real 401/403/429/500, or a network throw —
+      // so the spinner and the lock can never get stuck after a failed
+      // attempt. See the module doc comment for the loop this replaced.
+      verifyLockRef.current = false;
+      setVerifying(false);
     }
-    setVerified(true);
-    // result.session is the real POST /auth/shop-login response, passed
-    // straight through — see shopMobileAuth.js.
-    writeSession(result.session);
-    setTimeout(() => {
-      router.replace('/shop-home');
-    }, 900);
   }
 
-  /* Auto-trigger once the 6th digit lands. handleVerify is a plain function
-   * redefined every render (not memoized), and the guard below
-   * (verifying/verified) already keeps it from firing more than once per
-   * OTP entry, so omitting it from the dependency array is safe here. */
+  /* Auto-trigger once the 6th digit lands — exactly once per distinct OTP
+   * value. attemptedOtpRef is written synchronously, before handleVerify
+   * ever awaits anything, so it is the single source of truth for "have we
+   * already tried this code" — unlike the `verifying` flag this effect used
+   * to depend on. That version re-fired every time `verifying` flipped back
+   * to false after a failed attempt (otpValue and `verified` were still
+   * unchanged), which is exactly what produced the repeated /auth/login
+   * calls on a wrong OTP: verify -> 401 -> verifying resets -> effect deps
+   * change -> condition still true -> verify again, forever. Depending on
+   * [step, otpValue] only removes that trigger entirely. */
   useEffect(() => {
-    if (step === 'otp' && otpValue.length === OTP_LENGTH && !verifying && !verified) {
+    if (
+      step === 'otp' &&
+      otpValue.length === OTP_LENGTH &&
+      otpValue !== attemptedOtpRef.current &&
+      !verifying
+    ) {
+      attemptedOtpRef.current = otpValue;
       handleVerify();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, otpValue, verifying, verified]);
+  }, [step, otpValue]);
+
+  function handleOtpChange(nextOtp) {
+    setOtp(nextOtp);
+    if (otpError) setOtpError('');
+    // A fresh edit is never "the code we already tried" — let a completed
+    // value re-trigger the auto-verify effect above.
+    attemptedOtpRef.current = '';
+  }
 
   async function handleResend() {
     if (resendSeconds > 0 || resending) return;
@@ -248,6 +290,7 @@ export default function ShopLogin() {
       return;
     }
     setOtp(Array(OTP_LENGTH).fill(''));
+    attemptedOtpRef.current = '';
     setResendSeconds(RESEND_SECONDS);
   }
 
@@ -256,6 +299,9 @@ export default function ShopLogin() {
     setOtp(Array(OTP_LENGTH).fill(''));
     setOtpError('');
     setVerified(false);
+    setVerifying(false);
+    attemptedOtpRef.current = '';
+    verifyLockRef.current = false;
     setTimeout(() => {
       if (mobileInputRef.current) mobileInputRef.current.focus();
     }, 0);
@@ -273,9 +319,7 @@ export default function ShopLogin() {
       <div className="relative w-full max-w-[440px] animate-fade-up">
         {/* ---- Brand header ------------------------------------------- */}
         <div className="flex flex-col items-center text-center">
-          <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#ECFDF3] text-brand-600">
-            <Store className="h-7 w-7" aria-hidden="true" />
-          </span>
+          <Icon3D icon={Store} tone="green" size="xl" />
           <h1 className="mt-4 text-[26px] font-bold leading-tight tracking-tight text-[#101828] sm:text-[28px]">
             Business Login
           </h1>
@@ -284,7 +328,7 @@ export default function ShopLogin() {
         </div>
 
         {/* ---- Card ----------------------------------------------------- */}
-        <div className="mt-7 rounded-[22px] border border-[#EAECF0] bg-white p-6 shadow-[0_2px_8px_rgba(16,24,40,0.04),0_12px_32px_rgba(16,24,40,0.06)] sm:p-8">
+        <div className="mt-7 rounded-[22px] border border-[#E5ECE8] bg-white p-6 shadow-[0_8px_30px_rgba(20,80,55,0.08)] sm:p-8">
           {step === 'mobile' ? (
             <form onSubmit={handleSendOtp} noValidate>
               <label htmlFor="business-mobile" className="mb-1.5 block text-sm font-semibold text-[#101828]">
@@ -367,14 +411,12 @@ export default function ShopLogin() {
               <div className="mt-5">
                 {verified ? (
                   <div className="flex flex-col items-center gap-2 py-6 text-center animate-fade-in">
-                    <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#ECFDF3] text-brand-600">
-                      <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
-                    </span>
+                    <Icon3D icon={CheckCircle2} tone="green" size="lg" />
                     <p className="text-sm font-bold text-[#101828]">Verified successfully</p>
                   </div>
                 ) : (
                   <>
-                    <OtpBoxes values={otp} onChange={setOtp} error={Boolean(otpError)} disabled={verifying} shake={shake} />
+                    <OtpBoxes values={otp} onChange={handleOtpChange} error={Boolean(otpError)} disabled={verifying} shake={shake} />
 
                     {otpError ? (
                       <p className="mt-3 text-sm font-medium text-[#D92D20]" role="alert">

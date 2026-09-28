@@ -831,6 +831,16 @@ function KycDocumentTab() {
 /* Subscription                                                                */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * 2026-09: this tab used to duplicate the full plan-card UI inline — now a
+ * real, separate page exists at /shop-home/settings/subscription (plan
+ * cards, feature checklists, the multi-shop stepper, per a reference
+ * design). Keeping both meant two different Subscription UIs could drift
+ * out of sync (and did — this tab was still showing the old 3-tile
+ * layout after that page was rebuilt). This tab is now just the current-
+ * plan summary + a link to that one real page, so there's exactly one
+ * place the full plan details/UI live.
+ */
 function SubscriptionTab({ ownerId }) {
   const [sub, setSub] = useState(null);
   const [plans, setPlans] = useState([]);
@@ -859,7 +869,6 @@ function SubscriptionTab({ ownerId }) {
     ? 'Free Trial'
     : plans.find((p) => p.code === sub?.planCode)?.name || sub?.planCode || 'No active plan';
   const daysRemaining = sub?.daysRemaining ?? 0;
-  const basicPlan = plans.find((p) => p.code === 'BASIC');
 
   if (loading) {
     return (
@@ -891,32 +900,13 @@ function SubscriptionTab({ ownerId }) {
             <p className="mt-1 text-sm text-[#667085]">No subscription record found for this account yet.</p>
           )}
         </div>
-        {basicPlan ? (
-          <a
-            href="mailto:support@ggfix.in?subject=Upgrade%20to%20BASIC%20plan"
-            className={cx('inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534]', FOCUS_RING)}
-          >
-            Upgrade to {basicPlan.name}
-          </a>
-        ) : null}
+        <Link
+          href="/shop-home/settings/subscription"
+          className={cx('inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534]', FOCUS_RING)}
+        >
+          View Plans &amp; Pricing
+        </Link>
       </div>
-
-      {basicPlan ? (
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-[#EAECF0] p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#98A2B3]">Price</p>
-            <p className="mt-1 text-lg font-bold text-[#101828]">₹{Number(basicPlan.price).toLocaleString('en-IN')}/yr</p>
-          </div>
-          <div className="rounded-xl border border-[#EAECF0] p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#98A2B3]">Shops</p>
-            <p className="mt-1 text-lg font-bold text-[#101828]">{basicPlan.shopLimit ?? 'Unlimited'}</p>
-          </div>
-          <div className="rounded-xl border border-[#EAECF0] p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#98A2B3]">Employees / shop</p>
-            <p className="mt-1 text-lg font-bold text-[#101828]">{basicPlan.employeeLimit ?? 'Unlimited'}</p>
-          </div>
-        </div>
-      ) : null}
     </SectionCard>
   );
 }

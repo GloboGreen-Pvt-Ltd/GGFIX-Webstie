@@ -2,15 +2,7 @@ import Link from 'next/link';
 import { ArrowUpRight, TrendingUp } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
-
-const TONE = {
-  green: 'bg-[#DCFCE7] text-[#15803D]',
-  blue: 'bg-sky-100 text-sky-600',
-  orange: 'bg-orange-100 text-orange-600',
-  violet: 'bg-violet-100 text-violet-600',
-  teal: 'bg-teal-100 text-teal-600',
-  red: 'bg-red-100 text-[#DC2626]',
-};
+import Icon3D from './Icon3D';
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2';
 
@@ -23,19 +15,24 @@ const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visibl
  * a clear visual anchor instead of six equally-weighted tiles. `href`, when
  * given, makes the whole card a real link (to an existing sidebar route —
  * see shop-home/page.js) rather than a decorative arrow that goes nowhere.
+ *
+ * The icon badge routes through Icon3D (the shared soft-3D gradient badge —
+ * see plan: noble-wiggling-deer) for every non-featured card; `featured`
+ * keeps its own translucent white badge since a colored gradient would
+ * clash with that card's own solid dark-green fill. Props unchanged from
+ * before this pass — every existing call site (~10 pages) needs no edits.
  */
 export default function StatCard({ icon: Icon, label, value, trend, tone = 'green', featured = false, href }) {
   const body = (
     <>
       <div className="flex items-start justify-between gap-2">
-        <span
-          className={cx(
-            'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
-            featured ? 'bg-white/15 text-white' : TONE[tone] || TONE.green,
-          )}
-        >
-          <Icon className="h-5 w-5" aria-hidden="true" />
-        </span>
+        {featured ? (
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-white">
+            <Icon className="h-5 w-5" aria-hidden="true" />
+          </span>
+        ) : (
+          <Icon3D icon={Icon} tone={tone} size="md" />
+        )}
         {href ? (
           <span
             className={cx(
@@ -66,8 +63,8 @@ export default function StatCard({ icon: Icon, label, value, trend, tone = 'gree
     'group block rounded-3xl p-5 transition',
     featured
       ? 'bg-gradient-to-br from-[#166534] to-[#14532D] shadow-[0_4px_16px_rgba(20,83,45,0.25)]'
-      : 'border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]',
-    href && !featured && 'hover:border-brand-300 hover:shadow-[0_4px_16px_rgba(16,24,40,0.08)]',
+      : 'border border-[#E5ECE8] bg-white shadow-[0_8px_30px_rgba(20,80,55,0.06)]',
+    href && !featured && 'hover:-translate-y-0.5 hover:border-[#86EFAC] hover:shadow-[0_12px_32px_rgba(20,80,55,0.1)]',
     href && FOCUS_RING,
   );
 

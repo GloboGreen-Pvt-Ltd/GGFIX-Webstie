@@ -44,6 +44,19 @@ export async function fetchShopBookings() {
   return Array.isArray(list) ? list : [];
 }
 
+/**
+ * Single booking, including its `events` timeline — GET
+ * {ORDER_BASE}/repair-bookings/shop/{id} (order-service
+ * RepairBookingController.getForShop, "Single booking lookup scoped to the
+ * caller's shop"). Confirmed against the backend source: this is the
+ * shop-owner-authorized counterpart of GET /repair-bookings/{id} (which is
+ * CUSTOMER-only and 403s a shop token) — do not switch this back to the
+ * no-/shop path.
+ */
+export async function fetchShopBookingDetail(id) {
+  return shopRequest(ORDER_BASE(), `/repair-bookings/shop/${encodeURIComponent(id)}`);
+}
+
 export async function fetchTicketCounts() {
   const counts = await shopRequest(TICKET_BASE(), '/tickets/counts');
   return counts && typeof counts === 'object' ? counts : {};

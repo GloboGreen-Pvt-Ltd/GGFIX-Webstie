@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /shop-home/services/bookings/[id]/receipt — Booking Receipt for one
+ * /shop-home/services/bookings/view/receipt/?id=… — Booking Receipt for one
  * booking.
  *
  * What the Bookings list's "Receipt" action opens (previously a disabled
@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Copy, Printer } from 'lucide-react';
 
 import EmptyState from '@/components/shop-dashboard/EmptyState';
@@ -46,7 +46,7 @@ function money(value) {
 }
 
 export default function BookingReceiptPage() {
-  const { id } = useParams();
+  const id = useSearchParams().get('id');
   const router = useRouter();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);

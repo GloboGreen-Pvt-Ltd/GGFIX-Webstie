@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /shop-home/employee/team/[id] — Employee Details dashboard for one
+ * /shop-home/employee/team/view/?id=… — Employee Details dashboard for one
  * technician/pickup-person, opened from the Employee Management roster
  * (team/page.js's EmployeeRow links here via its Quick Access grid). A
  * single dedicated page — nothing here auto-navigates anywhere; the Quick
@@ -40,7 +40,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -182,7 +182,7 @@ function InfoRow({ icon: Icon, label, value }) {
 }
 
 export default function EmployeeDetailsPage() {
-  const { id } = useParams();
+  const id = useSearchParams().get('id');
   const router = useRouter();
   const [employee, setEmployee] = useState(null);
   const [loading, setLoading] = useState(true);

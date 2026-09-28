@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /shop-home/services/bookings/[id]/details — Device Details for one
+ * /shop-home/services/bookings/view/details/?id=… — Device Details for one
  * booking.
  *
  * What the Bookings list's "Details" action opens now (it used to just
@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import {
   AlertTriangle,
@@ -97,7 +97,7 @@ function EditButton({ label, title }) {
 }
 
 export default function BookingDetailsPage() {
-  const { id } = useParams();
+  const id = useSearchParams().get('id');
   const router = useRouter();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -332,7 +332,7 @@ export default function BookingDetailsPage() {
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Link
-              href={`/shop-home/services/bookings/${booking.id}/qr`}
+              href={`/shop-home/services/bookings/view/qr/?id=${encodeURIComponent(booking.id)}`}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-[#15803D] bg-white px-5 py-3 text-sm font-bold text-[#15803D] transition hover:bg-[#F0FDF4]"
             >
               <Printer className="h-4.5 w-4.5" aria-hidden="true" />

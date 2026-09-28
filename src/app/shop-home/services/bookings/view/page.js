@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * /shop-home/services/bookings/[id] — Service History for one booking.
+ * /shop-home/services/bookings/view/?id=… — Service History for one booking.
  *
  * This is what the Bookings list's "History" action navigates to (it used
  * to just send everyone to the generic /services/service-status list, which
@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Check, CheckCircle2, Clock, Copy, Phone, RefreshCw, ShieldCheck, Smartphone } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
@@ -55,7 +55,7 @@ function GroupBadge({ status }) {
 }
 
 export default function BookingHistoryPage() {
-  const { id } = useParams();
+  const id = useSearchParams().get('id');
   const router = useRouter();
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);

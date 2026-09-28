@@ -59,6 +59,55 @@ function messageFrom(body) {
   return typeof msg === 'string' && msg.trim() ? msg.trim() : null;
 }
 
+// AUTH_BASE() already ends in "/auth" (api.js: `${EDGE}/auth`) and every
+// call below appends another literal "/auth/..." — the resulting
+// /auth/auth/... shape LOOKS like a duplicated-path bug but is not one.
+// See api.js's own file-header comment: the edge's nginx uses a
+// trailing-slash proxy_pass (`location /auth/ { proxy_pass .../; }`) that
+// STRIPS the first "/auth/" before forwarding, and the Spring controller
+// behind it is itself @RequestMapping("/auth") — so the segment has to
+// appear twice on the wire for the request to land on the right mapping.
+// This exact call was verified end-to-end against production on
+// 2026-09-09 (see this file's own header comment). Do not "fix" this by
+// removing the doubled segment; that would send a bare
+// /shop-login/request-otp to the auth service, which 404s.
+const REQUEST_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Dev-only — never logs the mobile number, OTP, or any response body. */
+function logRequestUrl(label, url) {
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.log(`[shopMobileAuth] ${label} ->`, url);
+  }
+}
+
+/** A thrown fetch error (never an HTTP error response — see classifyHttpError for that). */
+function classifyFetchError(err) {
+  if (err?.name === 'AbortError') {
+    return `The login service didn't respond within ${REQUEST_TIMEOUT_MS / 1000}s. It may be temporarily unreachable — please try again shortly.`;
+  }
+  return "Couldn't reach the login service. Check your connection and try again.";
+}
+
+/** A real HTTP error response with no usable server-provided message. */
+function classifyHttpError(res, fallbackAction = 'complete this request') {
+  if (res.status === 404) return `Login route not found (404) — the API may be misconfigured. Please contact support.`;
+  if (res.status === 401) return 'Not authorized (401). Please try again.';
+  if (res.status === 403) return 'This request was blocked (403). Please try again.';
+  if (res.status >= 500) return `The login service is having trouble right now (${res.status}). Please try again shortly.`;
+  return `We couldn't ${fallbackAction}. Please try again.`;
+}
+
 /**
  * @param {string} mobile
  * @returns {Promise<{ok:boolean, message?:string}>} Never throws.
@@ -81,8 +130,10 @@ export async function sendMobileOtp(mobile) {
   if (digits.length !== 10) {
     return { ok: false, message: 'Enter a valid 10-digit mobile number.' };
   }
+  const url = `${base()}/auth/shop-login/request-otp`;
+  logRequestUrl('POST', url);
   try {
-    const res = await fetch(`${base()}/auth/shop-login/request-otp`, {
+    const res = await fetchWithTimeout(url, {
       method: 'POST',
       credentials: 'omit',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -96,16 +147,13 @@ export async function sendMobileOtp(mobile) {
         // verifyMobileOtp() is the actual gate; proceed to the OTP step.
         return { ok: true };
       }
-      return { ok: false, message: message || "We couldn't send an OTP. Please try again." };
+      return { ok: false, message: message || classifyHttpError(res, 'send an OTP') };
     }
     // devOtp is intentionally never read from this response — see module
     // doc comment. Nothing here surfaces it to the UI.
     return { ok: true };
-  } catch {
-    return {
-      ok: false,
-      message: "Couldn't reach the login service. Check your connection and try again.",
-    };
+  } catch (err) {
+    return { ok: false, message: classifyFetchError(err) };
   }
 }
 
@@ -120,8 +168,10 @@ export async function verifyMobileOtp(mobile, otp) {
   if (digits.length !== 10) return { ok: false, message: 'Enter a valid 10-digit mobile number.' };
   if (code.length !== 6) return { ok: false, message: 'Enter the complete 6-digit OTP.' };
 
+  const url = `${base()}/auth/login`;
+  logRequestUrl('POST', url);
   try {
-    const res = await fetch(`${base()}/auth/login`, {
+    const res = await fetchWithTimeout(url, {
       method: 'POST',
       credentials: 'omit',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -132,7 +182,27 @@ export async function verifyMobileOtp(mobile, otp) {
     if (!res.ok) {
       const body = await readJson(res);
       const message = messageFrom(body);
-      return { ok: false, message: message || 'The OTP you entered is incorrect. Please try again.' };
+      // Backend's own message wins when it sends one (this is also how an
+      // expired-OTP message reaches the UI — passed through verbatim rather
+      // than guessed at here). These are just the honest fallbacks for the
+      // real HTTP statuses this endpoint can return with no body at all.
+      if (message) return { ok: false, message };
+      if (res.status === 401) {
+        return { ok: false, message: 'Invalid OTP. Please check the code and try again.' };
+      }
+      if (res.status === 400) {
+        return { ok: false, message: 'Invalid OTP request.' };
+      }
+      if (res.status === 403) {
+        return { ok: false, message: 'OTP verification is not allowed. Please request a new OTP.' };
+      }
+      if (res.status === 429) {
+        return { ok: false, message: 'Too many attempts. Please wait before trying again.' };
+      }
+      if (res.status === 404 || res.status >= 500) {
+        return { ok: false, message: classifyHttpError(res, 'verify the OTP') };
+      }
+      return { ok: false, message: 'Something went wrong. Please try again.' };
     }
     const data = await res.json().catch(() => ({}));
     const token = data && data.accessToken;
@@ -155,10 +225,7 @@ export async function verifyMobileOtp(mobile, otp) {
         shops: data.shops,
       },
     };
-  } catch {
-    return {
-      ok: false,
-      message: "Couldn't reach the login service. Check your connection and try again.",
-    };
+  } catch (err) {
+    return { ok: false, message: classifyFetchError(err) };
   }
 }

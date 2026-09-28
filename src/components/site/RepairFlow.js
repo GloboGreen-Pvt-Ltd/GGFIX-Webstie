@@ -2678,7 +2678,11 @@ function ReviewStep({
       const payload = {
         shopId,
         brandId,
+        brandName: brandName || undefined,
         modelId,
+        modelName: modelName || undefined,
+        deviceDisplayName: [brandName, modelName].filter(Boolean).join(' ') || undefined,
+        deviceImageUrl: image || undefined,
         color: cleanList(model && model.colors)[0] || undefined,
         serviceMode,
         issueSummary: services.map((s) => s.name).join(', '),

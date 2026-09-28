@@ -1,26 +1,36 @@
 'use client';
 
 /**
- * DashboardShell — the Partner Dashboard's layout chrome (sidebar +
- * top navbar) plus its auth guard, shared across every route under
+ * DashboardShell — the Partner Dashboard's layout chrome (header nav +
+ * mobile drawer) plus its auth guard, shared across every route under
  * /shop-home/* via src/app/shop-home/layout.js.
+ *
+ * 2026-09: header-only navigation (HeaderNav.js, mega-menu dropdowns) —
+ * explicitly no left sidebar (one was added and then explicitly reverted
+ * the same day). MobileNavDrawer.js covers the narrow-viewport case, since
+ * a mega-menu doesn't fit a phone screen.
  *
  * The guard is the exact same check src/app/shop-home/page.js used to do
  * itself (isLoggedIn() from src/lib/shopAuth.js, redirect to
  * /shopmanagement if absent) — moved up to the layout so it protects every
  * dashboard route once, instead of being duplicated across ~30 pages.
+ *
+ * Nav badges (Pickups / Bookings / Enquiries) are fetched once here — not
+ * per-page — since the header persists across navigation. Each of the
+ * three calls is independently caught so one failing endpoint doesn't
+ * blank every badge. Leave Management and Notifications intentionally never
+ * get a badge: there is no backend endpoint in this web client to compute
+ * either count for real, and a fabricated number is worse than none.
  */
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
-import { cx } from '@/components/site/ui';
 import { isLoggedIn, readShopOwner, subscribe } from '@/lib/shopAuth';
-import Sidebar from './Sidebar';
-import TopNavbar from './TopNavbar';
-
-const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2';
+import { fetchShopBookings, fetchShopChats, fetchTicketCounts, openEnquiries, pendingPickups, sumActiveRepairs } from '@/lib/shopDashboard';
+import HeaderNav from './HeaderNav';
+import MobileNavDrawer from './MobileNavDrawer';
 
 export default function DashboardShell({ children }) {
   const router = useRouter();
@@ -28,8 +38,8 @@ export default function DashboardShell({ children }) {
 
   const [mounted, setMounted] = useState(false);
   const [shopOwner, setShopOwner] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [badges, setBadges] = useState({});
 
   useEffect(() => {
     setMounted(true);
@@ -37,6 +47,36 @@ export default function DashboardShell({ children }) {
     const unsub = subscribe((session) => setShopOwner(session));
     return unsub;
   }, []);
+
+  useEffect(() => {
+    if (!mounted || !isLoggedIn()) return;
+    let alive = true;
+
+    fetchShopBookings()
+      .then((bookings) => {
+        if (!alive) return;
+        setBadges((b) => ({ ...b, pickups: pendingPickups(bookings).length }));
+      })
+      .catch(() => {});
+
+    fetchTicketCounts()
+      .then((counts) => {
+        if (!alive) return;
+        setBadges((b) => ({ ...b, bookings: sumActiveRepairs(counts) }));
+      })
+      .catch(() => {});
+
+    fetchShopChats()
+      .then((chats) => {
+        if (!alive) return;
+        setBadges((b) => ({ ...b, enquiries: openEnquiries(chats).length }));
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -50,42 +90,19 @@ export default function DashboardShell({ children }) {
 
   if (!mounted || !isLoggedIn()) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#F8FAFC]">
+      <div className="flex min-h-screen items-center justify-center bg-[#F7FBF9]">
         <Loader2 className="h-7 w-7 animate-spin text-brand-600" aria-hidden="true" />
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC]">
-      <Sidebar
-        collapsed={collapsed}
-        mobileOpen={mobileOpen}
-        onCloseMobile={() => setMobileOpen(false)}
-        shopOwner={shopOwner}
-      />
+    <div className="min-h-screen bg-[#F7FBF9]">
+      <HeaderNav pathname={pathname} shopOwner={shopOwner} badges={badges} onOpenMobileMenu={() => setMobileOpen(true)} />
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopNavbar pathname={pathname} onOpenMobileMenu={() => setMobileOpen(true)} shopOwner={shopOwner} />
+      <MobileNavDrawer mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} shopOwner={shopOwner} badges={badges} />
 
-        {/* Collapse toggle — a small tab riding the edge between sidebar and
-            content, desktop only, so it doesn't compete with the mobile
-            hamburger inside TopNavbar. */}
-        <button
-          type="button"
-          onClick={() => setCollapsed((v) => !v)}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className={cx(
-            'fixed top-20 z-20 hidden h-7 w-7 items-center justify-center rounded-full border border-[#EAECF0] bg-white text-[#667085] shadow-[0_1px_3px_rgba(16,24,40,0.08)] transition-[left] duration-200 hover:text-[#15803D] lg:flex',
-            FOCUS_RING,
-          )}
-          style={{ left: collapsed ? '68px' : '252px' }}
-        >
-          {collapsed ? <ChevronRight className="h-4 w-4" aria-hidden="true" /> : <ChevronLeft className="h-4 w-4" aria-hidden="true" />}
-        </button>
-
-        <main className="min-w-0 flex-1 px-4 py-5 sm:px-6 sm:py-6">{children}</main>
-      </div>
+      <main className="min-w-0 px-4 py-5 sm:px-6 sm:py-6">{children}</main>
     </div>
   );
 }

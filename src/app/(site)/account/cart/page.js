@@ -26,6 +26,7 @@ import {
   ShoppingCart,
   Trash2,
   Truck,
+  X,
 } from 'lucide-react';
 
 import { Button, cx } from '@/components/site/ui';
@@ -54,8 +55,42 @@ function lineTotal(item) {
   return Number(p.price || 0) * Number(item.quantity || 0);
 }
 
+/**
+ * Thumbnail + click-to-open lightbox. The lightbox only ever shows the real
+ * `src` this component already had (never the 📱 placeholder) — when there's
+ * no image, or it failed to load, the thumbnail isn't clickable at all.
+ */
 function ProductImage({ src, alt }) {
   const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const canPreview = Boolean(src) && !failed;
+
+  const openLightbox = () => {
+    if (!canPreview) return;
+    setOpen(true);
+    requestAnimationFrame(() => setVisible(true));
+  };
+  const closeLightbox = () => {
+    setVisible(false);
+    setTimeout(() => setOpen(false), 200);
+  };
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function onKey(e) {
+      if (e.key === 'Escape') closeLightbox();
+    }
+    document.addEventListener('keydown', onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   if (!src || failed) {
     return (
       <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-xl bg-brand-soften text-2xl">
@@ -63,16 +98,58 @@ function ProductImage({ src, alt }) {
       </div>
     );
   }
+
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={alt || 'Product'}
-      loading="lazy"
-      decoding="async"
-      onError={() => setFailed(true)}
-      className="h-20 w-24 shrink-0 rounded-xl border border-brand-line object-cover"
-    />
+    <>
+      <button
+        type="button"
+        onClick={openLightbox}
+        aria-label={`View larger image of ${alt || 'product'}`}
+        className="block h-20 w-24 shrink-0 overflow-hidden rounded-xl transition hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt || 'Product'}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+          className="h-full w-full rounded-xl border border-brand-line object-cover"
+        />
+      </button>
+
+      {open ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${alt || 'Product'} — image preview`}
+          onClick={closeLightbox}
+          className={cx(
+            'fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 transition-opacity duration-200',
+            visible ? 'opacity-100' : 'opacity-0',
+          )}
+        >
+          <button
+            type="button"
+            onClick={closeLightbox}
+            aria-label="Close preview"
+            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt={alt || 'Product'}
+            onClick={(e) => e.stopPropagation()}
+            className={cx(
+              'max-h-[85vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl transition-transform duration-200 sm:max-w-[80vw]',
+              visible ? 'scale-100' : 'scale-95',
+            )}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 

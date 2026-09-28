@@ -14,7 +14,7 @@
  * mirrors handled in customerAccount.createAddress/updateAddress.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Briefcase,
   Check,
@@ -44,6 +44,8 @@ import {
   AccountPageHeader,
   Panel,
 } from '@/components/site/account/ui';
+import { exactDigits, required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 const LABELS = ['Home', 'Office', 'Other'];
 const LABEL_ICON = { Home, Office: Briefcase, Other: Tag };
@@ -65,7 +67,7 @@ const EMPTY_FORM = {
 /* Add / edit form                                                             */
 /* -------------------------------------------------------------------------- */
 
-function Field({ label, required, children }) {
+function Field({ label, required, children, error }) {
   return (
     <label className="block">
       <span className="mb-1 block text-xs font-semibold text-brand-ink">
@@ -73,6 +75,7 @@ function Field({ label, required, children }) {
         {required ? <span className="text-red-500"> *</span> : null}
       </span>
       {children}
+      {error ? <p className="mt-1.5 text-xs text-red-600">{error}</p> : null}
     </label>
   );
 }
@@ -84,19 +87,35 @@ function AddressForm({ initial, onCancel, onSaved }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...(initial || {}) });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
-  const set = (k) => (e) =>
-    setForm((f) => ({ ...f, [k]: e && e.target ? e.target.value : e }));
+  const set = (k) => (e) => {
+    const v = e && e.target ? e.target.value : e;
+    setForm((f) => ({ ...f, [k]: v }));
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const editing = Boolean(initial && initial.id);
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.fullName.trim() || !form.mobile.trim() || !form.addressLine.trim() || !form.pincode.trim()) {
-      setError('Please fill name, mobile, address and pincode.');
+    const { errors, firstErrorField, isValid } = validateForm(
+      {
+        fullName: required('Full name is required.'),
+        mobile: [required('Mobile number is required.'), exactDigits(10, 'Enter a valid 10-digit mobile number.')],
+        addressLine: required('Address is required.'),
+        pincode: [required('Pincode is required.'), exactDigits(6, 'Enter a valid 6-digit pincode.')],
+      },
+      form,
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
       return;
     }
+    setFieldErrors({});
     setBusy(true);
     try {
       if (editing) await updateAddress(initial.id, form);
@@ -153,22 +172,38 @@ function AddressForm({ initial, onCancel, onSaved }) {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Full name" required>
-            <input className={inputCls} value={form.fullName} onChange={set('fullName')} placeholder="Your name" />
-          </Field>
-          <Field label="Mobile" required>
+          <Field label="Full name" required error={fieldErrors.fullName}>
             <input
+              ref={registerField(fieldRefs, 'fullName')}
+              className={inputCls}
+              value={form.fullName}
+              onChange={set('fullName')}
+              placeholder="Your name"
+              aria-invalid={Boolean(fieldErrors.fullName)}
+            />
+          </Field>
+          <Field label="Mobile" required error={fieldErrors.mobile}>
+            <input
+              ref={registerField(fieldRefs, 'mobile')}
               className={inputCls}
               value={form.mobile}
               onChange={set('mobile')}
               inputMode="tel"
               placeholder="10-digit mobile"
+              aria-invalid={Boolean(fieldErrors.mobile)}
             />
           </Field>
         </div>
 
-        <Field label="Address (house / street / area line)" required>
-          <input className={inputCls} value={form.addressLine} onChange={set('addressLine')} placeholder="Flat, building, street" />
+        <Field label="Address (house / street / area line)" required error={fieldErrors.addressLine}>
+          <input
+            ref={registerField(fieldRefs, 'addressLine')}
+            className={inputCls}
+            value={form.addressLine}
+            onChange={set('addressLine')}
+            placeholder="Flat, building, street"
+            aria-invalid={Boolean(fieldErrors.addressLine)}
+          />
         </Field>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -184,13 +219,15 @@ function AddressForm({ initial, onCancel, onSaved }) {
           <Field label="State">
             <input className={inputCls} value={form.state} onChange={set('state')} placeholder="State" />
           </Field>
-          <Field label="Pincode" required>
+          <Field label="Pincode" required error={fieldErrors.pincode}>
             <input
+              ref={registerField(fieldRefs, 'pincode')}
               className={inputCls}
               value={form.pincode}
               onChange={set('pincode')}
               inputMode="numeric"
               placeholder="6-digit pincode"
+              aria-invalid={Boolean(fieldErrors.pincode)}
             />
           </Field>
         </div>

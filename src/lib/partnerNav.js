@@ -8,13 +8,32 @@
  * "Coming soon" state rather than fake data or a dead link. When a real
  * page is built at one of these paths, Next.js gives it routing priority
  * over the catch-all automatically — nothing here needs to change.
+ *
+ * Route stability: every `slug` below is unchanged from before this file's
+ * 2026-09 sidebar redesign, even where the requested IA used a different
+ * path (e.g. a flat `/shop-home/employees/*` instead of the existing
+ * `/shop-home/employee/*`, or `/shop-home/dashboard` instead of the
+ * existing `/shop-home` root). Renaming a slug here would 404 every
+ * bookmark/link to it and, for the four real pages (book-service, pickups,
+ * employee/team, account/business-profile, account/settings), break actual
+ * shipped functionality — so this redesign only ever changes labels, icons,
+ * descriptions, grouping and order, never a slug a real or stub page
+ * already answers to.
+ *
+ * "Shop Profile" and "Business Settings" (the `settings` section's first
+ * two items) are the same two routes the profile dropdown has always linked
+ * to (`account/business-profile`, `account/settings`) — they used to be
+ * reachable ONLY from there ("ACCOUNT_ITEMS", not shown in the sidebar).
+ * The 2026-09 redesign surfaces them in the sidebar's new Settings section
+ * too, so they are defined once, right here, and both places point at the
+ * same two objects — see accountProfileItem/accountSettingsItem below.
  */
 
 import {
+  Bell,
   BarChart3,
   Calendar,
-  CheckCircle2,
-  ClipboardList,
+  CalendarCheck,
   Clock,
   CreditCard,
   FileText,
@@ -40,6 +59,24 @@ export const DASHBOARD_ITEM = {
   label: 'Dashboard',
   href: '/shop-home',
   icon: LayoutDashboard,
+  description: 'Business overview — bookings, revenue, service activity, employee activity and alerts.',
+};
+
+// Reused by both the sidebar's Settings section and, unchanged, wherever
+// else account-menu destinations are surfaced — one definition, not two.
+const accountProfileItem = {
+  key: 'business-profile',
+  label: 'Business Profile',
+  slug: 'account/business-profile',
+  icon: Store,
+  description: 'Your shop/business information.',
+};
+const accountSettingsItem = {
+  key: 'account-settings',
+  label: 'Account Settings',
+  slug: 'account/settings',
+  icon: Settings,
+  description: 'Account preferences and security settings.',
 };
 
 export const PARTNER_NAV = [
@@ -49,15 +86,15 @@ export const PARTNER_NAV = [
     icon: Wrench,
     items: [
       { key: 'book-service', label: 'Book Service', slug: 'services/book-service', icon: PlusCircle, description: 'Create a new repair/service booking.' },
-      { key: 'requote', label: 'Requote', slug: 'services/requote', icon: FileText, description: 'Update or revise an existing service quotation.' },
-      { key: 'pickups', label: 'Pickups', slug: 'services/pickups', icon: Truck, description: 'Manage pickup requests.' },
-      { key: 'bookings', label: 'Bookings', slug: 'services/bookings', icon: ClipboardList, description: 'View and manage all service bookings.' },
-      { key: 'customers', label: 'Customers', slug: 'services/customers', icon: Users, description: 'Manage customer details and service history.' },
-      { key: 'enquiries', label: 'Enquiries', slug: 'services/enquiries', icon: MessageSquare, description: 'View and manage customer enquiries.' },
-      { key: 'model-compatibility', label: 'Model Compatibility', slug: 'services/model-compatibility', icon: Smartphone, description: 'Check supported device/model services and compatibility.' },
-      { key: 'service-status', label: 'Service Status', slug: 'services/service-status', icon: Clock, description: 'Track repair and service progress.' },
-      { key: 'delivery', label: 'Delivery', slug: 'services/delivery', icon: Package, description: 'Manage devices ready for delivery and completed deliveries.' },
-      { key: 'warranty', label: 'Warranty / Rework', slug: 'services/warranty', icon: ShieldCheck, description: 'Manage warranty claims, rework jobs and repeat-repair cases.' },
+      { key: 'requote', label: 'Requote', slug: 'services/requote', icon: FileText, description: 'Manage bookings that require revised quotations.' },
+      { key: 'pickups', label: 'Pickups', slug: 'services/pickups', icon: Truck, description: 'Track and manage device pickup bookings.' },
+      { key: 'bookings', label: 'Bookings', slug: 'services/bookings', icon: ListChecks, description: 'View and manage all repair and service bookings.' },
+      { key: 'customers', label: 'Customers', slug: 'services/customers', icon: Users, description: 'Manage customer profiles, contact information, booking history and service records.' },
+      { key: 'enquiries', label: 'Enquiries', slug: 'services/enquiries', icon: MessageSquare, description: 'Manage customer enquiries and convert them into service bookings.' },
+      { key: 'model-compatibility', label: 'Model Compatibility', slug: 'services/model-compatibility', icon: Smartphone, description: 'Check and manage device models and supported repair/service compatibility.' },
+      { key: 'service-status', label: 'Service Status', slug: 'services/service-status', icon: Clock, description: 'Track the current progress and status of active repair services.' },
+      { key: 'delivery', label: 'Delivery', slug: 'services/delivery', icon: Package, description: 'Manage completed repairs that are ready for delivery or return to customers.' },
+      { key: 'warranty', label: 'Warranty / Rework', slug: 'services/warranty', icon: ShieldCheck, description: 'Manage warranty claims, repeat repair requests and rework jobs.' },
     ],
   },
   {
@@ -65,16 +102,16 @@ export const PARTNER_NAV = [
     label: 'Employee',
     icon: Users,
     items: [
-      { key: 'team', label: 'Team', slug: 'employee/team', icon: Users, description: 'View and manage employees.' },
-      { key: 'attendance', label: 'Attendance', slug: 'employee/attendance', icon: CheckCircle2, description: 'Manage daily employee attendance.' },
-      { key: 'service-report', label: 'Service Report', slug: 'employee/service-report', icon: BarChart3, description: 'View employee-wise service activity.' },
-      { key: 'pickup-report', label: 'Pickup Report', slug: 'employee/pickup-report', icon: Truck, description: 'View employee pickup activity.' },
+      { key: 'team', label: 'Employee Management', slug: 'employee/team', icon: Users, description: 'View, add, edit, activate, deactivate and manage employees.' },
+      { key: 'attendance', label: 'Attendance', slug: 'employee/attendance', icon: CalendarCheck, description: 'Monitor employee attendance, late check-ins, permissions and leaves.' },
+      { key: 'leave', label: 'Leave Management', slug: 'employee/leave', icon: Calendar, description: 'View, approve, reject and manage employee leave requests.' },
+      { key: 'shift-schedule', label: 'Shift Management', slug: 'employee/shift-schedule', icon: Clock, description: 'View employee work schedules and check-in/check-out details.' },
+      { key: 'salary', label: 'Salary & Payslips', slug: 'employee/salary', icon: IndianRupee, description: 'Manage salary records, advances, monthly salary reports and payslips.' },
+      { key: 'service-report', label: 'Service Report', slug: 'employee/service-report', icon: BarChart3, description: 'Monitor technician work records and assigned service tasks.' },
+      { key: 'pickup-report', label: 'Pickup Report', slug: 'employee/pickup-report', icon: Truck, description: 'Monitor pickup person assignments and completed pickups.' },
       { key: 'tasks', label: 'Tasks', slug: 'employee/tasks', icon: ListChecks, description: 'Assign and track employee tasks.' },
-      { key: 'shift-schedule', label: 'Shift Schedule', slug: 'employee/shift-schedule', icon: Calendar, description: 'Manage employee shift schedules.' },
-      { key: 'leave', label: 'Leave', slug: 'employee/leave', icon: Clock, description: 'Manage leave requests and approvals.' },
       { key: 'permissions', label: 'Permissions', slug: 'employee/permissions', icon: ShieldCheck, description: 'Manage short-time employee permission requests.' },
       { key: 'performance', label: 'Performance', slug: 'employee/performance', icon: BarChart3, description: 'Monitor employee productivity and performance.' },
-      { key: 'salary', label: 'Salary', slug: 'employee/salary', icon: IndianRupee, description: 'View salary and payment information.' },
     ],
   },
   {
@@ -82,13 +119,14 @@ export const PARTNER_NAV = [
     label: 'Reports',
     icon: BarChart3,
     items: [
-      { key: 'revenue', label: 'Revenue', slug: 'reports/revenue', icon: IndianRupee, description: 'View revenue overview.' },
-      { key: 'reports-service-report', label: 'Service Report', slug: 'reports/service-report', icon: BarChart3, description: 'Analyze bookings and repair performance.' },
+      { key: 'overview', label: 'Business Overview', slug: 'reports/overview', icon: LayoutDashboard, description: 'Total bookings, revenue, completed/pending services and customer growth.' },
+      { key: 'revenue', label: 'Revenue Report', slug: 'reports/revenue', icon: IndianRupee, description: 'Daily, weekly and monthly revenue, pending payments and payment methods.' },
+      { key: 'reports-service-report', label: 'Service Report', slug: 'reports/service-report', icon: BarChart3, description: 'Service status, technician performance, completion rate and average repair time.' },
+      { key: 'employee-report', label: 'Employee Report', slug: 'reports/employee-report', icon: Users, description: 'Attendance, productivity, completed tasks and leave statistics.' },
+      { key: 'reports-pickup-report', label: 'Pickup Report', slug: 'reports/pickup-report', icon: Truck, description: 'Total, completed and pending pickups, and pickup employee performance.' },
       { key: 'cash-book', label: 'Cash Book', slug: 'reports/cash-book', icon: Wallet, description: 'Manage cash-in and cash-out records.' },
-      { key: 'booking-report', label: 'Booking Report', slug: 'reports/booking-report', icon: ClipboardList, description: 'View booking statistics and trends.' },
-      { key: 'reports-pickup-report', label: 'Pickup Report', slug: 'reports/pickup-report', icon: Truck, description: 'Analyze pickup performance.' },
+      { key: 'booking-report', label: 'Booking Report', slug: 'reports/booking-report', icon: ListChecks, description: 'View booking statistics and trends.' },
       { key: 'delivery-report', label: 'Delivery Report', slug: 'reports/delivery-report', icon: Package, description: 'View delivered-device statistics.' },
-      { key: 'employee-report', label: 'Employee Report', slug: 'reports/employee-report', icon: Users, description: 'Analyze employee productivity and activity.' },
       { key: 'customer-report', label: 'Customer Report', slug: 'reports/customer-report', icon: Users, description: 'View customer activity and service history.' },
       { key: 'sales-report', label: 'Sales Report', slug: 'reports/sales-report', icon: ShoppingBag, description: 'View Buy/Sell transaction reports.' },
       { key: 'expense-report', label: 'Expense Report', slug: 'reports/expense-report', icon: IndianRupee, description: 'Track business expenses.' },
@@ -96,21 +134,17 @@ export const PARTNER_NAV = [
       { key: 'profit-loss', label: 'Profit & Loss', slug: 'reports/profit-loss', icon: BarChart3, description: 'Compare business income against expenses.' },
     ],
   },
-];
-
-/**
- * The profile-dropdown destinations (Business Profile / Account Settings).
- * Not shown in the sidebar, but routed through the same catch-all +
- * ComingSoon pattern as every other unbuilt destination — see
- * findNavItemBySlug below.
- *
- * "My Profile" (account/profile) used to be a third item here — removed as
- * redundant with Account Settings' own Personal Information tab, which now
- * also owns the profile-photo upload that page used to be the only home for.
- */
-export const ACCOUNT_ITEMS = [
-  { key: 'business-profile', label: 'Business Profile', slug: 'account/business-profile', icon: Store, description: 'Your shop/business information.' },
-  { key: 'account-settings', label: 'Account Settings', slug: 'account/settings', icon: Settings, description: 'Account preferences and security settings.' },
+  {
+    key: 'settings',
+    label: 'Settings',
+    icon: Settings,
+    items: [
+      accountProfileItem,
+      accountSettingsItem,
+      { key: 'subscription', label: 'Subscription & Plan', slug: 'settings/subscription', icon: CreditCard, description: 'Manage subscription, employee seat limits and billing.' },
+      { key: 'notifications', label: 'Notifications', slug: 'settings/notifications', icon: Bell, description: 'Manage notification preferences.' },
+    ],
+  },
 ];
 
 /** Every leaf item, each with its full href attached — flattened once for lookups. */
@@ -118,10 +152,8 @@ export const PARTNER_NAV_FLAT = PARTNER_NAV.flatMap((section) =>
   section.items.map((item) => ({ ...item, href: `/shop-home/${item.slug}`, section })),
 );
 
-const ACCOUNT_ITEMS_WITH_HREF = ACCOUNT_ITEMS.map((item) => ({ ...item, href: `/shop-home/${item.slug}` }));
-
 /** Every slug the catch-all route ([...slug]) must pre-render under output:'export'. */
-export const ALL_STUB_SLUGS = [...PARTNER_NAV_FLAT, ...ACCOUNT_ITEMS_WITH_HREF].map((item) => item.slug);
+export const ALL_STUB_SLUGS = PARTNER_NAV_FLAT.map((item) => item.slug);
 
 /**
  * Resolve the current pathname to { title, breadcrumb, sectionKey }.
@@ -143,23 +175,11 @@ export function resolveNavContext(pathname) {
     };
   }
 
-  // Not a sidebar item — check the account-menu destinations (Business
-  // Profile, Account Settings) so the navbar title/breadcrumb is still
-  // correct for real pages under /shop-home/account/*.
-  const accountMatch = ACCOUNT_ITEMS_WITH_HREF.find((item) => item.href === clean);
-  if (accountMatch) {
-    return { title: accountMatch.label, breadcrumb: [accountMatch.label], sectionKey: null };
-  }
-
   return { title: 'Dashboard', breadcrumb: ['Dashboard'], sectionKey: null };
 }
 
 /** Find a leaf item by its slug array (from the catch-all route params). */
 export function findNavItemBySlug(slugParts) {
   const slug = Array.isArray(slugParts) ? slugParts.join('/') : String(slugParts || '');
-  return (
-    PARTNER_NAV_FLAT.find((item) => item.slug === slug) ||
-    ACCOUNT_ITEMS_WITH_HREF.find((item) => item.slug === slug) ||
-    null
-  );
+  return PARTNER_NAV_FLAT.find((item) => item.slug === slug) || null;
 }

@@ -75,7 +75,13 @@ const MENU_LINKS = [
   { href: '/shop-home/account/settings', label: 'Account Settings', icon: Settings },
 ];
 
-export default function ProfileDropdown({ shopOwner }) {
+/**
+ * `compact` (collapsed sidebar rail) hides the name/role/chevron and shows
+ * just the avatar. `menuSide`/`menuAlign` let the sidebar's bottom-pinned
+ * copy of this same trigger open its menu upward, and out to the right of a
+ * narrow collapsed rail, instead of TopNavbar's default down-and-left.
+ */
+export default function ProfileDropdown({ shopOwner, compact = false, menuSide = 'down', menuAlign = 'right' }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -115,12 +121,20 @@ export default function ProfileDropdown({ shopOwner }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
+        aria-label={compact ? `${displayName} — account menu` : undefined}
+        title={compact ? displayName : undefined}
         className={cx(
-          'flex items-center gap-2 rounded-xl border border-transparent py-1 pl-1 pr-2 transition hover:border-[#EAECF0] hover:bg-[#F9FAFB]',
+          'flex items-center gap-2 rounded-xl border border-transparent transition hover:border-[#EAECF0] hover:bg-[#F9FAFB]',
+          compact ? 'justify-center p-1' : 'py-1 pl-1 pr-2',
           FOCUS_RING,
         )}
       >
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-600 text-sm font-bold text-white sm:h-11 sm:w-11">
+        <span
+          className={cx(
+            'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-600 text-sm font-bold text-white',
+            compact ? 'h-10 w-10' : 'h-10 w-10 sm:h-11 sm:w-11',
+          )}
+        >
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- user-supplied remote avatar, not a local asset next/image can optimise reliably.
             <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -128,17 +142,25 @@ export default function ProfileDropdown({ shopOwner }) {
             initials
           )}
         </span>
-        <span className="hidden text-left sm:block">
-          <span className="block max-w-[9rem] truncate text-sm font-bold text-[#101828]">{displayName}</span>
-          <span className="block truncate text-xs text-[#667085]">{roleLabel}</span>
-        </span>
-        <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#667085] transition-transform', open && 'rotate-180')} aria-hidden="true" />
+        {!compact ? (
+          <>
+            <span className="hidden text-left sm:block">
+              <span className="block max-w-[9rem] truncate text-sm font-bold text-[#101828]">{displayName}</span>
+              <span className="block truncate text-xs text-[#667085]">{roleLabel}</span>
+            </span>
+            <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#667085] transition-transform', open && 'rotate-180')} aria-hidden="true" />
+          </>
+        ) : null}
       </button>
 
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 overflow-hidden rounded-2xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08),0_12px_28px_rgba(16,24,40,0.08)]"
+          className={cx(
+            'absolute z-50 w-64 overflow-hidden rounded-2xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08),0_12px_28px_rgba(16,24,40,0.08)]',
+            menuSide === 'up' ? 'bottom-[calc(100%+0.5rem)]' : 'top-[calc(100%+0.5rem)]',
+            menuAlign === 'left' ? 'left-0' : 'right-0',
+          )}
         >
           <div className="flex items-center gap-3 border-b border-[#EAECF0] bg-[#F9FAFB] px-4 py-3">
             <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-brand-600 text-sm font-bold text-white">

@@ -412,7 +412,7 @@ export default function SiteHeader() {
             <HeaderAccount variant="icon" className="lg:hidden" />
             <Link
               href={CTA.businessLogin.href}
-              aria-label="Business Login"
+              aria-label="Sell with Us"
               className={cx(ICON_BUTTON, 'lg:hidden')}
             >
               <Store className="h-5 w-5" aria-hidden="true" />
@@ -436,7 +436,7 @@ export default function SiteHeader() {
               iconPosition="left"
               className="hidden lg:inline-flex"
             >
-              Business Login
+              Sell with Us
             </Button>
 
             {/* Persistent CTA from sm up; at 360px it lives in the panel. */}
@@ -541,7 +541,7 @@ export default function SiteHeader() {
                 onClick={closeMenu}
                 className="w-full"
               >
-                Business Login
+                Sell with Us
               </Button>
             </div>
           </div>

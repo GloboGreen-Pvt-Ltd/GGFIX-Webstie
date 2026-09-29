@@ -251,10 +251,7 @@ export default function HeaderAccount({ variant = 'desktop', onNavigate, classNa
           )}
         >
           <User className="h-5 w-5 shrink-0 text-brand-muted" aria-hidden="true" />
-          <span className="leading-tight">
-            <span className="block text-[11px] font-medium text-brand-muted">Hello, Sign in</span>
-            <span className="block text-sm font-bold text-brand-ink">Account</span>
-          </span>
+          <span className="text-sm font-bold text-brand-ink">Login</span>
         </button>
         <LoginModal
           open={loginOpen}

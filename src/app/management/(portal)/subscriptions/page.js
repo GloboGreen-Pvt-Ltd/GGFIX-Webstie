@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CreditCard, Crown, Gift, Zap, Check, Store } from 'lucide-react';
 import { subscriptionApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import PageHeader, { Button } from '@/components/PageHeader';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 const TABS = [
   { key: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
@@ -241,6 +243,8 @@ function ActivateBasic({ onActivated }) {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   // Live-preview total from the backend quote endpoint.
   useEffect(() => {
@@ -278,11 +282,17 @@ function ActivateBasic({ onActivated }) {
   const handleActivate = async () => {
     setErr('');
     setOk('');
-    const n = Number(shopCount);
-    if (!ownerUserId.trim()) {
-      setErr('Enter an owner user ID.');
+    const { errors, firstErrorField, isValid } = validateForm(
+      { ownerUserId: required('Enter an owner user ID.') },
+      { ownerUserId },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
       return;
     }
+    setFieldErrors({});
+    const n = Number(shopCount);
     if (!n || n < 1) {
       setErr('Shop count must be at least 1.');
       return;
@@ -324,15 +334,20 @@ function ActivateBasic({ onActivated }) {
             className="w-full rounded-lg border border-admin-border bg-white px-3 py-2 text-sm text-slate-900 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
           />
         </div>
-        <div className="sm:col-span-2">
+        <div className="sm:col-span-2" ref={registerField(fieldRefs, 'ownerUserId')}>
           <label className="mb-1 block text-xs font-medium text-admin-muted">Owner user ID</label>
           <input
             type="text"
             value={ownerUserId}
-            onChange={(e) => setOwnerUserId(e.target.value)}
+            onChange={(e) => {
+              setOwnerUserId(e.target.value);
+              if (fieldErrors.ownerUserId) setFieldErrors((prev) => ({ ...prev, ownerUserId: undefined }));
+            }}
             placeholder="ownerUserId (UUID)"
             className="w-full rounded-lg border border-admin-border bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
+            aria-invalid={Boolean(fieldErrors.ownerUserId)}
           />
+          {fieldErrors.ownerUserId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.ownerUserId}</p> : null}
         </div>
       </div>
 

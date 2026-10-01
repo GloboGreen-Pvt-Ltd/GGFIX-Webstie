@@ -533,10 +533,10 @@ function BookingRow({ booking }) {
         <div className="mt-3.5 flex flex-wrap gap-1.5 border-t border-dashed border-[#DDEDE5] pt-3.5">
           <ActionButton icon={Calculator} label="Re-Est" href="/shop-home/services/requote" />
           <ActionButton icon={UserCog} label="Assign" disabled title="Technician assignment isn't available in the shop portal yet" />
-          <ActionButton icon={History} label="History" href={`/shop-home/services/bookings/view/?id=${encodeURIComponent(booking.id)}`} />
-          <ActionButton icon={Receipt} label="Receipt" href={`/shop-home/services/bookings/view/receipt/?id=${encodeURIComponent(booking.id)}`} />
-          <ActionButton icon={QrCode} label="Barcode" href={`/shop-home/services/bookings/view/qr/?id=${encodeURIComponent(booking.id)}`} />
-          <ActionButton icon={FileText} label="Details" href={`/shop-home/services/bookings/view/details/?id=${encodeURIComponent(booking.id)}`} />
+          <ActionButton icon={History} label="History" href={`/shop-home/services/bookings/${booking.id}`} />
+          <ActionButton icon={Receipt} label="Receipt" href={`/shop-home/services/bookings/${booking.id}/receipt`} />
+          <ActionButton icon={QrCode} label="Barcode" href={`/shop-home/services/bookings/${booking.id}/qr`} />
+          <ActionButton icon={FileText} label="Details" href={`/shop-home/services/bookings/${booking.id}/details`} />
         </div>
       </div>
     </div>

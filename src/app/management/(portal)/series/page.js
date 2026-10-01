@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 // Split a bulk paste into clean, de-duplicated series names. Accepts one name
 // per line, comma-separated, or a mix; trims blanks.
@@ -30,6 +32,8 @@ export default function MasterSeriesPage() {
   const [formBrandId, setFormBrandId] = useState('');
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   // --- Initial load
   const loadRefData = async () => {
@@ -177,7 +181,17 @@ export default function MasterSeriesPage() {
         }
         closeModal();
       } else {
-        if (!name.trim()) { setSubmitting(false); return; }
+        const { errors, firstErrorField, isValid } = validateForm(
+          { name: required('Series name is required.') },
+          { name },
+        );
+        if (!isValid) {
+          setFieldErrors(errors);
+          focusField(fieldRefs, firstErrorField);
+          setSubmitting(false);
+          return;
+        }
+        setFieldErrors({});
         await masterApi.put(`/master/series/${modal.item.id}`, {
           categoryBrandId: mappingId,
           brandId: formBrandId,
@@ -327,16 +341,21 @@ export default function MasterSeriesPage() {
                   </p>
                 </div>
               ) : (
-                <div>
+                <div ref={registerField(fieldRefs, 'name')}>
                   <label className="block text-sm text-admin-muted mb-1">Series name</label>
                   <input
                     type="text"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                    }}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                     placeholder="e.g. Vivo Y Series"
+                    aria-invalid={Boolean(fieldErrors.name)}
                     required
                   />
+                  {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
                 </div>
               )}
               <div className="flex gap-2 justify-end">

@@ -4080,7 +4080,7 @@ export default function BookServicePage() {
               <span className="text-xs text-[#98A2B3]">Assign technician to repair</span>
             </button>
             <Link
-              href={`/shop-home/services/bookings/view/receipt/?id=${encodeURIComponent(confirmed.id)}`}
+              href={`/shop-home/services/bookings/${confirmed.id}/receipt`}
               className="group flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-[#166534] to-[#14532D] p-4 text-center text-white shadow-[0_6px_16px_rgba(20,83,45,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(20,83,45,0.4)]"
             >
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 transition group-hover:bg-white/25">
@@ -4090,7 +4090,7 @@ export default function BookServicePage() {
               <span className="text-xs text-white/75">Share booking details</span>
             </Link>
             <Link
-              href={`/shop-home/services/bookings/view/qr/?id=${encodeURIComponent(confirmed.id)}`}
+              href={`/shop-home/services/bookings/${confirmed.id}/qr`}
               className="group flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-[#166534] to-[#14532D] p-4 text-center text-white shadow-[0_6px_16px_rgba(20,83,45,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(20,83,45,0.4)]"
             >
               <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 transition group-hover:bg-white/25">

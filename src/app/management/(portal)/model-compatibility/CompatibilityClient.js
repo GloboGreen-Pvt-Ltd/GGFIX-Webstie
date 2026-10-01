@@ -8,6 +8,8 @@ import { masterApi } from '@/lib/api';
 import { imageReplacementNotice, uploadCompatibilityImage } from '@/lib/modelMedia';
 import DataTable, { StatusPill } from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 /**
  * Master Data -> Model Compatibility.
@@ -191,6 +193,8 @@ export default function CompatibilityClient() {
   const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   // Block keys must be stable across re-renders or React remounts the inputs on
   // every keystroke, so they come from a counter rather than the array index —
@@ -432,8 +436,19 @@ export default function CompatibilityClient() {
     setNotice('');
     setNoticeTone('ok');
 
-    if (!boxNo.trim()) { setFormError('Box No is required.'); return; }
-    if (!boxName.trim()) { setFormError('Box Name is required.'); return; }
+    const { errors, firstErrorField, isValid } = validateForm(
+      {
+        boxNo: required('Box No is required.'),
+        boxName: required('Box Name is required.'),
+      },
+      { boxNo, boxName },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
+      return;
+    }
+    setFieldErrors({});
 
     const used = blocks.filter((b) => b.brandId);
     const duplicateBrand = used.find((b, i) => used.findIndex((x) => x.brandId === b.brandId) !== i);
@@ -951,18 +966,23 @@ export default function CompatibilityClient() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div>
+                <div ref={registerField(fieldRefs, 'boxNo')}>
                   <label className="block text-sm text-admin-muted mb-1">Box No</label>
                   <input
                     type="text"
                     value={boxNo}
-                    onChange={(e) => setBoxNo(e.target.value)}
+                    onChange={(e) => {
+                      setBoxNo(e.target.value);
+                      if (fieldErrors.boxNo) setFieldErrors((prev) => ({ ...prev, boxNo: undefined }));
+                    }}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                     placeholder="A-12"
                     required
+                    aria-invalid={Boolean(fieldErrors.boxNo)}
                   />
+                  {fieldErrors.boxNo ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.boxNo}</p> : null}
                 </div>
-                <div>
+                <div ref={registerField(fieldRefs, 'boxName')}>
                   <label className="block text-sm text-admin-muted mb-1">Box Name</label>
                   {/* Read-only while a type is chosen: the name IS the type, and
                       letting the two drift is what makes a shelf of "Tempered
@@ -970,19 +990,24 @@ export default function CompatibilityClient() {
                   <input
                     type="text"
                     value={boxName}
-                    onChange={(e) => setBoxName(e.target.value)}
+                    onChange={(e) => {
+                      setBoxName(e.target.value);
+                      if (fieldErrors.boxName) setFieldErrors((prev) => ({ ...prev, boxName: undefined }));
+                    }}
                     readOnly={!!partTypeId}
                     className={`w-full rounded-lg border border-admin-border px-3 py-2 text-slate-900 ${
                       partTypeId ? 'bg-admin-dark/60 cursor-not-allowed' : 'bg-admin-dark'
                     }`}
                     placeholder="Display Combo — 6.5 inch"
                     required
+                    aria-invalid={Boolean(fieldErrors.boxName)}
                   />
                   <p className="mt-1 text-xs text-admin-muted">
                     {partTypeId
                       ? 'Taken from the part type above.'
                       : 'Pick a part type above to name the box automatically.'}
                   </p>
+                  {fieldErrors.boxName ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.boxName}</p> : null}
                 </div>
               </div>
 

@@ -288,7 +288,7 @@ export default function EmployeeManagementPage() {
 function EmployeeCard({ employee }) {
   return (
     <Link
-      href={`/shop-home/employee/team/view/?id=${encodeURIComponent(employee.id)}`}
+      href={`/shop-home/employee/team/${employee.id}`}
       className={cx(
         'flex items-center gap-3.5 rounded-2xl border border-[#E4ECE8] bg-white p-4 transition hover:border-[#079447] hover:shadow-[0_8px_20px_rgba(20,80,55,0.08)]',
         FOCUS_RING,

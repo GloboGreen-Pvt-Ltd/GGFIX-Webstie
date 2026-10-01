@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import SellFlowBulkActions from '@/components/SellFlowBulkActions';
 import SellFlowImportModal from '@/components/SellFlowImportModal';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 const splitNames = (value) => (value || '')
   .split(/[,\n]/)
@@ -30,6 +32,8 @@ export default function ConditionCategoriesPage() {
   const [chips, setChips] = useState([]); // [{ id?, name }]
   const [removedIds, setRemovedIds] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -118,10 +122,16 @@ export default function ConditionCategoriesPage() {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!deviceCategoryId) {
-      setError('Select a device category.');
+    const { errors, firstErrorField, isValid } = validateForm(
+      { deviceCategoryId: required('Select a device category.') },
+      { deviceCategoryId },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
       return;
     }
+    setFieldErrors({});
 
     const allChips = [...chips];
     for (const name of splitNames(input)) {
@@ -253,20 +263,25 @@ export default function ConditionCategoriesPage() {
                 : `Edit condition categories — ${categoryName(deviceCategoryId)}`}
             </h2>
             <form onSubmit={submit} className="space-y-4">
-              <div>
+              <div ref={registerField(fieldRefs, 'deviceCategoryId')}>
                 <label className="mb-1 block text-sm text-admin-muted">Device category</label>
                 <select
                   value={deviceCategoryId}
-                  onChange={(event) => setDeviceCategoryId(event.target.value)}
+                  onChange={(event) => {
+                    setDeviceCategoryId(event.target.value);
+                    if (fieldErrors.deviceCategoryId) setFieldErrors((prev) => ({ ...prev, deviceCategoryId: undefined }));
+                  }}
                   className={`${inputClassName} disabled:opacity-60`}
                   disabled={modal.type === 'edit'}
                   required
+                  aria-invalid={Boolean(fieldErrors.deviceCategoryId)}
                 >
                   <option value="">Select category</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>{category.name}</option>
                   ))}
                 </select>
+                {fieldErrors.deviceCategoryId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.deviceCategoryId}</p> : null}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-admin-muted">Condition categories</label>

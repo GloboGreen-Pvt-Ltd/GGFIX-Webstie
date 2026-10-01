@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
 import BusinessLocationsManager from '@/components/BusinessLocationsManager';
 import SafeImage from '@/components/SafeImage';
+import { emailFormat, required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 const EMPTY_OWNER = {
   name: '', email: '', phone: '', secondaryMobile: '', password: '', otpCode: '',
@@ -35,6 +37,8 @@ export default function EditShopOwnerPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
   const [uploading, setUploading] = useState({});
   const [locations, setLocations] = useState([]);
   const [kycDocument, setKycDocument] = useState(null);
@@ -86,7 +90,10 @@ export default function EditShopOwnerPage() {
     }
   };
 
-  const setField = (k, v) => setOwner((o) => ({ ...o, [k]: v }));
+  const setField = (k, v) => {
+    setOwner((o) => ({ ...o, [k]: v }));
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const handleUpload = async (field, file, folder, opts) => {
     if (!file) return;
@@ -101,10 +108,16 @@ export default function EditShopOwnerPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!owner.name.trim() || !owner.email.trim()) {
-      setError('Owner name and email are required');
+    const { errors, firstErrorField, isValid } = validateForm(
+      { name: required('Owner name is required.'), email: [required('Owner email is required.'), emailFormat('Enter a valid email address.')] },
+      { name: owner.name, email: owner.email },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
       return;
     }
+    setFieldErrors({});
     setSubmitting(true);
     try {
       const payload = {
@@ -165,11 +178,26 @@ export default function EditShopOwnerPage() {
           <div className="lg:col-span-2 rounded-xl bg-admin-card border border-admin-border p-5">
             <SectionHeader icon="👤" title="Basic Information" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              <Field label="FULL NAME *">
-                <input value={owner.name} onChange={(e) => setField('name', e.target.value)} className="input" placeholder="Full Name" required />
+              <Field label="FULL NAME *" fieldRef={registerField(fieldRefs, 'name')} error={fieldErrors.name}>
+                <input
+                  value={owner.name}
+                  onChange={(e) => setField('name', e.target.value)}
+                  className="input"
+                  placeholder="Full Name"
+                  required
+                  aria-invalid={Boolean(fieldErrors.name)}
+                />
               </Field>
-              <Field label="EMAIL ADDRESS *">
-                <input type="email" value={owner.email} onChange={(e) => setField('email', e.target.value)} className="input" placeholder="Email" required />
+              <Field label="EMAIL ADDRESS *" fieldRef={registerField(fieldRefs, 'email')} error={fieldErrors.email}>
+                <input
+                  type="email"
+                  value={owner.email}
+                  onChange={(e) => setField('email', e.target.value)}
+                  className="input"
+                  placeholder="Email"
+                  required
+                  aria-invalid={Boolean(fieldErrors.email)}
+                />
               </Field>
               <Field label="PRIMARY MOBILE">
                 <input value={owner.phone} onChange={(e) => setField('phone', e.target.value)} className="input" placeholder="Primary Mobile" />
@@ -271,12 +299,12 @@ function SectionHeader({ icon, title, small }) {
   );
 }
 
-function Field({ label, hint, children, full }) {
+function Field({ label, hint, children, full, fieldRef, error }) {
   return (
-    <div className={full ? 'md:col-span-2' : ''}>
+    <div ref={fieldRef} className={full ? 'md:col-span-2' : ''}>
       <label className="block text-[10px] uppercase tracking-wider text-admin-muted mb-1 font-medium">{label}</label>
       {children}
-      {hint ? <p className="text-[10px] text-admin-muted mt-1">{hint}</p> : null}
+      {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : hint ? <p className="text-[10px] text-admin-muted mt-1">{hint}</p> : null}
     </div>
   );
 }

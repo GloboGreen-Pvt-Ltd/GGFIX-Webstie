@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import SellFlowBulkActions from '@/components/SellFlowBulkActions';
 import SellFlowImportModal from '@/components/SellFlowImportModal';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 const splitNames = (value) => (value || '').split(/[,\n]/).map((entry) => entry.trim()).filter(Boolean);
 
@@ -29,6 +31,8 @@ export default function MasterConditionGroupsPage() {
   const [chips, setChips] = useState([]); // [{ id?, label }]
   const [removed, setRemoved] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -121,10 +125,16 @@ export default function MasterConditionGroupsPage() {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!conditionId) {
-      setError('Pick a condition category first. Add one in Condition Categories if it does not exist yet.');
+    const { errors, firstErrorField, isValid } = validateForm(
+      { conditionId: required('Pick a condition category first. Add one in Condition Categories if it does not exist yet.') },
+      { conditionId },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
       return;
     }
+    setFieldErrors({});
     const all = [...chips];
     for (const entry of splitNames(input)) {
       if (!all.some((chip) => chip.label.toLowerCase() === entry.toLowerCase())) all.push({ label: entry });
@@ -242,12 +252,21 @@ export default function MasterConditionGroupsPage() {
                     <label className="mb-1 block text-sm text-admin-muted">Device category</label>
                     {categorySelect(deviceCategoryId, (event) => { setDeviceCategoryId(event.target.value); setConditionId(''); })}
                   </div>
-                  <div>
+                  <div ref={registerField(fieldRefs, 'conditionId')}>
                     <label className="mb-1 block text-sm text-admin-muted">Condition category</label>
-                    <select value={conditionId} onChange={(event) => setConditionId(event.target.value)} className={inputClassName}>
+                    <select
+                      value={conditionId}
+                      onChange={(event) => {
+                        setConditionId(event.target.value);
+                        if (fieldErrors.conditionId) setFieldErrors((prev) => ({ ...prev, conditionId: undefined }));
+                      }}
+                      className={inputClassName}
+                      aria-invalid={Boolean(fieldErrors.conditionId)}
+                    >
                       <option value="">Select condition category</option>
                       {conditionsForCategory.map((condition) => <option key={condition.id} value={condition.id}>{condition.name}</option>)}
                     </select>
+                    {fieldErrors.conditionId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.conditionId}</p> : null}
                   </div>
                 </div>
               )}

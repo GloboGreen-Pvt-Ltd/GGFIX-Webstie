@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadCategoryImage } from '@/lib/modelMedia';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 export default function MasterDeviceCategoriesPage() {
   const [list, setList] = useState([]);
@@ -21,6 +23,8 @@ export default function MasterDeviceCategoriesPage() {
   const [imageFile, setImageFile] = useState(null);
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -60,7 +64,16 @@ export default function MasterDeviceCategoriesPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    const { errors, firstErrorField, isValid } = validateForm(
+      { name: required('Category name is required.') },
+      { name },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
+      return;
+    }
+    setFieldErrors({});
     setSubmitting(true);
     setNotice('');
     try {
@@ -161,16 +174,21 @@ export default function MasterDeviceCategoriesPage() {
               {modal.type === 'create' ? 'New category' : 'Edit category'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
+              <div ref={registerField(fieldRefs, 'name')}>
                 <label className="block text-sm text-admin-muted mb-1">Name</label>
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.name)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   placeholder="e.g. Mobile, Laptop, Tablet"
                   required
                 />
+                {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
               </div>
               <S3ImageUpload
                 value={imageUrl}

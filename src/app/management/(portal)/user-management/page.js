@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authApi } from '@/lib/api';
 import { isAdmin as isAdminRole } from '@/lib/auth';
+import { emailFormat, required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 // SUPER_ADMIN is the stored value for the platform administrator; the UI calls
 // it "Admin" to match how the roles are named to users.
@@ -289,16 +291,30 @@ function CreateMarketPersonModal({ onClose, onCreated }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k) => (e) => {
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.name.trim() || !form.email.trim()) {
-      setError('Name and email are required.');
+    const { errors, firstErrorField, isValid } = validateForm(
+      {
+        name: required('Name is required.'),
+        email: [required('Email is required.'), emailFormat('Enter a valid email address.')],
+      },
+      form,
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
       return;
     }
+    setFieldErrors({});
     setSaving(true);
     try {
       await authApi.post('/auth/market-persons', {
@@ -321,7 +337,7 @@ function CreateMarketPersonModal({ onClose, onCreated }) {
         <h3 className="text-lg font-semibold text-slate-900">Add Market Person</h3>
 
         {['name', 'email', 'phone'].map((field) => (
-          <div key={field} className="space-y-1">
+          <div key={field} ref={registerField(fieldRefs, field)} className="space-y-1">
             <label className="block text-xs font-medium text-admin-muted capitalize">
               {field}{field !== 'phone' ? ' *' : ''}
             </label>
@@ -329,8 +345,10 @@ function CreateMarketPersonModal({ onClose, onCreated }) {
               value={form[field]}
               onChange={set(field)}
               type={field === 'email' ? 'email' : 'text'}
+              aria-invalid={Boolean(fieldErrors[field])}
               className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-admin-accent"
             />
+            {fieldErrors[field] ? <p className="text-xs text-red-600">{fieldErrors[field]}</p> : null}
           </div>
         ))}
 

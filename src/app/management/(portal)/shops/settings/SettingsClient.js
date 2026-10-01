@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, shopApi } from '@/lib/api';
+import { emailFormat, required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 export default function ShopSettingsPage() {
   const params = useSearchParams();
@@ -13,6 +15,8 @@ export default function ShopSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -60,6 +64,16 @@ export default function ShopSettingsPage() {
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!shopId) return;
+    const { errors, firstErrorField, isValid } = validateForm(
+      { name: required('Shop name is required.'), email: emailFormat('Enter a valid email address.') },
+      { name, email },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
+      return;
+    }
+    setFieldErrors({});
     setSaving(true);
     setError('');
     try {
@@ -171,15 +185,27 @@ export default function ShopSettingsPage() {
             </div>
 
             <form onSubmit={handleSaveProfile} className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-1">
-                <label className="block text-sm text-admin-muted">Shop name</label>
+              <div ref={registerField(fieldRefs, 'name')} className="space-y-1">
+                <label className="block text-sm text-admin-muted">
+                  Shop name<span className="text-red-500"> *</span>
+                </label>
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.name)}
+                  aria-describedby={fieldErrors.name ? 'shop-name-error' : undefined}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   required
                 />
+                {fieldErrors.name ? (
+                  <p id="shop-name-error" className="text-xs text-red-600">
+                    {fieldErrors.name}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-1">
                 <label className="block text-sm text-admin-muted">Slug</label>
@@ -191,14 +217,24 @@ export default function ShopSettingsPage() {
                   placeholder="green-mobiles"
                 />
               </div>
-              <div className="space-y-1">
+              <div ref={registerField(fieldRefs, 'email')} className="space-y-1">
                 <label className="block text-sm text-admin-muted">Email</label>
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.email)}
+                  aria-describedby={fieldErrors.email ? 'shop-email-error' : undefined}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                 />
+                {fieldErrors.email ? (
+                  <p id="shop-email-error" className="text-xs text-red-600">
+                    {fieldErrors.email}
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-1">
                 <label className="block text-sm text-admin-muted">Phone</label>

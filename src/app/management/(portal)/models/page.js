@@ -11,6 +11,8 @@ import S3ImageUpload from '@/components/S3ImageUpload';
 import ModelsImportModal from '@/components/ModelsImportModal';
 import { imageReplacementNotice, replaceModelImage } from '@/lib/modelMedia';
 import { exportModelsWorkbook, exportTemplateWorkbook } from '@/lib/modelsExcel';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 function slugify(s) {
   return String(s || '')
@@ -186,6 +188,8 @@ export default function MasterModelsPage() {
   const [category, setCategory] = useState('DEVICE');
   const [sellActive, setSellActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   // Global option sets (for resolving / creating colors + ram/storage on save)
   const [allColors, setAllColors] = useState([]);
@@ -588,7 +592,19 @@ export default function MasterModelsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !formBrandId) return;
+    const { errors, firstErrorField, isValid } = validateForm(
+      {
+        name: required('Model name is required.'),
+        formBrandId: required('Select a brand.'),
+      },
+      { name, formBrandId },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
+      return;
+    }
+    setFieldErrors({});
     setSubmitting(true);
     setError('');
     setNotice('');
@@ -980,15 +996,20 @@ export default function MasterModelsPage() {
                     {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
                   </select>
                 </div>
-                <div>
+                <div ref={registerField(fieldRefs, 'formBrandId')}>
                   <label className="block text-sm text-admin-muted mb-1">Brand</label>
                   <select value={formBrandId}
-                    onChange={(e) => { setFormBrandId(e.target.value); setFormSeriesId(''); }}
+                    onChange={(e) => {
+                      setFormBrandId(e.target.value); setFormSeriesId('');
+                      if (fieldErrors.formBrandId) setFieldErrors((prev) => ({ ...prev, formBrandId: undefined }));
+                    }}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
+                    aria-invalid={Boolean(fieldErrors.formBrandId)}
                     required disabled={!formCategoryId}>
                     <option value="">Select</option>
                     {formBrandOptions.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
                   </select>
+                  {fieldErrors.formBrandId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.formBrandId}</p> : null}
                 </div>
                 <div>
                   <label className="block text-sm text-admin-muted mb-1">Series</label>
@@ -1001,12 +1022,16 @@ export default function MasterModelsPage() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
+                <div ref={registerField(fieldRefs, 'name')}>
                   <label className="block text-sm text-admin-muted mb-1">Model name</label>
                   <input type="text" value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                    }}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
-                    placeholder="e.g. Vivo Y20" required />
+                    placeholder="e.g. Vivo Y20" aria-invalid={Boolean(fieldErrors.name)} required />
+                  {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
                 </div>
                 <div>
                   <label className="block text-sm text-admin-muted mb-1">Model number</label>

@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 export default function DirectoryFaqItemsPage() {
   const [list, setList] = useState([]);
@@ -14,6 +16,8 @@ export default function DirectoryFaqItemsPage() {
   const [sortOrder, setSortOrder] = useState('0');
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -51,7 +55,19 @@ export default function DirectoryFaqItemsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!question.trim() || !answer.trim()) return;
+    const { errors, firstErrorField, isValid } = validateForm(
+      {
+        question: required('Question is required.'),
+        answer: required('Answer is required.'),
+      },
+      { question, answer },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
+      return;
+    }
+    setFieldErrors({});
     setSubmitting(true);
     try {
       const body = {
@@ -130,25 +146,35 @@ export default function DirectoryFaqItemsPage() {
               {modal.type === 'create' ? 'New FAQ' : 'Edit FAQ'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
+              <div ref={registerField(fieldRefs, 'question')}>
                 <label className="block text-sm text-admin-muted mb-1">Question</label>
                 <textarea
                   value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
+                  onChange={(e) => {
+                    setQuestion(e.target.value);
+                    if (fieldErrors.question) setFieldErrors((prev) => ({ ...prev, question: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.question)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   rows={4}
                   required
                 />
+                {fieldErrors.question ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.question}</p> : null}
               </div>
-              <div>
+              <div ref={registerField(fieldRefs, 'answer')}>
                 <label className="block text-sm text-admin-muted mb-1">Answer</label>
                 <textarea
                   value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
+                  onChange={(e) => {
+                    setAnswer(e.target.value);
+                    if (fieldErrors.answer) setFieldErrors((prev) => ({ ...prev, answer: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.answer)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   rows={6}
                   required
                 />
+                {fieldErrors.answer ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.answer}</p> : null}
               </div>
               <div>
                 <label className="block text-sm text-admin-muted mb-1">Sort order</label>

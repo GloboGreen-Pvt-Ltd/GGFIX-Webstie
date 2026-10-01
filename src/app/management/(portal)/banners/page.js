@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadBannerImage } from '@/lib/modelMedia';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 export default function DirectoryBannersPage() {
   const [list, setList] = useState([]);
@@ -22,6 +24,8 @@ export default function DirectoryBannersPage() {
   const [sortOrder, setSortOrder] = useState('0');
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -63,7 +67,16 @@ export default function DirectoryBannersPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    const { errors, firstErrorField, isValid } = validateForm(
+      { title: required('Title is required.') },
+      { title },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
+      return;
+    }
+    setFieldErrors({});
     setSubmitting(true);
     setNotice('');
     try {
@@ -161,15 +174,20 @@ export default function DirectoryBannersPage() {
               {modal.type === 'create' ? 'New banner' : 'Edit banner'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
+              <div ref={registerField(fieldRefs, 'title')}>
                 <label className="block text-sm text-admin-muted mb-1">Title</label>
                 <input
                   type="text"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (fieldErrors.title) setFieldErrors((prev) => ({ ...prev, title: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.title)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   required
                 />
+                {fieldErrors.title ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.title}</p> : null}
               </div>
               {/* aspect="wide" matches the shape the mobile carousel renders.
                   allowBase64Fallback={false}: master_banners.image_url is a

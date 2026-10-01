@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 export default function DirectoryAppContentPage() {
   const [list, setList] = useState([]);
@@ -13,6 +15,8 @@ export default function DirectoryAppContentPage() {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -48,7 +52,19 @@ export default function DirectoryAppContentPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!code.trim() || !title.trim()) return;
+    const { errors, firstErrorField, isValid } = validateForm(
+      {
+        code: required('Code is required.'),
+        title: required('Title is required.'),
+      },
+      { code, title },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
+      return;
+    }
+    setFieldErrors({});
     setSubmitting(true);
     try {
       const payload = {
@@ -125,26 +141,36 @@ export default function DirectoryAppContentPage() {
               {modal.type === 'create' ? 'New content' : 'Edit content'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
+              <div ref={registerField(fieldRefs, 'code')}>
                 <label className="block text-sm text-admin-muted mb-1">Code</label>
                 <input
                   type="text"
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
+                  onChange={(e) => {
+                    setCode(e.target.value);
+                    if (fieldErrors.code) setFieldErrors((prev) => ({ ...prev, code: undefined }));
+                  }}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   placeholder="ABOUT_US, TERMS, PRIVACY, SUPPORT…"
+                  aria-invalid={Boolean(fieldErrors.code)}
                   required
                 />
+                {fieldErrors.code ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.code}</p> : null}
               </div>
-              <div>
+              <div ref={registerField(fieldRefs, 'title')}>
                 <label className="block text-sm text-admin-muted mb-1">Title</label>
                 <input
                   type="text"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (fieldErrors.title) setFieldErrors((prev) => ({ ...prev, title: undefined }));
+                  }}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
+                  aria-invalid={Boolean(fieldErrors.title)}
                   required
                 />
+                {fieldErrors.title ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.title}</p> : null}
               </div>
               <div>
                 <label className="block text-sm text-admin-muted mb-1">Body</label>

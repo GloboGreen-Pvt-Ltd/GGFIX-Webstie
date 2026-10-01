@@ -379,7 +379,7 @@ function CustomerRow({ customer, expanded, onToggle }) {
                   {customer.history.slice(0, 6).map((b) => (
                     <Link
                       key={b.id}
-                      href={`/shop-home/services/bookings/view/?id=${encodeURIComponent(b.id)}`}
+                      href={`/shop-home/services/bookings/${b.id}`}
                       className="group/row flex items-center gap-2.5 py-2.5 transition hover:bg-[#F3FBF7]"
                     >
                       <Icon3D icon={Smartphone} tone="green" size="sm" />

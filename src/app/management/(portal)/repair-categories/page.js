@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 // Split a typed/pasted value into individual names on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -27,6 +29,8 @@ export default function MasterRepairCategoriesPage() {
   const [catNames, setCatNames] = useState([]);     // create mode bulk list
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const loadCategories = async () => {
     try {
@@ -94,7 +98,17 @@ export default function MasterRepairCategoriesPage() {
           await masterApi.post('/master/repair-categories', { deviceCategoryId, name: nm, isActive: true });
         }
       } else {
-        if (!name.trim()) { setSubmitting(false); return; }
+        const { errors, firstErrorField, isValid } = validateForm(
+          { name: required('Category name is required.') },
+          { name },
+        );
+        if (!isValid) {
+          setFieldErrors(errors);
+          focusField(fieldRefs, firstErrorField);
+          setSubmitting(false);
+          return;
+        }
+        setFieldErrors({});
         await masterApi.put(`/master/repair-categories/${modal.item.id}`, {
           deviceCategoryId, name: name.trim(), isActive,
         });
@@ -209,16 +223,21 @@ export default function MasterRepairCategoriesPage() {
                   </p>
                 </div>
               ) : (
-                <div>
+                <div ref={registerField(fieldRefs, 'name')}>
                   <label className="block text-sm text-admin-muted mb-1">Main category</label>
                   <input
                     type="text"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                    }}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                     placeholder="e.g. Display & Touch"
+                    aria-invalid={Boolean(fieldErrors.name)}
                     required
                   />
+                  {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
                 </div>
               )}
               {modal.type === 'edit' ? (

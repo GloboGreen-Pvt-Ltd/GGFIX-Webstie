@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
 import { masterApi } from '@/lib/api';
 import DataTable, { StatusPill } from '@/components/DataTable';
 import PageHeader, { Button } from '@/components/PageHeader';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadBrandImage } from '@/lib/modelMedia';
+import { required, validateForm } from '@/lib/formValidation';
+import { focusField, registerField } from '@/lib/formFocus';
 
 export default function MasterBrandsPage() {
   const [list, setList] = useState([]);
@@ -22,6 +24,8 @@ export default function MasterBrandsPage() {
   // Held until the record has an id: the S3 key is derived from the stored name.
   const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -59,7 +63,16 @@ export default function MasterBrandsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    const { errors, firstErrorField, isValid } = validateForm(
+      { name: required('Brand name is required.') },
+      { name },
+    );
+    if (!isValid) {
+      setFieldErrors(errors);
+      focusField(fieldRefs, firstErrorField);
+      return;
+    }
+    setFieldErrors({});
     setSubmitting(true);
     setNotice('');
     try {
@@ -167,15 +180,20 @@ export default function MasterBrandsPage() {
               {modal.type === 'create' ? 'New brand' : 'Edit brand'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
+              <div ref={registerField(fieldRefs, 'name')}>
                 <label className="block text-sm text-admin-muted mb-1">Name</label>
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
+                  }}
+                  aria-invalid={Boolean(fieldErrors.name)}
                   className="w-full rounded-lg bg-white border border-admin-border px-3 py-2 text-slate-900 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
                   required
                 />
+                {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
               </div>
               <S3ImageUpload
                 value={imageUrl}

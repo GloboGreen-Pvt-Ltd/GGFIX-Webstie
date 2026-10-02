@@ -1,4 +1,5 @@
 import './globals.css';
+import AppToaster from '@/components/AppToaster';
 
 export const metadata = {
   title: 'GGFIX — Repair · Buy · Sell',
@@ -23,7 +24,10 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <AppToaster />
+      </body>
     </html>
   );
 }

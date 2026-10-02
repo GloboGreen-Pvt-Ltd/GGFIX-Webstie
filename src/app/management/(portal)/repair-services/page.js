@@ -9,8 +9,7 @@ import {
   exportRepairServicesTemplateWorkbook,
   exportRepairServicesWorkbook,
 } from '@/lib/repairServicesExcel';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 // Split a typed/pasted value into individual names on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -48,8 +47,6 @@ export default function MasterRepairServicesPage() {
   const [issueInput, setIssueInput] = useState(''); // create mode typing buffer
   const [issueNames, setIssueNames] = useState([]); // create mode bulk list
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const loadRefData = async () => {
     try {
@@ -142,17 +139,7 @@ export default function MasterRepairServicesPage() {
           await masterApi.post('/master/repair-services', { deviceCategoryId, categoryId, name: nm });
         }
       } else {
-        const { errors, firstErrorField, isValid } = validateForm(
-          { name: required('Service name is required.') },
-          { name },
-        );
-        if (!isValid) {
-          setFieldErrors(errors);
-          focusField(fieldRefs, firstErrorField);
-          setSubmitting(false);
-          return;
-        }
-        setFieldErrors({});
+        if (!name.trim()) { setSubmitting(false); return; }
         await masterApi.put(`/master/repair-services/${modal.item.id}`, {
           name: name.trim(),
           description: description.trim() || null,
@@ -164,7 +151,7 @@ export default function MasterRepairServicesPage() {
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -176,7 +163,7 @@ export default function MasterRepairServicesPage() {
       await masterApi.delete(`/master/repair-services/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -209,11 +196,10 @@ export default function MasterRepairServicesPage() {
   const runExport = async (build) => {
     setExportMenu(false);
     setExporting(true);
-    setError('');
     try {
       await build();
     } catch (exportError) {
-      setError(exportError.message || 'Could not build the Excel file.');
+      notifyError(exportError.message || 'Could not build the Excel file.');
     } finally {
       setExporting(false);
     }
@@ -430,21 +416,16 @@ export default function MasterRepairServicesPage() {
                 </div>
               ) : (
                 <>
-                  <div ref={registerField(fieldRefs, 'name')}>
+                  <div>
                     <label className="block text-sm text-admin-muted mb-1">Issue name</label>
                     <input
                       type="text"
                       value={name}
-                      onChange={(e) => {
-                        setName(e.target.value);
-                        if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
-                      }}
+                      onChange={(e) => setName(e.target.value)}
                       className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                       placeholder="e.g. Screen Broken"
-                      aria-invalid={Boolean(fieldErrors.name)}
                       required
                     />
-                    {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
                   </div>
                   <div>
                     <label className="block text-sm text-admin-muted mb-1">Description</label>

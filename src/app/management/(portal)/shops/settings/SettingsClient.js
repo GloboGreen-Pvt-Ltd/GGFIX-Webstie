@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, shopApi } from '@/lib/api';
-import { emailFormat, required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 export default function ShopSettingsPage() {
   const params = useSearchParams();
@@ -15,8 +14,6 @@ export default function ShopSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -64,18 +61,7 @@ export default function ShopSettingsPage() {
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     if (!shopId) return;
-    const { errors, firstErrorField, isValid } = validateForm(
-      { name: required('Shop name is required.'), email: emailFormat('Enter a valid email address.') },
-      { name, email },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
     setSaving(true);
-    setError('');
     try {
       await authApi.patch(`/auth/shops/${shopId}`, {
         name: name.trim(),
@@ -87,7 +73,7 @@ export default function ShopSettingsPage() {
         isActive,
       });
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to save profile');
+      notifyError(e.body?.message || e.message || 'Failed to save profile');
     } finally {
       setSaving(false);
     }
@@ -97,12 +83,11 @@ export default function ShopSettingsPage() {
     e.preventDefault();
     if (!shopId) return;
     setSaving(true);
-    setError('');
     try {
       // If there is a dedicated KYC endpoint, you can switch to it later.
       await authApi.patch(`/auth/shops/${shopId}`, { kycStatus });
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to save KYC status');
+      notifyError(e.body?.message || e.message || 'Failed to save KYC status');
     } finally {
       setSaving(false);
     }
@@ -112,7 +97,6 @@ export default function ShopSettingsPage() {
     e.preventDefault();
     if (!shopId) return;
     setSaving(true);
-    setError('');
     try {
       // Prefer a pickup-service API if available; for now we persist via shop service when fields exist.
       await shopApi
@@ -130,7 +114,7 @@ export default function ShopSettingsPage() {
           });
         });
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to save pickup options');
+      notifyError(e.body?.message || e.message || 'Failed to save pickup options');
     } finally {
       setSaving(false);
     }
@@ -185,27 +169,15 @@ export default function ShopSettingsPage() {
             </div>
 
             <form onSubmit={handleSaveProfile} className="grid gap-4 md:grid-cols-2">
-              <div ref={registerField(fieldRefs, 'name')} className="space-y-1">
-                <label className="block text-sm text-admin-muted">
-                  Shop name<span className="text-red-500"> *</span>
-                </label>
+              <div className="space-y-1">
+                <label className="block text-sm text-admin-muted">Shop name</label>
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.name)}
-                  aria-describedby={fieldErrors.name ? 'shop-name-error' : undefined}
+                  onChange={(e) => setName(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   required
                 />
-                {fieldErrors.name ? (
-                  <p id="shop-name-error" className="text-xs text-red-600">
-                    {fieldErrors.name}
-                  </p>
-                ) : null}
               </div>
               <div className="space-y-1">
                 <label className="block text-sm text-admin-muted">Slug</label>
@@ -217,24 +189,14 @@ export default function ShopSettingsPage() {
                   placeholder="green-mobiles"
                 />
               </div>
-              <div ref={registerField(fieldRefs, 'email')} className="space-y-1">
+              <div className="space-y-1">
                 <label className="block text-sm text-admin-muted">Email</label>
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.email)}
-                  aria-describedby={fieldErrors.email ? 'shop-email-error' : undefined}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                 />
-                {fieldErrors.email ? (
-                  <p id="shop-email-error" className="text-xs text-red-600">
-                    {fieldErrors.email}
-                  </p>
-                ) : null}
               </div>
               <div className="space-y-1">
                 <label className="block text-sm text-admin-muted">Phone</label>

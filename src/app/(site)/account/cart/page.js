@@ -45,6 +45,7 @@ import {
   AccountPageHeader,
   Panel,
 } from '@/components/site/account/ui';
+import { notifyError } from '@/lib/toast';
 
 function productOf(item) {
   return item.product || {};
@@ -256,7 +257,7 @@ export default function MyCartPage() {
     try {
       await updateCartItem(item.id, quantity);
     } catch (e) {
-      setError(e?.message || '');
+      notifyError(e, "Couldn't update the quantity. Please try again.");
       await load();
     } finally {
       setBusy(false);
@@ -269,7 +270,7 @@ export default function MyCartPage() {
       await removeCartItem(item.id);
       setItems((list) => list.filter((it) => it.id !== item.id));
     } catch (e) {
-      setError(e?.message || '');
+      notifyError(e, "Couldn't remove the item. Please try again.");
       await load();
     } finally {
       setBusy(false);
@@ -279,7 +280,6 @@ export default function MyCartPage() {
   const onCheckout = async () => {
     if (!items.length) return;
     setPlacing(true);
-    setError('');
     try {
       const payloadItems = items.map((it) => {
         const p = productOf(it);
@@ -290,7 +290,7 @@ export default function MyCartPage() {
       setItems([]);
       setPlaced(order || {});
     } catch (e) {
-      setError(e?.message || "Couldn't place your order. Please try again.");
+      notifyError(e, "Couldn't place your order. Please try again.");
     } finally {
       setPlacing(false);
     }
@@ -385,7 +385,6 @@ export default function MyCartPage() {
                 >
                   {placing ? 'Placing…' : 'Checkout'}
                 </Button>
-                {error ? <p className="mt-2 text-xs font-medium text-red-600">{error}</p> : null}
 
                 <div className="mt-4 flex flex-col gap-2 text-xs text-brand-muted">
                   <span className="inline-flex items-center gap-1.5">

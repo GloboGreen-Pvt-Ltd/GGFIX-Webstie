@@ -63,10 +63,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, Check, CheckCircle2, CreditCard, Crown, Gift, Loader2, Minus, Plus, Store } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, CreditCard, Crown, Gift, Loader2, Minus, Plus, Store } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
 import { fetchMyProfile } from '@/lib/shopProfile';
 import { fetchMySubscription, fetchSubscriptionPlans } from '@/lib/shopSubscription';
 import { fetchTechnicians } from '@/lib/shopDashboard';
@@ -118,27 +118,27 @@ function PlanCard({ plan, current, popular, highlighted }) {
       className={cx(
         'w-full rounded-[28px] p-5',
         highlighted
-          ? 'border-2 border-[#15803D] bg-[#F0FDF4] shadow-[0_4px_18px_rgba(21,128,61,0.12)]'
-          : 'border border-[#EAECF0] bg-white shadow-[0_2px_10px_rgba(16,24,40,0.05)]',
+          ? 'border-2 border-[#15803D] bg-[#F8F8F8]'
+          : 'border border-[#ECECEC] bg-white',
       )}
     >
       <div className="flex items-start gap-3.5">
         <span
           className={cx(
             'flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl',
-            highlighted ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-[#FEF3C7] text-[#B45309]',
+            highlighted ? 'bg-[#F3F3F3] text-[#15803D]' : 'bg-[#FEF3C7] text-[#B45309]',
           )}
         >
           <Icon className="h-6 w-6" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1 pt-0.5">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[1.05rem] font-extrabold text-[#101828]">{plan.name || plan.code}</p>
+            <p className="text-[1.05rem] font-extrabold text-[#111111]">{plan.name || plan.code}</p>
             {popular ? (
               <span className="rounded-full bg-[#14532D] px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-white">Popular</span>
             ) : null}
             {current ? (
-              <span className="rounded-full bg-[#F1F3F5] px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-[#667085]">Current</span>
+              <span className="rounded-full bg-[#F3F3F3] px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-[#666666]">Current</span>
             ) : null}
           </div>
           <p className="mt-1 text-[0.95rem] font-bold text-[#15803D]">{planPrice(plan)}</p>
@@ -148,8 +148,8 @@ function PlanCard({ plan, current, popular, highlighted }) {
 
       <ul className="mt-4 space-y-3">
         {features.map((f, i) => (
-          <li key={i} className="flex items-center gap-3 text-[0.9rem] text-[#101828]">
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#DCFCE7] text-[#15803D]">
+          <li key={i} className="flex items-center gap-3 text-[0.9rem] text-[#111111]">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#15803D]">
               <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
             </span>
             {f}
@@ -163,8 +163,8 @@ function PlanCard({ plan, current, popular, highlighted }) {
 function DetailRow({ label, value, tone }) {
   return (
     <div className="flex items-center justify-between gap-3 py-3">
-      <p className="text-sm text-[#667085]">{label}</p>
-      <p className={cx('text-sm font-bold', tone === 'green' ? 'text-[#15803D]' : 'text-[#101828]')}>{value}</p>
+      <p className="text-sm text-[#666666]">{label}</p>
+      <p className={cx('text-sm font-bold', tone === 'green' ? 'text-[#15803D]' : 'text-[#111111]')}>{value}</p>
     </div>
   );
 }
@@ -187,36 +187,36 @@ function CurrentPlanCard({ sub, plan, planLabel, daysRemaining, employeeCount, e
   ];
 
   return (
-    <div className="w-full rounded-[28px] border border-[#EAECF0] bg-white p-5 shadow-[0_2px_10px_rgba(16,24,40,0.05)] sm:p-6">
+    <div className="w-full rounded-[28px] border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:p-6">
       <div className="flex items-start gap-3.5">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#DCFCE7] text-[#15803D]">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#F3F3F3] text-[#15803D]">
           <Crown className="h-6 w-6" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1 pt-0.5">
-          <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#667085]">Current Plan</p>
+          <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Current Plan</p>
           <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            <p className="text-lg font-extrabold text-[#101828]">{planLabel}</p>
-            <span className="rounded-full bg-[#DCFCE7] px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-[#15803D]">{statusLabel}</span>
+            <p className="text-lg font-extrabold text-[#111111]">{planLabel}</p>
+            <span className="rounded-full bg-[#F3F3F3] px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-[#15803D]">{statusLabel}</span>
           </div>
         </div>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-[#F0FDF4] px-4 py-3.5">
+      <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-[#F8F8F8] px-4 py-3.5">
         <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#15803D]">
           <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="truncate">
             {sub.inactiveDate ? `Active until ${formatDate(sub.inactiveDate)}` : 'Active'}
           </span>
         </span>
-        <span className="shrink-0 text-base font-extrabold text-[#101828]">
+        <span className="shrink-0 text-base font-extrabold text-[#111111]">
           {amount != null ? `₹${Number(amount).toLocaleString('en-IN')}` : '—'}
         </span>
       </div>
 
-      <div className="my-4 border-t border-[#EAECF0]" />
+      <div className="my-4 border-t border-[#ECECEC]" />
 
-      <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#667085]">Plan Details</p>
-      <div className="divide-y divide-[#EAECF0]">
+      <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Plan Details</p>
+      <div className="divide-y divide-[#ECECEC]">
         {rows.map((r) => (
           <DetailRow key={r.label} label={r.label} value={r.value} tone={r.tone} />
         ))}
@@ -226,7 +226,6 @@ function CurrentPlanCard({ sub, plan, planLabel, daysRemaining, employeeCount, e
 }
 
 export default function SubscriptionPage() {
-  const router = useRouter();
   const [profile, setProfile] = useState(null);
   const [sub, setSub] = useState(null);
   const [plans, setPlans] = useState([]);
@@ -295,26 +294,10 @@ export default function SubscriptionPage() {
   )}`;
 
   return (
-    <div className="-mx-4 -mt-5 sm:-mx-6 sm:-mt-6">
-      {/* Page-local mobile-style header — back button + centered title, white
-          background. Scoped to just this screen (see file header comment);
-          every other page here still uses the shared PageHeader. */}
-      <div className="relative flex items-center justify-center border-b border-[#EAECF0] bg-white px-4 py-4">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          aria-label="Go back"
-          className={cx(
-            'absolute left-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#F1F3F5] text-[#101828] transition hover:bg-[#E4E7E2]',
-            FOCUS_RING,
-          )}
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <h1 className="text-[1.05rem] font-extrabold text-[#101828]">Subscription</h1>
-      </div>
+    <div className="flex flex-col gap-5">
+      <PageHeader title="Subscription & Plan" subtitle="Your current plan, available plans and billing." />
 
-      <div className="mx-auto w-full max-w-md px-4 py-6 lg:max-w-[1320px] lg:px-6 lg:py-8">
+      <div className="w-full">
         {error ? (
           <div role="alert" className="mb-6 flex items-start gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -329,7 +312,7 @@ export default function SubscriptionPage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(320px,0.9fr)_minmax(600px,1.6fr)] lg:items-start lg:gap-6">
           <div className="flex flex-col gap-6">
             {loading ? (
-              <div className="flex items-center gap-2 py-2 text-sm text-[#667085]">
+              <div className="flex items-center gap-2 py-2 text-sm text-[#666666]">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading your subscription…
               </div>
             ) : sub ? (
@@ -342,7 +325,7 @@ export default function SubscriptionPage() {
                 employeeCountLoading={technicianCountLoading}
               />
             ) : (
-              <div className="rounded-2xl border border-dashed border-[#EAECF0] bg-white px-4 py-5 text-center text-sm text-[#667085]">
+              <div className="rounded-2xl border border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-5 text-center text-sm text-[#666666]">
                 No subscription record found for this account yet.
               </div>
             )}
@@ -350,9 +333,9 @@ export default function SubscriptionPage() {
 
           <div className="flex flex-col gap-6">
             <div>
-              <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.08em] text-[#667085]">Available Plans</p>
+              <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.08em] text-[#666666]">Available Plans</p>
               {loading ? (
-                <div className="flex items-center gap-2 py-6 text-sm text-[#667085]">
+                <div className="flex items-center gap-2 py-6 text-sm text-[#666666]">
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading plans…
                 </div>
               ) : (
@@ -365,14 +348,14 @@ export default function SubscriptionPage() {
 
             {basicPlan ? (
               <div>
-                <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.08em] text-[#667085]">Basic · Multiple Shops</p>
-                <div className="w-full rounded-[28px] border border-[#EAECF0] bg-white p-5 shadow-[0_2px_10px_rgba(16,24,40,0.05)]">
+                <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.08em] text-[#666666]">Basic · Multiple Shops</p>
+                <div className="w-full rounded-[28px] border border-[#ECECEC] bg-[#F8F8F8] p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#F0FDF4] text-[#15803D]">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#F8F8F8] text-[#15803D]">
                         <Store className="h-5 w-5" aria-hidden="true" />
                       </span>
-                      <p className="text-sm font-bold text-[#101828]">How many shops?</p>
+                      <p className="text-sm font-bold text-[#111111]">How many shops?</p>
                     </div>
                     <div className="flex items-center gap-3">
                       <button
@@ -381,27 +364,27 @@ export default function SubscriptionPage() {
                         disabled={shopCount <= 1}
                         aria-label="Fewer shops"
                         className={cx(
-                          'flex h-9 w-9 items-center justify-center rounded-full bg-[#F1F3F5] text-[#101828] transition hover:bg-[#E4E7E2] disabled:cursor-not-allowed disabled:opacity-40',
+                          'flex h-9 w-9 items-center justify-center rounded-full bg-[#F3F3F3] text-[#111111] transition hover:bg-[#F3F3F3] disabled:cursor-not-allowed disabled:opacity-40',
                           FOCUS_RING,
                         )}
                       >
                         <Minus className="h-4 w-4" aria-hidden="true" />
                       </button>
-                      <span className="w-6 text-center text-lg font-extrabold text-[#101828]">{shopCount}</span>
+                      <span className="w-6 text-center text-lg font-extrabold text-[#111111]">{shopCount}</span>
                       <button
                         type="button"
                         onClick={incShops}
                         aria-label="More shops"
-                        className={cx('flex h-9 w-9 items-center justify-center rounded-full bg-[#F0FDF4] text-[#15803D] transition hover:bg-[#DCFCE7]', FOCUS_RING)}
+                        className={cx('flex h-9 w-9 items-center justify-center rounded-full bg-[#F8F8F8] text-[#15803D] transition hover:bg-[#F3F3F3]', FOCUS_RING)}
                       >
                         <Plus className="h-4 w-4" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
 
-                  <div className="mt-4 flex items-center justify-between rounded-2xl bg-[#F0FDF4] px-4 py-3.5">
-                    <p className="text-sm font-bold text-[#101828]">{shopCount}× Basic subscription</p>
-                    <p className="text-lg font-extrabold text-[#101828]">₹{totalPrice.toLocaleString('en-IN')}</p>
+                  <div className="mt-4 flex items-center justify-between rounded-2xl bg-[#F8F8F8] px-4 py-3.5">
+                    <p className="text-sm font-bold text-[#111111]">{shopCount}× Basic subscription</p>
+                    <p className="text-lg font-extrabold text-[#111111]">₹{totalPrice.toLocaleString('en-IN')}</p>
                   </div>
                   <p className="mt-2.5 text-xs text-[#98A2B3]">
                     1 shop = ₹{basicUnitPrice.toLocaleString('en-IN')} · 2 or more = ₹{MULTI_SHOP_UNIT_PRICE.toLocaleString('en-IN')} per shop / year.
@@ -410,7 +393,7 @@ export default function SubscriptionPage() {
                   <a
                     href={upgradeHref}
                     className={cx(
-                      'mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#15803D] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#166534]',
+                      'mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#F3BF23] px-4 py-3 text-sm font-bold text-[#1E1E1E] transition hover:bg-[#E5B11A]',
                       FOCUS_RING,
                     )}
                   >

@@ -87,7 +87,7 @@ function CustomerAvatar({ customer, className, textClassName = 'text-xs' }) {
   );
 }
 
-export default function HeaderAccount({ variant = 'desktop', onNavigate, className }) {
+export default function HeaderAccount({ variant = 'desktop', size = 'md', onNavigate, className }) {
   const [mounted, setMounted] = useState(false);
   const [customer, setCustomer] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
@@ -119,6 +119,8 @@ export default function HeaderAccount({ variant = 'desktop', onNavigate, classNa
   }, [menuOpen]);
 
   const signedIn = mounted && Boolean(customer);
+  // size='lg' (desktop only): the round icon button used in the site header.
+  const large = size === 'lg';
 
   const handleLogout = () => {
     setMenuOpen(false);
@@ -241,21 +243,34 @@ export default function HeaderAccount({ variant = 'desktop', onNavigate, classNa
   if (!signedIn) {
     return (
       <>
-        <button
-          type="button"
-          onClick={() => setLoginOpen(true)}
-          className={cx(
-            'hidden items-center gap-2 rounded-xl border border-brand-line px-3 py-1.5 text-left transition',
-            'hover:border-brand-300 hover:bg-brand-soften lg:inline-flex',
-            FOCUS_RING,
-          )}
-        >
-          <User className="h-5 w-5 shrink-0 text-brand-muted" aria-hidden="true" />
-          <span className="leading-tight">
-            <span className="block text-[11px] font-medium text-brand-muted">Hello, Sign in</span>
-            <span className="block text-sm font-bold text-brand-ink">Account</span>
-          </span>
-        </button>
+        {large ? (
+          <button
+            type="button"
+            onClick={() => setLoginOpen(true)}
+            aria-label="Login"
+            title="Login"
+            className={cx(
+              'hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brand-line bg-white text-brand-ink transition',
+              'hover:bg-brand-soften lg:inline-flex',
+              FOCUS_RING,
+            )}
+          >
+            <User className="h-5 w-5" aria-hidden="true" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setLoginOpen(true)}
+            className={cx(
+              'hidden items-center gap-2 rounded-xl border border-brand-line px-3 py-1.5 text-left transition',
+              'hover:border-brand-300 hover:bg-brand-soften lg:inline-flex',
+              FOCUS_RING,
+            )}
+          >
+            <User className="h-5 w-5 shrink-0 text-brand-muted" aria-hidden="true" />
+            <span className="text-sm font-bold text-brand-ink">Login</span>
+          </button>
+        )}
         <LoginModal
           open={loginOpen}
           onClose={() => setLoginOpen(false)}
@@ -272,21 +287,24 @@ export default function HeaderAccount({ variant = 'desktop', onNavigate, classNa
         onClick={() => setMenuOpen((v) => !v)}
         aria-expanded={menuOpen}
         aria-haspopup="menu"
+        aria-label={large ? 'My Account' : undefined}
         className={cx(
-          'inline-flex items-center gap-2 rounded-xl border border-brand-line bg-white py-1.5 pl-2 pr-3',
+          large
+            ? 'inline-flex h-11 w-11 items-center justify-center rounded-full border border-brand-line bg-white'
+            : 'inline-flex items-center gap-2 rounded-xl border border-brand-line bg-white py-1.5 pl-2 pr-3',
           'text-left transition hover:border-brand-300 hover:bg-brand-soften',
           FOCUS_RING,
         )}
       >
         <CustomerAvatar customer={customer} className="h-8 w-8" />
-        <span className="leading-tight">
+        <span className={cx('leading-tight', large && 'sr-only')}>
           <span className="block max-w-[7rem] truncate text-[11px] font-medium text-brand-muted">
             Hello, {firstName(customer.fullName)}
           </span>
           <span className="block text-sm font-bold text-brand-ink">My Account</span>
         </span>
         <ChevronDown
-          className={cx('h-4 w-4 shrink-0 text-brand-muted transition', menuOpen && 'rotate-180')}
+          className={cx('h-4 w-4 shrink-0 text-brand-muted transition', menuOpen && 'rotate-180', large && 'hidden')}
           aria-hidden="true"
         />
       </button>

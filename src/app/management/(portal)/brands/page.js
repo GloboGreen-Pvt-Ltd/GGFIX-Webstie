@@ -1,31 +1,24 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, RefreshCw } from 'lucide-react';
 import { masterApi } from '@/lib/api';
 import DataTable, { StatusPill } from '@/components/DataTable';
 import PageHeader, { Button } from '@/components/PageHeader';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadBrandImage } from '@/lib/modelMedia';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 export default function MasterBrandsPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, because
-  // the modal closes on save — and a replacement deletes the old file from the
-  // bucket, which is worth saying in words rather than leaving to be inferred.
-  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null); // { type: 'create' | 'edit', item?: {} }
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   // Held until the record has an id: the S3 key is derived from the stored name.
   const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -63,18 +56,8 @@ export default function MasterBrandsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { errors, firstErrorField, isValid } = validateForm(
-      { name: required('Brand name is required.') },
-      { name },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!name.trim()) return;
     setSubmitting(true);
-    setNotice('');
     try {
       // Save first, then upload: the endpoint is id-scoped because the object key
       // is built from the brand's stored name.
@@ -93,12 +76,13 @@ export default function MasterBrandsPage() {
       }
       if (imageFile && brandId) {
         const uploaded = await uploadBrandImage(brandId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Brand logo'));
+        const notice = imageReplacementNotice(uploaded, 'Brand logo');
+        if (notice) notifySuccess(notice);
       }
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -110,7 +94,7 @@ export default function MasterBrandsPage() {
       await masterApi.delete(`/master/brands/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -155,11 +139,6 @@ export default function MasterBrandsPage() {
       />
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
 
       {loading ? (
         <div className="rounded-xl border border-admin-border bg-admin-card p-10 text-center text-admin-muted shadow-sm">Loading…</div>
@@ -180,20 +159,15 @@ export default function MasterBrandsPage() {
               {modal.type === 'create' ? 'New brand' : 'Edit brand'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div ref={registerField(fieldRefs, 'name')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Name</label>
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.name)}
+                  onChange={(e) => setName(e.target.value)}
                   className="w-full rounded-lg bg-white border border-admin-border px-3 py-2 text-slate-900 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
                   required
                 />
-                {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
               </div>
               <S3ImageUpload
                 value={imageUrl}

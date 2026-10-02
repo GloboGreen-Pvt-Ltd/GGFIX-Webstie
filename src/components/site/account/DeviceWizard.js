@@ -13,7 +13,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  CircleAlert,
   HardDrive,
   Laptop,
   Loader2,
@@ -32,6 +31,7 @@ import { cx } from '@/components/site/ui';
 import { Panel } from '@/components/site/account/ui';
 import { masterApi } from '@/lib/api';
 import { createDevice, updateDevice } from '@/lib/customerAccount';
+import { notifyError } from '@/lib/toast';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const asList = (value) => (Array.isArray(value) ? value : value?.content || value?.data || []);
@@ -360,7 +360,6 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
   const noRamStorage = /WATCH|AUDIO|HEADPHONE|EARBUD/.test(categoryCode);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [colors, setColors] = useState([]);
   const [rams, setRams] = useState([]);
   const [storages, setStorages] = useState([]);
@@ -376,7 +375,6 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
     let cancelled = false;
     async function loadOptions() {
       setLoading(true);
-      setError('');
       try {
         const [model, allColors, allRams, allStorages] = await Promise.all([
           selection.modelId
@@ -416,7 +414,7 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
         ));
         setSpec(existingSpec || null);
       } catch (cause) {
-        if (!cancelled) setError(cause?.message || 'Could not load device options.');
+        if (!cancelled) notifyError(cause, 'Could not load device options.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -433,15 +431,14 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
 
   const save = async () => {
     if (!color) {
-      setError('Choose a colour to continue.');
+      notifyError('Choose a colour to continue.');
       return;
     }
     if (!noRamStorage && !spec && (!ram || !storage)) {
-      setError('Choose the device memory and storage to continue.');
+      notifyError('Choose the device memory and storage to continue.');
       return;
     }
     setSaving(true);
-    setError('');
     const payload = {
       categoryId: onlyUuid(selection.categoryId || device?.categoryId),
       categoryCode: selection.categoryCode || device?.categoryCode || undefined,
@@ -462,7 +459,7 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
       else await createDevice(payload);
       onSaved();
     } catch (cause) {
-      setError(cause?.message || 'Could not save this device. Please try again.');
+      notifyError(cause, 'Could not save this device. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -570,12 +567,6 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
         </div>
       </div>
 
-      {error ? (
-        <p className="mt-5 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-700">
-          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{error}
-        </p>
-      ) : null}
-
       <div className="mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-brand-line pt-5">
         {editing ? <span /> : (
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-brand-muted hover:bg-brand-soft hover:text-brand-ink">
@@ -644,7 +635,7 @@ export default function DeviceWizard({ device, onClose, onSaved }) {
       setBrands(list);
       setStep(1);
     } catch (cause) {
-      setError(cause?.message || 'Could not load brands for this category.');
+      notifyError(cause, 'Could not load brands for this category.');
     } finally {
       setLoading(false);
     }
@@ -661,7 +652,7 @@ export default function DeviceWizard({ device, onClose, onSaved }) {
       setModels(list.filter((item) => !item.categoryId || item.categoryId === next.categoryId));
       setStep(2);
     } catch (cause) {
-      setError(cause?.message || 'Could not load models for this brand.');
+      notifyError(cause, 'Could not load models for this brand.');
     } finally {
       setLoading(false);
     }

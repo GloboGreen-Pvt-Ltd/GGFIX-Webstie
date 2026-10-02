@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 // Split a bulk paste into clean, de-duplicated series names. Accepts one name
 // per line, comma-separated, or a mix; trims blanks.
@@ -32,8 +31,6 @@ export default function MasterSeriesPage() {
   const [formBrandId, setFormBrandId] = useState('');
   const [name, setName] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   // --- Initial load
   const loadRefData = async () => {
@@ -143,17 +140,16 @@ export default function MasterSeriesPage() {
     if (!formCategoryId || !formBrandId) return;
     const mappingId = resolveMappingId(formCategoryId, formBrandId);
     if (!mappingId) {
-      setError('No Category-Brand mapping for this pair. Create it in the Category-Brand Mapping page first.');
+      notifyError('No Category-Brand mapping for this pair. Create it in the Category-Brand Mapping page first.');
       return;
     }
     setSubmitting(true);
-    setError('');
     try {
       if (modal.type === 'create') {
         // Bulk create: one series per line / comma-separated name.
         const names = parseSeriesNames(name);
         if (!names.length) {
-          setError('Enter at least one series name.');
+          notifyError('Enter at least one series name.');
           setSubmitting(false);
           return;
         }
@@ -175,23 +171,13 @@ export default function MasterSeriesPage() {
         if (failed.length) {
           // Keep the modal open with only the failed names so they can be fixed/retried.
           setName(failed.join('\n'));
-          setError(`Added ${ok} of ${names.length}. These were skipped (already exist or invalid): ${failed.join(', ')}`);
+          notifyError(`Added ${ok} of ${names.length}. These were skipped (already exist or invalid): ${failed.join(', ')}`);
           setSubmitting(false);
           return;
         }
         closeModal();
       } else {
-        const { errors, firstErrorField, isValid } = validateForm(
-          { name: required('Series name is required.') },
-          { name },
-        );
-        if (!isValid) {
-          setFieldErrors(errors);
-          focusField(fieldRefs, firstErrorField);
-          setSubmitting(false);
-          return;
-        }
-        setFieldErrors({});
+        if (!name.trim()) { setSubmitting(false); return; }
         await masterApi.put(`/master/series/${modal.item.id}`, {
           categoryBrandId: mappingId,
           brandId: formBrandId,
@@ -201,7 +187,7 @@ export default function MasterSeriesPage() {
         loadSeries();
       }
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -213,7 +199,7 @@ export default function MasterSeriesPage() {
       await masterApi.delete(`/master/series/${row.id}`);
       loadSeries();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -341,21 +327,16 @@ export default function MasterSeriesPage() {
                   </p>
                 </div>
               ) : (
-                <div ref={registerField(fieldRefs, 'name')}>
+                <div>
                   <label className="block text-sm text-admin-muted mb-1">Series name</label>
                   <input
                     type="text"
                     value={name}
-                    onChange={(e) => {
-                      setName(e.target.value);
-                      if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
-                    }}
+                    onChange={(e) => setName(e.target.value)}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                     placeholder="e.g. Vivo Y Series"
-                    aria-invalid={Boolean(fieldErrors.name)}
                     required
                   />
-                  {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
                 </div>
               )}
               <div className="flex gap-2 justify-end">

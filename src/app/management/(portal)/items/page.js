@@ -1,11 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import { mapPool } from '@/lib/concurrency';
 import DataTable from '@/components/DataTable';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 // In a later step, you can swap this to a dedicated marketplaceApi exported from lib/api.
 const productsApi = {
@@ -32,8 +31,6 @@ export default function MarketplaceItemsPage() {
   const [status, setStatus] = useState('ACTIVE');
   const [imageUrl, setImageUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const loadBrands = async () => {
     try {
@@ -128,22 +125,8 @@ export default function MarketplaceItemsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { errors, firstErrorField, isValid } = validateForm(
-      {
-        title: required('Title is required.'),
-        brandId: required('Select a brand.'),
-        modelId: required('Select a model.'),
-      },
-      { title, brandId, modelId },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!title.trim() || !brandId || !modelId) return;
     setSubmitting(true);
-    setError('');
     const body = {
       title: title.trim(),
       type,
@@ -162,7 +145,7 @@ export default function MarketplaceItemsPage() {
       closeModal();
       loadItems();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -174,7 +157,7 @@ export default function MarketplaceItemsPage() {
       await productsApi.delete(`/marketplace/products/${row.id}`);
       loadItems();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -254,20 +237,15 @@ export default function MarketplaceItemsPage() {
               {modal.type === 'create' ? 'New marketplace item' : 'Edit marketplace item'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div ref={registerField(fieldRefs, 'title')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Title</label>
                 <input
                   type="text"
                   value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    if (fieldErrors.title) setFieldErrors((prev) => ({ ...prev, title: undefined }));
-                  }}
+                  onChange={(e) => setTitle(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
-                  aria-invalid={Boolean(fieldErrors.title)}
                   required
                 />
-                {fieldErrors.title ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.title}</p> : null}
               </div>
               <div>
                 <label className="block text-sm text-admin-muted mb-1">Type</label>
@@ -280,16 +258,12 @@ export default function MarketplaceItemsPage() {
                   <option value="SPARE_PART">SPARE_PART</option>
                 </select>
               </div>
-              <div ref={registerField(fieldRefs, 'brandId')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Brand</label>
                 <select
                   value={brandId}
-                  onChange={(e) => {
-                    setBrandId(e.target.value);
-                    if (fieldErrors.brandId) setFieldErrors((prev) => ({ ...prev, brandId: undefined }));
-                  }}
+                  onChange={(e) => setBrandId(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
-                  aria-invalid={Boolean(fieldErrors.brandId)}
                   required
                 >
                   <option value="">Select brand</option>
@@ -299,18 +273,13 @@ export default function MarketplaceItemsPage() {
                     </option>
                   ))}
                 </select>
-                {fieldErrors.brandId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.brandId}</p> : null}
               </div>
-              <div ref={registerField(fieldRefs, 'modelId')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Model</label>
                 <select
                   value={modelId}
-                  onChange={(e) => {
-                    setModelId(e.target.value);
-                    if (fieldErrors.modelId) setFieldErrors((prev) => ({ ...prev, modelId: undefined }));
-                  }}
+                  onChange={(e) => setModelId(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
-                  aria-invalid={Boolean(fieldErrors.modelId)}
                   required
                 >
                   <option value="">Select model</option>
@@ -320,7 +289,6 @@ export default function MarketplaceItemsPage() {
                     </option>
                   ))}
                 </select>
-                {fieldErrors.modelId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.modelId}</p> : null}
               </div>
               <div>
                 <label className="block text-sm text-admin-muted mb-1">Price (₹)</label>

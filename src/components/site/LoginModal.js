@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { BadgeCheck, Smartphone, Sparkles, Wrench, X } from 'lucide-react';
 
 import { login, normalizeMobile, sendOtp } from '@/lib/customerAuth';
+import { notifyError } from '@/lib/toast';
 
 const RESEND_SECONDS = 30;
 const OTP_LENGTH = 6;
@@ -30,7 +31,6 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
   const [agree, setAgree] = useState(false);
   const [otp, setOtp] = useState(Array(OTP_LENGTH).fill(''));
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [hint, setHint] = useState('');
   const [seconds, setSeconds] = useState(0);
 
@@ -58,7 +58,6 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
     if (!open) return;
     setPhase('phone');
     setOtp(Array(OTP_LENGTH).fill(''));
-    setError('');
     setHint('');
     setBusy(false);
     setSeconds(0);
@@ -93,12 +92,11 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
   }, [phase, seconds]);
 
   const requestOtp = useCallback(async () => {
-    setError('');
     setBusy(true);
     const res = await sendOtp(digits);
     setBusy(false);
     if (!res.ok) {
-      setError(res.message || "Couldn't send an OTP.");
+      notifyError(res.message || "Couldn't send an OTP.");
       return false;
     }
     setHint(res.defaultOtp ? `For testing, use OTP ${res.defaultOtp}.` : '');
@@ -124,12 +122,11 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
     async (e) => {
       e.preventDefault();
       if (otpValue.length < OTP_LENGTH || busy) return;
-      setError('');
       setBusy(true);
       const res = await login(digits, otpValue);
       setBusy(false);
       if (!res.ok) {
-        setError(res.message || 'That OTP did not work.');
+        notifyError(res.message || 'That OTP did not work.');
         return;
       }
       onSuccess(res.session);
@@ -331,8 +328,6 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
                 </span>
               </label>
 
-              {error ? <p className="mt-4 text-sm font-medium text-red-600">{error}</p> : null}
-
               <button
                 type="submit"
                 disabled={digits.length < 10 || !agree || busy}
@@ -353,7 +348,6 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
                   type="button"
                   onClick={() => {
                     setPhase('phone');
-                    setError('');
                   }}
                   className="font-semibold text-brand-700 underline underline-offset-2"
                 >
@@ -403,7 +397,6 @@ export default function LoginModal({ open, onClose, onSuccess, device }) {
                   {hint}
                 </p>
               ) : null}
-              {error ? <p className="mt-3 text-sm font-medium text-red-600">{error}</p> : null}
 
               <button
                 type="submit"

@@ -125,6 +125,22 @@ curl -o /dev/null -w '%{http_code}\n' https://<host>/management/   # expect 200
 curl -o /dev/null -w '%{http_code}\n' https://<host>/nope-xyz/     # expect 404
 ```
 
+### CloudFront invalidation permission
+
+The "Invalidate CloudFront" step in each `deploy-*-s3.yml` warns and continues
+instead of failing the job when `aws cloudfront create-invalidation` errors — the S3
+sync already succeeded by that point, so the build is live either way. But a
+warning that persists deploy after deploy means CloudFront is stuck serving cached
+assets until the TTL expires.
+
+Seen 2026-09-02 on preview: `arn:aws:iam::176202287053:user/ggfix-frontend-preview-deployment-policy`
+got `AccessDenied` calling `cloudfront:CreateInvalidation` on
+`arn:aws:cloudfront::176202287053:distribution/EGNJIKCEI3XN`. Fix by attaching a
+policy granting `cloudfront:CreateInvalidation` scoped to that distribution ARN to
+that IAM user, in the frontend account (`176202287053`), not the one hosting
+`api.ggfix.in`. Same check applies to the development/production deploy users
+against their own distribution ARNs if their invalidation step ever starts warning.
+
 ### One distribution per environment
 
 `preview`, `deploy`, `ggfix.in` and `www` must each resolve to their **own**

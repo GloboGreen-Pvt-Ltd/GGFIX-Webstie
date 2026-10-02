@@ -11,8 +11,7 @@ import S3ImageUpload from '@/components/S3ImageUpload';
 import ModelsImportModal from '@/components/ModelsImportModal';
 import { imageReplacementNotice, replaceModelImage } from '@/lib/modelMedia';
 import { exportModelsWorkbook, exportTemplateWorkbook } from '@/lib/modelsExcel';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 function slugify(s) {
   return String(s || '')
@@ -161,11 +160,6 @@ export default function MasterModelsPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page rather than in the modal
-  // because the modal closes on save — and a replacement deletes the old file from
-  // the bucket, which is worth confirming in words rather than leaving to be inferred
-  // from the thumbnail.
-  const [notice, setNotice] = useState('');
 
   // Form state
   const [modal, setModal] = useState(null);
@@ -188,8 +182,6 @@ export default function MasterModelsPage() {
   const [category, setCategory] = useState('DEVICE');
   const [sellActive, setSellActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   // Global option sets (for resolving / creating colors + ram/storage on save)
   const [allColors, setAllColors] = useState([]);
@@ -527,7 +519,7 @@ export default function MasterModelsPage() {
       }
       return next;
     });
-    if (bad) setError(storageMode === 'STORAGE_ONLY'
+    if (bad) notifyError(storageMode === 'STORAGE_ONLY'
       ? 'Use a storage size, e.g. 128 GB.'
       : 'Use the format "RAM + Storage", e.g. 6 GB + 128 GB.');
     setSpecInput('');
@@ -592,22 +584,8 @@ export default function MasterModelsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { errors, firstErrorField, isValid } = validateForm(
-      {
-        name: required('Model name is required.'),
-        formBrandId: required('Select a brand.'),
-      },
-      { name, formBrandId },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!name.trim() || !formBrandId) return;
     setSubmitting(true);
-    setError('');
-    setNotice('');
     try {
       // Fold any code still sitting in the input (user typed but didn't press Enter).
       const allModelNumbers = [...modelNumbers];
@@ -641,13 +619,14 @@ export default function MasterModelsPage() {
       }
       if (imageFile && modelId) {
         const uploaded = await replaceModelImage(modelId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Model image'));
+        const notice = imageReplacementNotice(uploaded, 'Model image');
+        if (notice) notifySuccess(notice);
       }
       await persistPalette();
       closeModal();
       loadModels();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -662,7 +641,7 @@ export default function MasterModelsPage() {
       await masterApi.patch(`/master/models/${row.id}/sell-active`, { sellActive: next });
     } catch (e) {
       setList((prev) => prev.map((m) => (m.id === row.id ? { ...m, sellActive: !next } : m)));
-      setError(e.body?.message || e.message || 'Failed to update Sell Active');
+      notifyError(e.body?.message || e.message || 'Failed to update Sell Active');
     }
   };
 
@@ -672,7 +651,7 @@ export default function MasterModelsPage() {
       await masterApi.delete(`/master/models/${row.id}`);
       loadModels();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -740,11 +719,10 @@ export default function MasterModelsPage() {
   const runExport = async (build) => {
     setExportMenu(false);
     setExporting(true);
-    setError('');
     try {
       await build();
     } catch (e) {
-      setError(e.message || 'Could not build the Excel file.');
+      notifyError(e.message || 'Could not build the Excel file.');
     } finally {
       setExporting(false);
     }
@@ -963,11 +941,6 @@ export default function MasterModelsPage() {
         updating the ones it recognises.
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
       {loading ? (
         <p className="text-admin-muted">
           Loading…
@@ -996,20 +969,15 @@ export default function MasterModelsPage() {
                     {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
                   </select>
                 </div>
-                <div ref={registerField(fieldRefs, 'formBrandId')}>
+                <div>
                   <label className="block text-sm text-admin-muted mb-1">Brand</label>
                   <select value={formBrandId}
-                    onChange={(e) => {
-                      setFormBrandId(e.target.value); setFormSeriesId('');
-                      if (fieldErrors.formBrandId) setFieldErrors((prev) => ({ ...prev, formBrandId: undefined }));
-                    }}
+                    onChange={(e) => { setFormBrandId(e.target.value); setFormSeriesId(''); }}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
-                    aria-invalid={Boolean(fieldErrors.formBrandId)}
                     required disabled={!formCategoryId}>
                     <option value="">Select</option>
                     {formBrandOptions.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
                   </select>
-                  {fieldErrors.formBrandId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.formBrandId}</p> : null}
                 </div>
                 <div>
                   <label className="block text-sm text-admin-muted mb-1">Series</label>
@@ -1022,16 +990,12 @@ export default function MasterModelsPage() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div ref={registerField(fieldRefs, 'name')}>
+                <div>
                   <label className="block text-sm text-admin-muted mb-1">Model name</label>
                   <input type="text" value={name}
-                    onChange={(e) => {
-                      setName(e.target.value);
-                      if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
-                    }}
+                    onChange={(e) => setName(e.target.value)}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
-                    placeholder="e.g. Vivo Y20" aria-invalid={Boolean(fieldErrors.name)} required />
-                  {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
+                    placeholder="e.g. Vivo Y20" required />
                 </div>
                 <div>
                   <label className="block text-sm text-admin-muted mb-1">Model number</label>

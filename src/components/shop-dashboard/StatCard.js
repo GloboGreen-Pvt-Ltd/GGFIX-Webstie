@@ -37,7 +37,7 @@ export default function StatCard({ icon: Icon, label, value, trend, tone = 'gree
           <span
             className={cx(
               'inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition',
-              featured ? 'bg-white/15 text-white group-hover:bg-white/25' : 'bg-[#F9FAFB] text-[#98A2B3] group-hover:bg-[#F0FDF4] group-hover:text-[#15803D]',
+              featured ? 'bg-white/15 text-white group-hover:bg-white/25' : 'bg-[#F8F8F8] text-[#98A2B3] group-hover:bg-[#F8F8F8] group-hover:text-[#15803D]',
             )}
           >
             <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
@@ -45,10 +45,10 @@ export default function StatCard({ icon: Icon, label, value, trend, tone = 'gree
         ) : null}
       </div>
 
-      <p className={cx('mt-4 text-[26px] font-bold leading-none tracking-tight sm:text-[28px]', featured ? 'text-white' : 'text-[#101828]')}>
+      <p className={cx('mt-4 text-[26px] font-bold leading-none tracking-tight sm:text-[28px]', featured ? 'text-white' : 'text-[#111111]')}>
         {value}
       </p>
-      <p className={cx('mt-1.5 text-sm font-medium', featured ? 'text-white/75' : 'text-[#667085]')}>{label}</p>
+      <p className={cx('mt-1.5 text-sm font-medium', featured ? 'text-white/75' : 'text-[#666666]')}>{label}</p>
 
       {trend ? (
         <p className={cx('mt-2.5 flex items-center gap-1 text-xs font-semibold', featured ? 'text-white/90' : 'text-[#15803D]')}>
@@ -62,9 +62,9 @@ export default function StatCard({ icon: Icon, label, value, trend, tone = 'gree
   const className = cx(
     'group block rounded-3xl p-5 transition',
     featured
-      ? 'bg-gradient-to-br from-[#166534] to-[#14532D] shadow-[0_4px_16px_rgba(20,83,45,0.25)]'
-      : 'border border-[#E5ECE8] bg-white shadow-[0_8px_30px_rgba(20,80,55,0.06)]',
-    href && !featured && 'hover:-translate-y-0.5 hover:border-[#86EFAC] hover:shadow-[0_12px_32px_rgba(20,80,55,0.1)]',
+      ? 'bg-gradient-to-br from-[#166534] to-[#14532D]'
+      : 'border border-[#ECECEC] bg-[#F8F8F8]',
+    href && !featured && 'hover:-translate-y-0.5 hover:border-[#ECECEC]',
     href && FOCUS_RING,
   );
 

@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 export default function MasterCategoryBrandMappingPage() {
   const [categories, setCategories] = useState([]);
@@ -22,8 +21,6 @@ export default function MasterCategoryBrandMappingPage() {
   const [brandSearch, setBrandSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState(''); // shown during multi-create
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -93,27 +90,17 @@ export default function MasterCategoryBrandMappingPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-
-    const schema = modal.type === 'edit'
-      ? { categoryId: required('Select a device category.'), brandId: required('Select a brand.') }
-      : { categoryId: required('Select a device category.') };
-    const { errors, firstErrorField, isValid } = validateForm(schema, { categoryId, brandId });
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!categoryId) return;
 
     if (modal.type === 'edit') {
+      if (!brandId) return;
       setSubmitting(true);
       try {
         await masterApi.put(`/master/category-brand-mappings/${modal.item.id}`, { categoryId, brandId });
         closeModal();
         load();
       } catch (e) {
-        setError(e.body?.message || e.message || 'Request failed');
+        notifyError(e.body?.message || e.message || 'Request failed');
       } finally {
         setSubmitting(false);
       }
@@ -123,7 +110,7 @@ export default function MasterCategoryBrandMappingPage() {
     // Create mode: multi-select. POST one mapping per brand.
     const toCreate = brandIds.filter((id) => !mappedBrandIdsForFormCategory.has(id));
     if (toCreate.length === 0) {
-      setError('Pick at least one brand that isn\'t already mapped to this category.');
+      notifyError('Pick at least one brand that isn\'t already mapped to this category.');
       return;
     }
 
@@ -141,7 +128,7 @@ export default function MasterCategoryBrandMappingPage() {
         done += 1;
       }
       if (failed.length) {
-        setError(`${failed.length} of ${toCreate.length} failed: ${failed.map((f) => brandName(f.brandId)).join(', ')}`);
+        notifyError(`${failed.length} of ${toCreate.length} failed: ${failed.map((f) => brandName(f.brandId)).join(', ')}`);
       } else {
         closeModal();
       }
@@ -159,7 +146,7 @@ export default function MasterCategoryBrandMappingPage() {
       await masterApi.delete(`/master/category-brand-mappings/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -237,25 +224,20 @@ export default function MasterCategoryBrandMappingPage() {
               {modal.type === 'create' ? 'Add mappings' : 'Edit mapping'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div ref={registerField(fieldRefs, 'categoryId')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Category</label>
                 <select
                   value={categoryId}
-                  onChange={(e) => {
-                    setCategoryId(e.target.value);
-                    if (fieldErrors.categoryId) setFieldErrors((prev) => ({ ...prev, categoryId: undefined }));
-                  }}
+                  onChange={(e) => setCategoryId(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   required
                   disabled={modal.type === 'edit'}
-                  aria-invalid={Boolean(fieldErrors.categoryId)}
                 >
                   <option value="">Select category</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
-                {fieldErrors.categoryId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.categoryId}</p> : null}
               </div>
 
               {modal.type === 'create' ? (
@@ -312,22 +294,17 @@ export default function MasterCategoryBrandMappingPage() {
                   </p>
                 </div>
               ) : (
-                <div ref={registerField(fieldRefs, 'brandId')}>
+                <div>
                   <label className="block text-sm text-admin-muted mb-1">Brand</label>
                   <select
                     value={brandId}
-                    onChange={(e) => {
-                      setBrandId(e.target.value);
-                      if (fieldErrors.brandId) setFieldErrors((prev) => ({ ...prev, brandId: undefined }));
-                    }}
+                    onChange={(e) => setBrandId(e.target.value)}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                     required
-                    aria-invalid={Boolean(fieldErrors.brandId)}
                   >
                     <option value="">Select brand</option>
                     {brands.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
                   </select>
-                  {fieldErrors.brandId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.brandId}</p> : null}
                 </div>
               )}
 

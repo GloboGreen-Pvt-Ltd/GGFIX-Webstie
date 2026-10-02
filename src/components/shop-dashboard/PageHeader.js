@@ -1,19 +1,20 @@
 /**
- * PageHeader — the title/subtitle/action row shared by ~15+ pages. The
- * blurred light-green shape behind the title is the same soft-3D decoration
- * technique the Dashboard's own greeting hero uses (shop-home/page.js) —
- * added here once so every page using PageHeader picks it up automatically.
- * No prop changed, so no call site needs an edit.
+ * PageHeader — the one page banner every dashboard page uses: a plain
+ * #F8F8F8 card, 30–34px title, 14–15px subtitle, optional `action` on the
+ * right (buttons / a summary pill) and optional `children` under the text
+ * (e.g. a month picker). Same size on every page.
  */
-export default function PageHeader({ title, subtitle, action }) {
+export default function PageHeader({ title, subtitle, action, children }) {
   return (
-    <div className="relative flex flex-wrap items-start justify-between gap-4">
-      <span className="pointer-events-none absolute -left-6 -top-10 h-28 w-28 rounded-full bg-[#DCFCE7]/50 blur-2xl" aria-hidden="true" />
-      <div className="relative min-w-0">
-        <h1 className="text-2xl font-bold tracking-tight text-[#101828] sm:text-[28px]">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-[#667085]">{subtitle}</p> : null}
+    <div className="rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-6 sm:p-7">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#111111] sm:text-[34px]">{title}</h1>
+          {subtitle ? <p className="mt-1 text-[14px] text-[#666666] sm:text-[15px]">{subtitle}</p> : null}
+        </div>
+        {action ? <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div> : null}
       </div>
-      {action ? <div className="relative shrink-0">{action}</div> : null}
+      {children ? <div className="mt-5">{children}</div> : null}
     </div>
   );
 }

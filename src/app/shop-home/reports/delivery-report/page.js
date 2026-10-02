@@ -129,7 +129,7 @@ export default function DeliveryReportPage() {
               type="button"
               onClick={() => setReloadKey((k) => k + 1)}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-xl border border-[#EAECF0] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
+                'inline-flex items-center gap-1.5 rounded-xl border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
                 FOCUS_RING,
               )}
             >
@@ -141,7 +141,7 @@ export default function DeliveryReportPage() {
               onClick={handleExport}
               disabled={loading || exporting || deliveredThisMonth.length === 0}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-60',
+                'inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60',
                 FOCUS_RING,
               )}
             >
@@ -168,14 +168,14 @@ export default function DeliveryReportPage() {
       </div>
 
       <div>
-        <p className="mb-2.5 text-sm font-bold text-[#101828]">Delivered This Month</p>
-        <section className="rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+        <p className="mb-2.5 text-sm font-bold text-[#111111]">Delivered This Month</p>
+        <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
           {loading ? (
             <SkeletonRows rows={5} />
           ) : deliveredThisMonth.length === 0 ? (
             <EmptyState icon={CheckCircle2} title="No deliveries this month" description="Devices marked delivered in this month will show up here." />
           ) : (
-            <div className="divide-y divide-[#EAECF0]">
+            <div className="divide-y divide-[#ECECEC]">
               {deliveredThisMonth.map((b) => (
                 <DeliveryRow key={b.id} booking={b} expanded={expandedId === b.id} onToggle={() => toggleExpanded(b.id)} />
               ))}
@@ -191,29 +191,29 @@ function DeliveryRow({ booking, expanded, onToggle }) {
   const amount = bookingEstimatedAmount(booking);
   return (
     <div>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F9FAFB] sm:px-5">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4]">
+      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F8F8F8] sm:px-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8]">
           <Smartphone className="h-5 w-5 text-[#15803D]" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-[#101828]">{booking.issueSummary || booking.deviceDisplayName || 'Service booking'}</p>
-          <p className="truncate text-xs text-[#667085]">
+          <p className="truncate text-sm font-bold text-[#111111]">{booking.issueSummary || booking.deviceDisplayName || 'Service booking'}</p>
+          <p className="truncate text-xs text-[#666666]">
             {booking.customerName || 'Customer'} · #{booking.bookingNumber || booking.id}
           </p>
         </div>
-        <div className="hidden shrink-0 text-right text-xs text-[#667085] sm:block">
+        <div className="hidden shrink-0 text-right text-xs text-[#666666] sm:block">
           {booking.createdAt ? new Date(booking.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
         </div>
-        <span className="hidden shrink-0 rounded-full bg-[#DCFCE7] px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-[#15803D] sm:inline-block">
+        <span className="hidden shrink-0 rounded-full bg-[#F3F3F3] px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-[#15803D] sm:inline-block">
           Delivered
         </span>
         <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
       </button>
 
       {expanded ? (
-        <div className="space-y-2 border-t border-dashed border-[#EAECF0] bg-[#F9FAFB] px-4 py-4 text-sm text-[#344054] sm:px-5">
-          <p>Customer: <span className="font-semibold text-[#101828]">{booking.customerName || 'Not available'}</span> · {booking.customerMobile || 'Not available'}</p>
-          <p>Final Amount: <span className="font-semibold text-[#101828]">{amount != null ? `₹${Number(amount).toLocaleString('en-IN')}` : 'Not available'}</span></p>
+        <div className="space-y-2 border-t border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-4 text-sm text-[#344054] sm:px-5">
+          <p>Customer: <span className="font-semibold text-[#111111]">{booking.customerName || 'Not available'}</span> · {booking.customerMobile || 'Not available'}</p>
+          <p>Final Amount: <span className="font-semibold text-[#111111]">{amount != null ? `₹${Number(amount).toLocaleString('en-IN')}` : 'Not available'}</span></p>
         </div>
       ) : null}
     </div>

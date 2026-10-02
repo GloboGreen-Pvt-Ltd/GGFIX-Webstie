@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { authApi } from '@/lib/api';
 import { isAdmin as isAdminRole } from '@/lib/auth';
 import SafeImage from '@/components/SafeImage';
+import { notifyError } from '@/lib/toast';
 
 function initialsOf(name) {
   if (!name) return '?';
@@ -69,7 +70,7 @@ export default function ShopOwnerListPage() {
       await authApi.patch(`/auth/shop-owners/${row.id}/status`, { active: !row.isActive });
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Update failed');
+      notifyError(e.body?.message || e.message || 'Update failed');
     }
   };
 
@@ -79,7 +80,7 @@ export default function ShopOwnerListPage() {
       setConfirmingDelete(null);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 

@@ -58,10 +58,13 @@ function loadBanners() {
  *                                    (case-insensitive). Falls back to all
  *                                    slides if nothing matches.
  * @param {string[]} [props.exclude]  Titles to keep OUT of the rotation.
- * @param {'aspect'|'tall'} [props.height='aspect']  'aspect' derives height
+ * @param {'aspect'|'tall'|'short'} [props.height='aspect']  'aspect' derives height
  *                                    from the 1920x700 ratio (never crops);
  *                                    'tall' pins a responsive height up to
- *                                    600px and crops the sides instead.
+ *                                    600px and crops the sides instead;
+ *                                    'short' (partner dashboard) is a shorter
+ *                                    banner: full width at the banner's own
+ *                                    2.4:1 shape, so the whole image shows.
  * @param {string} [props.className]
  */
 export default function HeroCarousel({ title, exclude, height = 'aspect', className }) {
@@ -204,7 +207,9 @@ export default function HeroCarousel({ title, exclude, height = 'aspect', classN
             // nothing is ever cropped.
             height === 'tall'
               ? 'h-[220px] sm:h-[360px] lg:h-[480px] xl:h-[600px]'
-              : 'aspect-[1028/366]',
+              : height === 'short'
+                ? 'aspect-[1944/809]'
+                : 'aspect-[1028/366]',
           )}
         >
           {slides.map((slide, i) => {

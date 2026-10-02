@@ -146,7 +146,7 @@ export default function EmployeeReportPage() {
               type="button"
               onClick={() => setReloadKey((k) => k + 1)}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-xl border border-[#EAECF0] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
+                'inline-flex items-center gap-1.5 rounded-xl border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
                 FOCUS_RING,
               )}
             >
@@ -158,7 +158,7 @@ export default function EmployeeReportPage() {
               onClick={handleExport}
               disabled={loading || exporting || roster.length === 0}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-60',
+                'inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60',
                 FOCUS_RING,
               )}
             >
@@ -184,7 +184,7 @@ export default function EmployeeReportPage() {
         )}
       </div>
 
-      <p className="flex items-start gap-1.5 rounded-xl bg-[#F0FDF4] px-3.5 py-2.5 text-xs text-[#15803D]">
+      <p className="flex items-start gap-1.5 rounded-xl bg-[#F8F8F8] px-3.5 py-2.5 text-xs text-[#15803D]">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         Attendance and leave aren&apos;t tracked here — see{' '}
         <Link href="/shop-home/employee/attendance" className="font-bold underline">Attendance</Link> and{' '}
@@ -192,28 +192,28 @@ export default function EmployeeReportPage() {
       </p>
 
       <div>
-        <p className="mb-2.5 text-sm font-bold text-[#101828]">Employee Roster</p>
-        <section className="rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+        <p className="mb-2.5 text-sm font-bold text-[#111111]">Employee Roster</p>
+        <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
           {loading ? (
             <SkeletonRows rows={4} />
           ) : roster.length === 0 ? (
             <EmptyState icon={Users} title="No employees yet" description="Technicians and pickup staff added to your shop will show up here." />
           ) : (
-            <div className="divide-y divide-[#EAECF0]">
+            <div className="divide-y divide-[#ECECEC]">
               {roster.map((r) => (
                 <div key={r.id} className="flex items-center gap-3 px-4 py-3.5 sm:px-5">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] text-sm font-bold text-[#15803D]">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-sm font-bold text-[#15803D]">
                     {initials(r.name)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-[#101828]">{r.name}</p>
-                    <p className="truncate text-xs text-[#667085]">{r.roleLabel}</p>
+                    <p className="truncate text-sm font-bold text-[#111111]">{r.name}</p>
+                    <p className="truncate text-xs text-[#666666]">{r.roleLabel}</p>
                   </div>
-                  <span className={cx('shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide', r.active ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-[#F0F4F2] text-[#667085]')}>
+                  <span className={cx('shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide', r.active ? 'bg-[#F3F3F3] text-[#15803D]' : 'bg-[#F3F3F3] text-[#666666]')}>
                     {r.active ? 'Active' : 'Inactive'}
                   </span>
-                  <span className="shrink-0 text-xs text-[#667085]">
-                    Completed: <span className="font-bold text-[#101828]">{r.completedThisMonth}</span>
+                  <span className="shrink-0 text-xs text-[#666666]">
+                    Completed: <span className="font-bold text-[#111111]">{r.completedThisMonth}</span>
                   </span>
                 </div>
               ))}

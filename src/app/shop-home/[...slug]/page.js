@@ -1,11 +1,25 @@
+import fs from 'fs';
+import path from 'path';
 import { notFound } from 'next/navigation';
 
 import ComingSoon from '@/components/shop-dashboard/ComingSoon';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
 import { ALL_STUB_SLUGS, findNavItemBySlug } from '@/lib/partnerNav';
 
-/** Required under output:'export' — every stub destination is pre-rendered. */
+/**
+ * Required under output:'export' — every stub destination is pre-rendered.
+ *
+ * Slugs that already have a real page are skipped. `next dev` resolves routes
+ * per request, so the real page wins there; the static export instead writes
+ * one out/<path>/index.html per param, and the catch-all's copy was
+ * overwriting the real page's (production showed "Coming soon" for every real
+ * /shop-home/* page while localhost looked fine).
+ */
 export function generateStaticParams() {
-  return ALL_STUB_SLUGS.map((slug) => ({ slug: slug.split('/') }));
+  const appDir = path.join(process.cwd(), 'src', 'app', 'shop-home');
+  return ALL_STUB_SLUGS
+    .filter((slug) => !fs.existsSync(path.join(appDir, ...slug.split('/'), 'page.js')))
+    .map((slug) => ({ slug: slug.split('/') }));
 }
 
 /**
@@ -23,5 +37,10 @@ export default function PartnerNavStubPage({ params }) {
   const item = findNavItemBySlug(params.slug);
   if (!item) notFound();
 
-  return <ComingSoon icon={item.icon} title={item.label} description={item.description} />;
+  return (
+    <div className="flex flex-col gap-5">
+      <PageHeader title={item.label} subtitle={item.description} />
+      <ComingSoon icon={item.icon} title={item.label} description="This page is being built." />
+    </div>
+  );
 }

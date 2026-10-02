@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
 import SafeImage from '@/components/SafeImage';
-import { emailFormat, required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 function detectTimezone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'; }
@@ -112,9 +111,6 @@ export default function NewShopOwnerPage() {
   const [owner, setOwner] = useState({ ...EMPTY_OWNER });
   const [locations, setLocations] = useState([{ ...EMPTY_LOC }]);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
   const [uploading, setUploading] = useState({});
   const [autoCoords, setAutoCoords] = useState(null); // { latitude, longitude } from browser
   const [locatingIdx, setLocatingIdx] = useState(null); // index currently fetching geolocation
@@ -204,7 +200,6 @@ export default function NewShopOwnerPage() {
         setLocationField(i, 'latitude', String(result.latitude));
         setLocationField(i, 'longitude', String(result.longitude));
         setAutoCoords({ latitude: result.latitude, longitude: result.longitude });
-        setError('');
       } else {
         const msg = {
           denied:      'Location permission was blocked. In Chrome: click the lock/info icon left of the URL → Site settings → set Location to Allow → reload. Or paste coords manually using the 🗺 Find on Google Maps link.',
@@ -213,7 +208,7 @@ export default function NewShopOwnerPage() {
           unsupported: 'This browser does not support geolocation. Paste coords manually.',
           unknown:     'Could not get your current location. Use the 🗺 Find on Google Maps link to look up coords manually.',
         }[result.reason] || 'Could not get your current location.';
-        setError(msg);
+        notifyError(msg);
       }
     } finally {
       setLocatingIdx(null);
@@ -228,16 +223,9 @@ export default function NewShopOwnerPage() {
     return `https://www.google.com/maps/search/?api=1&query=${q}`;
   };
 
-  const setOwnerField = (k, v) => {
-    setOwner((o) => ({ ...o, [k]: v }));
-    const key = `owner.${k}`;
-    if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
-  };
-  const setLocationField = (i, k, v) => {
+  const setOwnerField = (k, v) => setOwner((o) => ({ ...o, [k]: v }));
+  const setLocationField = (i, k, v) =>
     setLocations((arr) => arr.map((loc, idx) => (idx === i ? { ...loc, [k]: v } : loc)));
-    const key = `loc${i}.${k}`;
-    if (fieldErrors[key]) setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
-  };
 
   const handleOwnerUpload = async (field, file, folder, opts) => {
     if (!file) return;
@@ -245,7 +233,7 @@ export default function NewShopOwnerPage() {
     try {
       const url = await uploadFile(file, folder, opts);
       if (url) setOwnerField(field, url);
-    } catch (e) { setError(e.message || 'Upload failed'); }
+    } catch (e) { notifyError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [`owner-${field}`]: false })); }
   };
   const handleLocationUpload = async (i, field, file, folder, opts) => {
@@ -255,7 +243,7 @@ export default function NewShopOwnerPage() {
     try {
       const url = await uploadFile(file, folder, opts);
       if (url) setLocationField(i, field, url);
-    } catch (e) { setError(e.message || 'Upload failed'); }
+    } catch (e) { notifyError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [key]: false })); }
   };
 
@@ -264,51 +252,14 @@ export default function NewShopOwnerPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-
-    const ownerResult = validateForm(
-      {
-        'owner.name': required('Owner name is required.'),
-        'owner.email': [required('Owner email is required.'), emailFormat('Enter a valid email address.')],
-        'owner.password': required('Password is required.'),
-      },
-      { 'owner.name': owner.name, 'owner.email': owner.email, 'owner.password': owner.password },
-    );
-
-    const locationResults = locations.map((loc, i) => {
-      const schema = {
-        [`loc${i}.name`]: required('Shop/location name is required.'),
-        [`loc${i}.mobile`]: required('Mobile number is required.'),
-        [`loc${i}.pincode`]: required('Pincode is required.'),
-        [`loc${i}.state`]: required('State is required.'),
-        [`loc${i}.district`]: required('District is required.'),
-        [`loc${i}.taluk`]: required('Taluk is required.'),
-        [`loc${i}.area`]: required('Area is required.'),
-        [`loc${i}.street`]: required('Street is required.'),
-      };
-      const values = {
-        [`loc${i}.name`]: loc.name,
-        [`loc${i}.mobile`]: loc.mobile,
-        [`loc${i}.pincode`]: loc.pincode,
-        [`loc${i}.state`]: loc.state,
-        [`loc${i}.district`]: loc.district,
-        [`loc${i}.taluk`]: loc.taluk,
-        [`loc${i}.area`]: loc.area,
-        [`loc${i}.street`]: loc.street,
-      };
-      return validateForm(schema, values);
-    });
-
-    const isValid = ownerResult.isValid && locationResults.every((r) => r.isValid);
-    if (!isValid) {
-      const errors = { ...ownerResult.errors };
-      locationResults.forEach((r) => Object.assign(errors, r.errors));
-      setFieldErrors(errors);
-      const firstLocationField = locationResults.find((r) => r.firstErrorField)?.firstErrorField;
-      focusField(fieldRefs, ownerResult.firstErrorField || firstLocationField);
+    if (!owner.name.trim() || !owner.email.trim() || !owner.password.trim()) {
+      notifyError('Owner name, email and password are required');
       return;
     }
-    setFieldErrors({});
+    if (!locations.length || !locations[0].name.trim()) {
+      notifyError('At least one shop location with a name is required');
+      return;
+    }
     setSubmitting(true);
     try {
       const payload = {
@@ -356,7 +307,7 @@ export default function NewShopOwnerPage() {
       await authApi.post('/auth/shop-owner', payload);
       router.push('/management/shops');
     } catch (e) {
-      setError(e.body?.message || e.message || 'Create failed');
+      notifyError(e.body?.message || e.message || 'Create failed');
     } finally {
       setSubmitting(false);
     }
@@ -380,26 +331,11 @@ export default function NewShopOwnerPage() {
           <div className="lg:col-span-2 rounded-xl bg-admin-card border border-admin-border p-5">
             <SectionHeader icon="👤" title="Basic Information" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              <Field label="FULL NAME *" fieldRef={registerField(fieldRefs, 'owner.name')} error={fieldErrors['owner.name']}>
-                <input
-                  value={owner.name}
-                  onChange={(e) => setOwnerField('name', e.target.value)}
-                  className="input"
-                  placeholder="Full Name"
-                  required
-                  aria-invalid={Boolean(fieldErrors['owner.name'])}
-                />
+              <Field label="FULL NAME *">
+                <input value={owner.name} onChange={(e) => setOwnerField('name', e.target.value)} className="input" placeholder="Full Name" required />
               </Field>
-              <Field label="EMAIL ADDRESS *" fieldRef={registerField(fieldRefs, 'owner.email')} error={fieldErrors['owner.email']}>
-                <input
-                  type="email"
-                  value={owner.email}
-                  onChange={(e) => setOwnerField('email', e.target.value)}
-                  className="input"
-                  placeholder="Email Address"
-                  required
-                  aria-invalid={Boolean(fieldErrors['owner.email'])}
-                />
+              <Field label="EMAIL ADDRESS *">
+                <input type="email" value={owner.email} onChange={(e) => setOwnerField('email', e.target.value)} className="input" placeholder="Email Address" required />
               </Field>
               <Field label="PRIMARY MOBILE *">
                 <input value={owner.phone} onChange={(e) => setOwnerField('phone', e.target.value)} className="input" placeholder="Primary Mobile" />
@@ -407,16 +343,8 @@ export default function NewShopOwnerPage() {
               <Field label="SECONDARY MOBILE">
                 <input value={owner.secondaryMobile} onChange={(e) => setOwnerField('secondaryMobile', e.target.value)} className="input" placeholder="Secondary Mobile" />
               </Field>
-              <Field label="PASSWORD *" fieldRef={registerField(fieldRefs, 'owner.password')} error={fieldErrors['owner.password']}>
-                <input
-                  type="password"
-                  value={owner.password}
-                  onChange={(e) => setOwnerField('password', e.target.value)}
-                  className="input"
-                  placeholder="Min 6 chars"
-                  required
-                  aria-invalid={Boolean(fieldErrors['owner.password'])}
-                />
+              <Field label="PASSWORD *">
+                <input type="password" value={owner.password} onChange={(e) => setOwnerField('password', e.target.value)} className="input" placeholder="Min 6 chars" required />
               </Field>
               <Field label="OTP CODE (optional)" hint="Defaults to 123456">
                 <input value={owner.otpCode} onChange={(e) => setOwnerField('otpCode', e.target.value.replace(/[^0-9]/g, '').slice(0, 6))} className="input" placeholder="6-digit" />
@@ -516,7 +444,7 @@ export default function NewShopOwnerPage() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <Field label="SHOP / LOCATION NAME *" fieldRef={registerField(fieldRefs, `loc${i}.name`)} error={fieldErrors[`loc${i}.name`]}>
+                  <Field label="SHOP / LOCATION NAME *">
                     <div className="relative">
                       <input
                         value={loc.name}
@@ -525,7 +453,6 @@ export default function NewShopOwnerPage() {
                         placeholder="Type shop name or address (e.g. Globo Green Cuddalore)"
                         autoComplete="off"
                         required
-                        aria-invalid={Boolean(fieldErrors[`loc${i}.name`])}
                       />
                       {searching[i] ? (
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-admin-muted text-[10px]">⏳</span>
@@ -589,80 +516,31 @@ export default function NewShopOwnerPage() {
                       Type 3+ characters to search OpenStreetMap. Picking a result auto-fills street/area/district/state/pincode + lat/lng.
                     </p>
                   </Field>
-                  <Field label="MOBILE *" fieldRef={registerField(fieldRefs, `loc${i}.mobile`)} error={fieldErrors[`loc${i}.mobile`]}>
-                    <input
-                      value={loc.mobile}
-                      onChange={(e) => setLocationField(i, 'mobile', e.target.value)}
-                      className="input"
-                      placeholder="Mobile"
-                      required
-                      aria-invalid={Boolean(fieldErrors[`loc${i}.mobile`])}
-                    />
+                  <Field label="MOBILE *">
+                    <input value={loc.mobile} onChange={(e) => setLocationField(i, 'mobile', e.target.value)} className="input" placeholder="Mobile" required />
                   </Field>
                   <Field label="GST NUMBER">
                     <input value={loc.gstNumber} onChange={(e) => setLocationField(i, 'gstNumber', e.target.value.toUpperCase())} className="input" placeholder="GST Number" />
                   </Field>
-                  <Field label="PINCODE *" fieldRef={registerField(fieldRefs, `loc${i}.pincode`)} error={fieldErrors[`loc${i}.pincode`]}>
-                    <input
-                      value={loc.pincode}
-                      onChange={(e) => setLocationField(i, 'pincode', e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
-                      className="input"
-                      placeholder="Pincode"
-                      required
-                      aria-invalid={Boolean(fieldErrors[`loc${i}.pincode`])}
-                    />
+                  <Field label="PINCODE *">
+                    <input value={loc.pincode} onChange={(e) => setLocationField(i, 'pincode', e.target.value.replace(/[^0-9]/g, '').slice(0, 6))} className="input" placeholder="Pincode" required />
                   </Field>
 
-                  <Field label="STATE *" fieldRef={registerField(fieldRefs, `loc${i}.state`)} error={fieldErrors[`loc${i}.state`]}>
-                    <input
-                      value={loc.state}
-                      onChange={(e) => setLocationField(i, 'state', e.target.value)}
-                      className="input"
-                      placeholder="State"
-                      required
-                      aria-invalid={Boolean(fieldErrors[`loc${i}.state`])}
-                    />
+                  <Field label="STATE *">
+                    <input value={loc.state} onChange={(e) => setLocationField(i, 'state', e.target.value)} className="input" placeholder="State" required />
                   </Field>
-                  <Field label="DISTRICT *" fieldRef={registerField(fieldRefs, `loc${i}.district`)} error={fieldErrors[`loc${i}.district`]}>
-                    <input
-                      value={loc.district}
-                      onChange={(e) => setLocationField(i, 'district', e.target.value)}
-                      className="input"
-                      placeholder="District"
-                      required
-                      aria-invalid={Boolean(fieldErrors[`loc${i}.district`])}
-                    />
+                  <Field label="DISTRICT *">
+                    <input value={loc.district} onChange={(e) => setLocationField(i, 'district', e.target.value)} className="input" placeholder="District" required />
                   </Field>
-                  <Field label="TALUK *" fieldRef={registerField(fieldRefs, `loc${i}.taluk`)} error={fieldErrors[`loc${i}.taluk`]}>
-                    <input
-                      value={loc.taluk}
-                      onChange={(e) => setLocationField(i, 'taluk', e.target.value)}
-                      className="input"
-                      placeholder="Taluk"
-                      required
-                      aria-invalid={Boolean(fieldErrors[`loc${i}.taluk`])}
-                    />
+                  <Field label="TALUK *">
+                    <input value={loc.taluk} onChange={(e) => setLocationField(i, 'taluk', e.target.value)} className="input" placeholder="Taluk" required />
                   </Field>
-                  <Field label="AREA *" fieldRef={registerField(fieldRefs, `loc${i}.area`)} error={fieldErrors[`loc${i}.area`]}>
-                    <input
-                      value={loc.area}
-                      onChange={(e) => setLocationField(i, 'area', e.target.value)}
-                      className="input"
-                      placeholder="Area"
-                      required
-                      aria-invalid={Boolean(fieldErrors[`loc${i}.area`])}
-                    />
+                  <Field label="AREA *">
+                    <input value={loc.area} onChange={(e) => setLocationField(i, 'area', e.target.value)} className="input" placeholder="Area" required />
                   </Field>
 
-                  <Field label="STREET *" fieldRef={registerField(fieldRefs, `loc${i}.street`)} error={fieldErrors[`loc${i}.street`]}>
-                    <input
-                      value={loc.street}
-                      onChange={(e) => setLocationField(i, 'street', e.target.value)}
-                      className="input"
-                      placeholder="Street"
-                      required
-                      aria-invalid={Boolean(fieldErrors[`loc${i}.street`])}
-                    />
+                  <Field label="STREET *">
+                    <input value={loc.street} onChange={(e) => setLocationField(i, 'street', e.target.value)} className="input" placeholder="Street" required />
                   </Field>
                   <Field label="ADDRESS LINE">
                     <input value={loc.address} onChange={(e) => setLocationField(i, 'address', e.target.value)} className="input" placeholder="Building / landmark" />
@@ -805,10 +683,6 @@ export default function NewShopOwnerPage() {
           </div>
         </div>
 
-        {error && (
-          <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-2 text-sm text-red-500">{error}</div>
-        )}
-
         <div className="flex items-center justify-end gap-3 sticky bottom-4 bg-admin-card border border-admin-border rounded-xl p-3">
           <Link href="/management/shops" className="rounded-lg border border-admin-border px-4 py-2 text-sm text-slate-800 hover:bg-admin-dark">
             ← Cancel
@@ -845,12 +719,12 @@ function SectionHeader({ icon, title, small, inline }) {
   );
 }
 
-function Field({ label, hint, children, full, fieldRef, error }) {
+function Field({ label, hint, children, full }) {
   return (
-    <div ref={fieldRef} className={full ? 'md:col-span-2 md:col-end-[-1]' : ''}>
+    <div className={full ? 'md:col-span-2 md:col-end-[-1]' : ''}>
       <label className="block text-[10px] uppercase tracking-wider text-admin-muted mb-1 font-medium">{label}</label>
       {children}
-      {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : hint ? <p className="text-[10px] text-admin-muted mt-1">{hint}</p> : null}
+      {hint ? <p className="text-[10px] text-admin-muted mt-1">{hint}</p> : null}
     </div>
   );
 }

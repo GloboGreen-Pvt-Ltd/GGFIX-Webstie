@@ -1,135 +1,112 @@
 'use client';
 
 /**
- * Sidebar — the GGFIX Partner Dashboard left navigation.
+ * Sidebar — the GGFIX Partner Dashboard left navigation (DashboardShell).
  *
- * Two renders share this one component rather than duplicating markup:
- *   - desktop: fixed, `collapsed` toggles icon-only mode
- *   - mobile: a slide-in drawer over a backdrop, controlled by `mobileOpen`
- * Both read the same PARTNER_NAV data and the same active-route logic, so
- * there is exactly one source of truth for "what's in the sidebar" and
- * "what's active right now".
+ * Menu, top to bottom: Dashboard · Services ▾ · Employee ▾ · Customers ·
+ * Enquiries · Buy · Reports ▾ · Settings ▾, then Help & Support.
+ * Everything comes from lib/partnerNav.js (same routes as before); Customers,
+ * Enquiries and Marketplace are direct shortcuts to their existing Services
+ * pages. Nav badges (pickups / bookings / enquiries) are the shell's.
+ *
+ * Three renders of the same content:
+ *   lg+     full 240px sidebar, sticky, full height
+ *   md–lg   76px icon rail (section icons open the full list in a flyout)
+ *   < md    slide-in drawer, opened from the top bar's menu button
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronDown, X } from 'lucide-react';
+import { ChevronDown, CircleHelp, X } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
 import { BRAND } from '@/lib/siteContent';
-import { DASHBOARD_ITEM, PARTNER_NAV, resolveNavContext } from '@/lib/partnerNav';
+import { DASHBOARD_ITEM, PARTNER_NAV, PARTNER_NAV_FLAT, resolveNavContext } from '@/lib/partnerNav';
+import { isOwnerSession } from '@/lib/shopAccess';
 
-const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2';
+const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#09AD2A] focus-visible:ring-offset-2';
 
-function SidebarBrand({ collapsed, shopOwner }) {
+const itemByKey = (key) => PARTNER_NAV_FLAT.find((i) => i.key === key);
+const sectionByKey = (key) => PARTNER_NAV.find((s) => s.key === key);
+
+// Sidebar order: direct links and collapsible sections.
+const MENU = [
+  { type: 'dashboard' },
+  { type: 'section', key: 'services' },
+  { type: 'section', key: 'employee' },
+  { type: 'link', key: 'customers' },
+  { type: 'link', key: 'enquiries' },
+  { type: 'link', key: 'marketplace' },
+  { type: 'section', key: 'reports' },
+  { type: 'section', key: 'settings' },
+];
+
+const ROW = 'relative flex w-full items-center gap-3 rounded-[11px] px-3 py-2.5 text-[14px] font-semibold transition';
+const ROW_ACTIVE = 'bg-[#F3F3F3] text-[#09AD2A]';
+const ROW_IDLE = 'text-[#111111] hover:bg-[#F3F3F3]';
+
+function Badge({ count }) {
+  if (!count) return null;
   return (
-    <div className={cx('flex items-center gap-2.5 px-4 py-4', collapsed && 'justify-center px-2')}>
-      <Image src={BRAND.logo} alt="" width={34} height={34} className="h-[34px] w-[34px] shrink-0 rounded-xl object-contain" />
-      {!collapsed ? (
-        <div className="min-w-0">
-          <p className="truncate text-sm font-extrabold leading-tight text-[#101828]">GGFIX Partner</p>
-          <p className="truncate text-xs text-[#667085]">Business Dashboard</p>
-          {shopOwner?.shopName ? (
-            <p className="mt-0.5 truncate text-[0.68rem] font-semibold text-[#15803D]">{shopOwner.shopName}</p>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+    <span className="ml-auto inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded-full bg-[#F84141] px-1.5 text-[0.65rem] font-bold text-white">
+      {count > 99 ? '99+' : count}
+    </span>
   );
 }
 
-function DashboardLink({ collapsed, active, onNavigate }) {
-  const Icon = DASHBOARD_ITEM.icon;
+function Brand({ collapsed, shopOwner }) {
   return (
-    <Link
-      href={DASHBOARD_ITEM.href}
-      onClick={onNavigate}
-      title={collapsed ? DASHBOARD_ITEM.label : undefined}
-      aria-current={active ? 'page' : undefined}
-      className={cx(
-        'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition',
-        collapsed && 'justify-center px-0',
-        FOCUS_RING,
-        active
-          ? cx(
-              'bg-[#DCFCE7] text-[#15803D]',
-              !collapsed && "before:absolute before:-left-2.5 before:top-1/2 before:h-6 before:w-[3px] before:-translate-y-1/2 before:rounded-r-full before:bg-[#15803D] before:content-['']",
-            )
-          : 'text-[#344054] hover:bg-[#F0FDF4]',
-      )}
-    >
-      <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
-      {!collapsed ? <span className="truncate">{DASHBOARD_ITEM.label}</span> : null}
+    <Link href="/shop-home" className={cx('flex items-center gap-2.5 px-4 py-4', collapsed && 'justify-center px-2')}>
+      <Image src={BRAND.logo} alt="" width={36} height={36} className="h-9 w-9 shrink-0 rounded-full object-contain" />
+      {!collapsed ? (
+        <span className="min-w-0 leading-tight">
+          <span className="block truncate text-[15px] font-extrabold text-[#111111]">GGFIX Partner</span>
+          <span className="block truncate text-[12px] text-[#666666]">Business Dashboard</span>
+          {shopOwner?.shopName ? <span className="mt-0.5 block truncate text-[11px] font-semibold text-[#09AD2A]">{shopOwner.shopName}</span> : null}
+        </span>
+      ) : null}
     </Link>
   );
 }
 
-function SidebarSection({ section, collapsed, open, onToggle, activeItemKey, onNavigate }) {
-  const hasActive = section.items.some((item) => item.key === activeItemKey);
-  const SectionIcon = section.icon;
-
-  if (collapsed) {
-    return (
-      <div className="mt-1">
-        <p className="px-0 pb-1 text-center text-[0.6rem] font-bold uppercase tracking-wide text-[#98A2B3]">
-          {section.label[0]}
-        </p>
-        <ul className="space-y-1">
-          {section.items.map((item) => {
-            const Icon = item.icon;
-            const active = item.key === activeItemKey;
-            return (
-              <li key={item.key}>
-                <Link
-                  href={`/shop-home/${item.slug}`}
-                  onClick={onNavigate}
-                  title={item.label}
-                  aria-label={item.label}
-                  aria-current={active ? 'page' : undefined}
-                  className={cx(
-                    'flex items-center justify-center rounded-lg py-2.5 transition',
-                    FOCUS_RING,
-                    active ? 'bg-[#DCFCE7] text-[#15803D]' : 'text-[#344054] hover:bg-[#F0FDF4]',
-                  )}
-                >
-                  <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    );
-  }
-
+function NavLink({ href, label, icon: Icon, active, collapsed, badge, onNavigate }) {
   return (
-    <div className="mt-1">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        className={cx(
-          'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold transition',
-          FOCUS_RING,
-          hasActive && !open ? 'text-[#15803D]' : 'text-[#101828] hover:bg-[#F0FDF4]',
-        )}
-      >
-        <SectionIcon className="h-[18px] w-[18px] shrink-0 text-[#667085]" aria-hidden="true" />
-        <span className="flex-1 truncate uppercase tracking-wide text-xs">{section.label}</span>
+    <Link
+      href={href}
+      onClick={onNavigate}
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
+      aria-current={active ? 'page' : undefined}
+      className={cx(ROW, collapsed && 'justify-center px-0', FOCUS_RING, active ? ROW_ACTIVE : ROW_IDLE)}
+    >
+      <Icon className={cx('h-[19px] w-[19px] shrink-0', active ? 'text-[#09AD2A]' : 'text-[#666666]')} aria-hidden="true" />
+      {!collapsed ? <span className="truncate">{label}</span> : null}
+      {!collapsed ? <Badge count={badge} /> : badge ? <span className="absolute right-3 top-2 h-2 w-2 rounded-full bg-[#F84141]" aria-hidden="true" /> : null}
+    </Link>
+  );
+}
+
+function Section({ section, open, onToggle, activeKey, directKeys = [], badges, onNavigate }) {
+  const Icon = section.icon;
+  // A page that has its own top-level shortcut (Customers, Enquiries, Buy) lights up that row, not this section.
+  const hasActive = !directKeys.includes(activeKey) && section.items.some((i) => i.key === activeKey);
+  const sectionBadge = section.items.reduce((n, i) => n + (badges?.[i.key] || 0), 0);
+  return (
+    <div>
+      <button type="button" onClick={onToggle} aria-expanded={open} className={cx(ROW, FOCUS_RING, hasActive && !open ? ROW_ACTIVE : ROW_IDLE)}>
+        <Icon className={cx('h-[19px] w-[19px] shrink-0', hasActive ? 'text-[#09AD2A]' : 'text-[#666666]')} aria-hidden="true" />
+        <span className="flex-1 truncate text-left">{section.label}</span>
+        {!open ? <Badge count={sectionBadge} /> : null}
         <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform', open && 'rotate-180')} aria-hidden="true" />
       </button>
-
-      {/* Grid-rows accordion trick: animates height without measuring the
-          content, and never clips focus outlines the way max-height + hidden
-          overflow can. */}
       <div className={cx('grid transition-[grid-template-rows] duration-200 ease-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
         <div className="overflow-hidden">
-          <ul className="ml-[1.55rem] mt-0.5 space-y-0.5 border-l border-[#EAECF0] py-1 pl-3">
+          <ul className="ml-[1.35rem] mt-0.5 space-y-0.5 border-l border-[#ECECEC] py-1 pl-3">
             {section.items.map((item) => {
-              const Icon = item.icon;
-              const active = item.key === activeItemKey;
+              const ItemIcon = item.icon;
+              const active = item.key === activeKey;
               return (
                 <li key={item.key}>
                   <Link
@@ -137,15 +114,14 @@ function SidebarSection({ section, collapsed, open, onToggle, activeItemKey, onN
                     onClick={onNavigate}
                     aria-current={active ? 'page' : undefined}
                     className={cx(
-                      'relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition',
+                      'flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-medium transition',
                       FOCUS_RING,
-                      active
-                        ? "bg-[#DCFCE7] text-[#15803D] font-semibold before:absolute before:-left-3 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r-full before:bg-[#15803D] before:content-['']"
-                        : 'text-[#475467] hover:bg-[#F0FDF4] hover:text-[#101828]',
+                      active ? 'bg-[#F3F3F3] font-semibold text-[#09AD2A]' : 'text-[#475467] hover:bg-[#F3F3F3] hover:text-[#111111]',
                     )}
                   >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <ItemIcon className={cx('h-4 w-4 shrink-0', active ? 'text-[#09AD2A]' : 'text-[#98A2B3]')} aria-hidden="true" />
                     <span className="truncate">{item.label}</span>
+                    <Badge count={badges?.[item.key]} />
                   </Link>
                 </li>
               );
@@ -157,112 +133,190 @@ function SidebarSection({ section, collapsed, open, onToggle, activeItemKey, onN
   );
 }
 
-export default function Sidebar({ collapsed, mobileOpen, onCloseMobile, shopOwner }) {
-  const pathname = usePathname();
-  const { sectionKey: activeSectionKey } = resolveNavContext(pathname);
-  const activeItem = PARTNER_NAV.flatMap((s) => s.items).find((item) => `/shop-home/${item.slug}` === (pathname || '').replace(/\/+$/, ''));
+/** Icon-rail section: the section icon opens its items in a flyout to the right. */
+function RailSection({ section, activeKey, directKeys = [], badges }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const Icon = section.icon;
+  // A page that has its own top-level shortcut (Customers, Enquiries, Buy) lights up that row, not this section.
+  const hasActive = !directKeys.includes(activeKey) && section.items.some((i) => i.key === activeKey);
+  const hasBadge = section.items.some((i) => badges?.[i.key]);
 
-  const [openSection, setOpenSection] = useState(activeSectionKey);
-
-  /* Keep the section containing the active route expanded when navigation
-   * happens via a direct URL, refresh, or back/forward — not just clicks. */
   useEffect(() => {
-    if (activeSectionKey) setOpenSection(activeSectionKey);
-  }, [activeSectionKey]);
+    if (!open) return undefined;
+    const onDown = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    const onKey = (e) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
 
-  /* Escape closes the mobile drawer; body scroll is locked while it's open
-   * so the page behind it can't scroll away underneath it. */
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={section.label}
+        aria-label={section.label}
+        aria-expanded={open}
+        className={cx(ROW, 'justify-center px-0', FOCUS_RING, hasActive || open ? ROW_ACTIVE : ROW_IDLE)}
+      >
+        <Icon className={cx('h-[19px] w-[19px]', hasActive || open ? 'text-[#09AD2A]' : 'text-[#666666]')} aria-hidden="true" />
+        {hasBadge ? <span className="absolute right-3 top-2 h-2 w-2 rounded-full bg-[#F84141]" aria-hidden="true" /> : null}
+      </button>
+      {open ? (
+        <div className="absolute left-[calc(100%+10px)] top-0 z-50 w-60 rounded-[14px] border border-[#ECECEC] bg-[#F8F8F8] p-2 shadow-[0_12px_32px_rgba(16,24,40,0.12)]">
+          <p className="px-2.5 pb-1.5 pt-1 text-[11px] font-bold uppercase tracking-wider text-[#98A2B3]">{section.label}</p>
+          {section.items.map((item) => {
+            const ItemIcon = item.icon;
+            const active = item.key === activeKey;
+            return (
+              <Link
+                key={item.key}
+                href={`/shop-home/${item.slug}`}
+                onClick={() => setOpen(false)}
+                aria-current={active ? 'page' : undefined}
+                className={cx(
+                  'flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13.5px] font-medium transition',
+                  active ? 'bg-[#F3F3F3] font-semibold text-[#09AD2A]' : 'text-[#475467] hover:bg-[#F3F3F3] hover:text-[#111111]',
+                )}
+              >
+                <ItemIcon className={cx('h-4 w-4 shrink-0', active ? 'text-[#09AD2A]' : 'text-[#98A2B3]')} aria-hidden="true" />
+                <span className="truncate">{item.label}</span>
+                <Badge count={badges?.[item.key]} />
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function Sidebar({ mobileOpen, onCloseMobile, shopOwner, badges }) {
+  const pathname = usePathname();
+  const clean = (pathname || '').replace(/\/+$/, '') || '/shop-home';
+  const { sectionKey } = resolveNavContext(pathname);
+  const activeKey = PARTNER_NAV_FLAT.find((i) => i.href === clean)?.key;
+
+  // Open the section holding the current page; a direct shortcut (Customers/Enquiries/Marketplace) keeps its section closed.
+  const directKeys = MENU.filter((m) => m.type === 'link').map((m) => m.key);
+  const activeSection = directKeys.includes(activeKey) ? null : sectionKey;
+  const [openSection, setOpenSection] = useState(activeSection);
+  useEffect(() => {
+    if (activeSection) setOpenSection(activeSection);
+  }, [activeSection]);
+
   useEffect(() => {
     if (!mobileOpen) return undefined;
-    function onKeyDown(event) {
-      if (event.key === 'Escape') onCloseMobile();
-    }
-    document.addEventListener('keydown', onKeyDown);
-    const previousOverflow = document.body.style.overflow;
+    const onKey = (e) => e.key === 'Escape' && onCloseMobile();
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
     };
   }, [mobileOpen, onCloseMobile]);
 
-  const toggleSection = (key) => setOpenSection((current) => (current === key ? null : key));
+  const toggle = (key) => setOpenSection((cur) => (cur === key ? null : key));
 
-  const content = (isCollapsed, onNavigate) => (
-    <nav aria-label="Partner dashboard" className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-[#EAECF0]">
-        <SidebarBrand collapsed={isCollapsed} shopOwner={shopOwner} />
+  function menu({ collapsed, onNavigate }) {
+    return MENU.map((m) => {
+      if (m.type === 'dashboard') {
+        return <NavLink key="dashboard" href={DASHBOARD_ITEM.href} label={DASHBOARD_ITEM.label} icon={DASHBOARD_ITEM.icon} active={clean === '/shop-home'} collapsed={collapsed} onNavigate={onNavigate} />;
+      }
+      if (m.type === 'link') {
+        const item = itemByKey(m.key);
+        if (!item) return null;
+        return <NavLink key={item.key} href={item.href} label={item.label} icon={item.icon} active={activeKey === item.key} collapsed={collapsed} badge={badges?.[item.key]} onNavigate={onNavigate} />;
+      }
+      const fullSection = sectionByKey(m.key);
+      if (!fullSection) return null;
+      // Owner-only items (e.g. Subscription & Plan) are never rendered for a shop login.
+      const owner = isOwnerSession(shopOwner);
+      // inSection:false items (Customers, Enquiries, Buy) live only as their own top-level links.
+      const section = { ...fullSection, items: fullSection.items.filter((i) => (owner || !i.ownerOnly) && i.inSection !== false) };
+      return collapsed ? (
+        <RailSection key={section.key} section={section} activeKey={activeKey} directKeys={directKeys} badges={badges} />
+      ) : (
+        <Section key={section.key} section={section} open={openSection === section.key} onToggle={() => toggle(section.key)} activeKey={activeKey} directKeys={directKeys} badges={badges} onNavigate={onNavigate} />
+      );
+    });
+  }
+
+  function footer({ collapsed, onNavigate }) {
+    return (
+      <div className="shrink-0 border-t border-[#ECECEC] p-2.5">
+        <a
+          href="/faq"
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={onNavigate}
+          title={collapsed ? 'Help & Support' : undefined}
+          aria-label={collapsed ? 'Help & Support (opens in a new tab)' : undefined}
+          className={cx(ROW, collapsed && 'justify-center px-0', FOCUS_RING, ROW_IDLE)}
+        >
+          <CircleHelp className="h-[19px] w-[19px] shrink-0 text-[#666666]" aria-hidden="true" />
+          {!collapsed ? <span className="truncate">Help &amp; Support</span> : null}
+        </a>
       </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-3">
-        <DashboardLink collapsed={isCollapsed} active={pathname === '/shop-home'} onNavigate={onNavigate} />
-
-        {PARTNER_NAV.map((section) => (
-          <SidebarSection
-            key={section.key}
-            section={section}
-            collapsed={isCollapsed}
-            open={!isCollapsed && openSection === section.key}
-            onToggle={() => toggleSection(section.key)}
-            activeItemKey={activeItem?.key}
-            onNavigate={onNavigate}
-          />
-        ))}
-      </div>
-    </nav>
-  );
+    );
+  }
 
   return (
     <>
-      {/* Desktop — fixed, collapsible */}
-      <aside
-        className={cx(
-          'sticky top-0 hidden h-screen shrink-0 border-r border-[#EAECF0] bg-white transition-[width] duration-200 lg:block',
-          collapsed ? 'w-[76px]' : 'w-[260px]',
-        )}
-      >
-        {content(collapsed, undefined)}
+      {/* lg+: full sidebar */}
+      <aside className="sticky top-0 hidden h-screen w-[240px] shrink-0 flex-col border-r border-[#ECECEC] bg-white lg:flex">
+        <div className="shrink-0 border-b border-[#ECECEC]">
+          <Brand shopOwner={shopOwner} />
+        </div>
+        <nav aria-label="Partner dashboard" className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain px-2.5 py-3">
+          {menu({ collapsed: false })}
+        </nav>
+        {footer({ collapsed: false })}
       </aside>
 
-      {/* Mobile — slide-in drawer over a backdrop */}
-      <div className={cx('fixed inset-0 z-50 lg:hidden', !mobileOpen && 'pointer-events-none')} aria-hidden={!mobileOpen}>
-        <div
-          onClick={onCloseMobile}
-          className={cx('absolute inset-0 bg-[#101828]/50 transition-opacity duration-200', mobileOpen ? 'opacity-100' : 'opacity-0')}
-        />
+      {/* md–lg: icon rail */}
+      <aside className="sticky top-0 z-40 hidden h-screen w-[76px] shrink-0 flex-col border-r border-[#ECECEC] bg-white md:flex lg:hidden">
+        <div className="shrink-0 border-b border-[#ECECEC]">
+          <Brand collapsed />
+        </div>
+        <nav aria-label="Partner dashboard" className="min-h-0 flex-1 space-y-1 px-2.5 py-3">
+          {menu({ collapsed: true })}
+        </nav>
+        {footer({ collapsed: true })}
+      </aside>
+
+      {/* < md: drawer */}
+      <div className={cx('fixed inset-0 z-50 md:hidden', !mobileOpen && 'pointer-events-none')} aria-hidden={!mobileOpen}>
+        <div onClick={onCloseMobile} className={cx('absolute inset-0 bg-[#1E1E1E]/50 transition-opacity duration-200', mobileOpen ? 'opacity-100' : 'opacity-0')} />
         <div
           className={cx(
-            'absolute inset-y-0 left-0 flex w-[82%] max-w-[300px] flex-col bg-white shadow-lift transition-transform duration-200',
+            'absolute inset-y-0 left-0 flex w-[82%] max-w-[300px] flex-col bg-white shadow-[0_24px_60px_rgba(16,24,40,0.25)] transition-transform duration-200',
             mobileOpen ? 'translate-x-0' : '-translate-x-full',
           )}
         >
-          <div className="flex shrink-0 items-center justify-between border-b border-[#EAECF0] px-2">
+          <div className="flex shrink-0 items-center justify-between border-b border-[#ECECEC] pr-2">
             <div className="min-w-0 flex-1">
-              <SidebarBrand collapsed={false} shopOwner={shopOwner} />
+              <Brand shopOwner={shopOwner} />
             </div>
             <button
               type="button"
               onClick={onCloseMobile}
               aria-label="Close menu"
-              className={cx('mr-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#667085] hover:bg-[#F0FDF4]', FOCUS_RING)}
+              className={cx('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#666666] hover:bg-[#F3F3F3]', FOCUS_RING)}
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2.5 py-3">
-            <DashboardLink collapsed={false} active={pathname === '/shop-home'} onNavigate={onCloseMobile} />
-            {PARTNER_NAV.map((section) => (
-              <SidebarSection
-                key={section.key}
-                section={section}
-                collapsed={false}
-                open={openSection === section.key}
-                onToggle={() => toggleSection(section.key)}
-                activeItemKey={activeItem?.key}
-                onNavigate={onCloseMobile}
-              />
-            ))}
-          </div>
+          <nav aria-label="Partner dashboard" className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain px-2.5 py-3">
+            {menu({ collapsed: false, onNavigate: onCloseMobile })}
+          </nav>
+          {footer({ collapsed: false, onNavigate: onCloseMobile })}
         </div>
       </div>
     </>

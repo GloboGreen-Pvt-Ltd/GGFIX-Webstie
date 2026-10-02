@@ -1,12 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import SellFlowBulkActions from '@/components/SellFlowBulkActions';
 import SellFlowImportModal from '@/components/SellFlowImportModal';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 // Issue names are short labels — split typed/pasted input on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -25,8 +24,6 @@ export default function MasterFunctionalIssuesPage() {
   const [chips, setChips] = useState([]);          // [{ id?, name }]
   const [removedIds, setRemovedIds] = useState([]);
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -103,16 +100,7 @@ export default function MasterFunctionalIssuesPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { errors, firstErrorField, isValid } = validateForm(
-      { deviceCategoryId: required('Select a device category.') },
-      { deviceCategoryId },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!deviceCategoryId) { notifyError('Select a device category.'); return; }
     const all = [...chips];
     for (const p of splitNames(input)) {
       if (!all.some((c) => c.name.toLowerCase() === p.toLowerCase())) all.push({ name: p });
@@ -133,7 +121,7 @@ export default function MasterFunctionalIssuesPage() {
       closeModal();
       reload();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -147,7 +135,7 @@ export default function MasterFunctionalIssuesPage() {
       }
       reload();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -220,23 +208,18 @@ export default function MasterFunctionalIssuesPage() {
               {modal.type === 'create' ? 'Add functional issues' : `Edit issues — ${catName(deviceCategoryId)}`}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div ref={registerField(fieldRefs, 'deviceCategoryId')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Device category</label>
                 <select
                   value={deviceCategoryId}
-                  onChange={(e) => {
-                    setDeviceCategoryId(e.target.value);
-                    if (fieldErrors.deviceCategoryId) setFieldErrors((prev) => ({ ...prev, deviceCategoryId: undefined }));
-                  }}
+                  onChange={(e) => setDeviceCategoryId(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900 disabled:opacity-60"
                   disabled={modal.type === 'edit'}
                   required
-                  aria-invalid={Boolean(fieldErrors.deviceCategoryId)}
                 >
                   <option value="">Select category</option>
                   {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
                 </select>
-                {fieldErrors.deviceCategoryId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.deviceCategoryId}</p> : null}
               </div>
               <div>
                 <label className="block text-sm text-admin-muted mb-1">Functionality issues</label>

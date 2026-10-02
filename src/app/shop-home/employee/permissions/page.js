@@ -23,12 +23,13 @@
  */
 
 import { useEffect, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, FileText, Hand, Info, Leaf, User, Users } from 'lucide-react';
+import { ChevronRight, Clock, FileText, Hand, Info, Leaf, User, Users } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
+import { MonthPicker, SummaryPill } from '@/components/shop-dashboard/HeaderControls';
 import { fetchTechnicians } from '@/lib/shopDashboard';
 
-const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 // Icon + light-tint styling per metric column — purely visual, same 4
@@ -37,7 +38,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // header comment) — just given a colored icon pill instead of a plain
 // number, matching a reference design.
 const ATTENDANCE_COLS = [
-  { label: 'Present', icon: User, tint: 'bg-[#F1FFF7]', iconColor: 'text-[#0A9A59]' },
+  { label: 'Present', icon: User, tint: 'bg-[#F8F8F8]', iconColor: 'text-[#0A9A59]' },
   { label: 'Late', icon: Clock, tint: 'bg-[#F2F8FF]', iconColor: 'text-[#2196F3]' },
   { label: 'Perm', icon: FileText, tint: 'bg-[#FFF8EC]', iconColor: 'text-[#FF9F1C]' },
   { label: 'Leave', icon: Leaf, tint: 'bg-[#F8F3FF]', iconColor: 'text-[#8B5CF6]' },
@@ -73,84 +74,21 @@ export default function PermissionsPage() {
   const goNextMonth = () => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
 
   return (
-    <div
-      className="relative flex flex-col gap-5 rounded-[24px] p-1"
-      style={{ background: 'linear-gradient(180deg, #F7FBFA 0%, #F4FAF8 55%, #EEF8F4 100%)' }}
-    >
-      <span className="pointer-events-none absolute -right-16 -top-20 z-0 h-64 w-64 rounded-full bg-[#86EFAC]/15 blur-3xl" aria-hidden="true" />
+    <div className="relative flex flex-col gap-5">
 
-      {/* Header — page-local, not the shared PageHeader (used by ~15+ other
-          pages, unaffected). Calendar icon tile + title/subtitle on the
-          left, a compact premium month-selector pill below it, a "Total
-          Permission" summary card on the right, and — behind/between the
-          two — a decorative crop of the real public/permissions.png asset
-          (that file is a full reference mockup of this whole redesigned
-          page; only its small calendar/clock/profile-card/plant cluster is
-          windowed in here as the "top-right decorative illustration" the
-          spec asks for, not the whole mockup). */}
-      <div className="relative z-[1] flex flex-col gap-4">
-        <div className="relative flex flex-wrap items-start justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#22C55E] to-[#0A9A59] text-white shadow-[0_6px_14px_rgba(10,154,89,0.28)]">
-              <CalendarDays className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <h1 className="text-[28px] font-extrabold leading-tight tracking-tight text-[#0F2440] sm:text-[30px]">Permission</h1>
-              <p className="mt-0.5 text-[14px] text-[#6B7C93] sm:text-[15px]">Track short-time employee permission requests.</p>
-            </div>
-          </div>
-
-          <span className="inline-flex shrink-0 items-center gap-2 rounded-[18px] border border-[#E5ECE8] bg-gradient-to-br from-white to-[#F4FBF8] px-4 py-3 shadow-[0_8px_24px_rgba(20,70,55,0.07)]">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#22C55E] to-[#0A9A59] text-white">
-              <Users className="h-4.5 w-4.5" aria-hidden="true" />
-            </span>
-            <span className="text-sm font-bold text-[#0F2440]">
-              Total Permission: <span className="text-[#0A9A59]">0</span>
-            </span>
-          </span>
-        </div>
-
-        {/* Decorative — public/permissions.png, windowed to its small
-            calendar/clock/profile-card/plant cluster only (original asset
-            is 2172x724; that cluster sits roughly at x:1177-1766, y:60-251
-            in that image). Hidden below lg so it never competes with the
-            header text on narrower screens. */}
-        <div
-          className="pointer-events-none absolute right-[250px] top-1/2 z-0 hidden h-[130px] w-[432px] -translate-y-1/2 opacity-90 lg:block"
-          style={{
-            backgroundImage: "url('/permissions.png')",
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '1592px 531px',
-            backgroundPosition: '-863px -44px',
-          }}
-          aria-hidden="true"
+      <PageHeader
+        title="Permission"
+        subtitle="Track short-time employee permission requests."
+        action={<SummaryPill icon={Users} label="Total Permission" value={0} />}
+      >
+        <MonthPicker
+          label={`${MONTHS[viewDate.getMonth()]} ${viewDate.getFullYear()}`}
+          onPrev={goPrevMonth}
+          onNext={goNextMonth}
         />
+      </PageHeader>
 
-        <div className="inline-flex h-[54px] w-fit items-center gap-1 rounded-full border border-[#E5ECE8] bg-white px-1.5 shadow-[0_6px_16px_rgba(20,70,55,0.06)]">
-          <button
-            type="button"
-            onClick={goPrevMonth}
-            aria-label="Previous month"
-            className={cx('flex h-10 w-10 items-center justify-center rounded-full text-[#344054] transition hover:bg-[#F0FDF4]', FOCUS_RING)}
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <span className="flex items-center gap-1.5 px-1 text-sm font-bold text-[#0F2440]">
-            <CalendarDays className="h-4 w-4 text-[#0A9A59]" aria-hidden="true" />
-            {MONTHS[viewDate.getMonth()]} {viewDate.getFullYear()}
-          </span>
-          <button
-            type="button"
-            onClick={goNextMonth}
-            aria-label="Next month"
-            className={cx('flex h-10 w-10 items-center justify-center rounded-full text-[#344054] transition hover:bg-[#F0FDF4]', FOCUS_RING)}
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
-      <div className="relative z-[1] flex items-start gap-2.5 rounded-2xl border border-[#E5ECE8] bg-gradient-to-br from-white to-[#F4FBF8] px-4 py-3.5 sm:px-[18px]">
+      <div className="relative z-[1] flex items-start gap-2.5 rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] px-4 py-3.5 sm:px-[18px]">
         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0A9A59] text-white">
           <Info className="h-3 w-3" aria-hidden="true" />
         </span>
@@ -159,24 +97,24 @@ export default function PermissionsPage() {
         </p>
       </div>
 
-      <div className="relative z-[1] divide-y divide-[#EEF3F0] overflow-hidden rounded-[22px] border border-[#E9EFEC] bg-white shadow-[0_8px_28px_rgba(20,70,55,0.07)]">
+      <div className="relative z-[1] divide-y divide-[#ECECEC] overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] shadow-[0_8px_28px_rgba(17,17,17,0.06)]">
         {loading ? (
           <p className="px-5 py-6 text-center text-sm text-[#98A2B3]">Loading your team…</p>
         ) : error ? (
           <p className="px-5 py-6 text-center text-sm text-red-600">{error}</p>
         ) : technicians.length === 0 ? (
           <div className="flex flex-col items-center px-5 py-14 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F0FDF4]">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#F8F8F8]">
               <Hand className="h-6 w-6 text-[#15803D]" aria-hidden="true" />
             </span>
-            <p className="mt-3 text-sm font-semibold text-[#101828]">No employees yet</p>
-            <p className="mt-1 max-w-xs text-sm text-[#667085]">Technicians and pickup staff added to your shop will show up here.</p>
+            <p className="mt-3 text-sm font-semibold text-[#111111]">No employees yet</p>
+            <p className="mt-1 max-w-xs text-sm text-[#666666]">Technicians and pickup staff added to your shop will show up here.</p>
           </div>
         ) : (
           technicians.map((t) => (
             <div key={t.id} className="flex flex-wrap items-center gap-4 px-4 py-4 sm:flex-nowrap sm:px-6 sm:py-[26px]">
               <div className="flex min-w-0 flex-1 items-center gap-3.5">
-                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#EAFBF3] text-lg font-bold text-[#0A9A59]">
+                <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-lg font-bold text-[#0A9A59]">
                   {initials(t.name)}
                 </span>
                 <div className="min-w-0">
@@ -199,7 +137,7 @@ export default function PermissionsPage() {
                 ))}
               </div>
 
-              <span className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E5ECE8] bg-white text-[#6B7C93] shadow-sm transition hover:text-[#0A9A59] sm:ml-0">
+              <span className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#6B7C93] transition hover:text-[#0A9A59] sm:ml-0">
                 <ChevronRight className="h-4 w-4" aria-hidden="true" />
               </span>
             </div>

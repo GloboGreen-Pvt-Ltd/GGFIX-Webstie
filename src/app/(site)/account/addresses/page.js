@@ -46,6 +46,7 @@ import {
 } from '@/components/site/account/ui';
 import { exactDigits, required, validateForm } from '@/lib/formValidation';
 import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 const LABELS = ['Home', 'Office', 'Other'];
 const LABEL_ICON = { Home, Office: Briefcase, Other: Tag };
@@ -86,7 +87,6 @@ const inputCls =
 function AddressForm({ initial, onCancel, onSaved }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...(initial || {}) });
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const fieldRefs = useRef({});
 
@@ -100,7 +100,6 @@ function AddressForm({ initial, onCancel, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    setError('');
     const { errors, firstErrorField, isValid } = validateForm(
       {
         fullName: required('Full name is required.'),
@@ -122,7 +121,7 @@ function AddressForm({ initial, onCancel, onSaved }) {
       else await createAddress(form);
       onSaved();
     } catch (err) {
-      setError(err?.message || "Couldn't save the address. Please try again.");
+      notifyError(err, "Couldn't save the address. Please try again.");
       setBusy(false);
     }
   };
@@ -241,8 +240,6 @@ function AddressForm({ initial, onCancel, onSaved }) {
           />
           Set as default address
         </label>
-
-        {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
 
         <div className="flex gap-3 pt-1">
           <Button type="submit" variant="primary" size="md" disabled={busy}>
@@ -365,7 +362,7 @@ export default function ManageAddressPage() {
       await setDefaultAddress(a.id);
       await load();
     } catch (e) {
-      setError(e?.message || '');
+      notifyError(e, "Couldn't set the default address. Please try again.");
     } finally {
       setMutating(false);
     }
@@ -378,7 +375,7 @@ export default function ManageAddressPage() {
       await deleteAddress(a.id);
       await load();
     } catch (e) {
-      setError(e?.message || '');
+      notifyError(e, "Couldn't delete the address. Please try again.");
     } finally {
       setMutating(false);
     }

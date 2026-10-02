@@ -9,15 +9,15 @@ import { cx } from '@/components/site/ui';
 
 export default function ComingSoon({ icon: Icon, title, description }) {
   return (
-    <div className="flex min-h-[50vh] flex-col items-center justify-center rounded-2xl border border-dashed border-[#EAECF0] bg-white px-6 py-16 text-center">
+    <div className="flex min-h-[50vh] flex-col items-center justify-center rounded-2xl border border-dashed border-[#ECECEC] bg-[#F8F8F8] px-6 py-16 text-center">
       {Icon ? (
-        <span className={cx('inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#DCFCE7] text-[#15803D]')}>
+        <span className={cx('inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-[#F3F3F3] text-[#15803D]')}>
           <Icon className="h-7 w-7" aria-hidden="true" />
         </span>
       ) : null}
-      <h2 className="mt-4 text-lg font-bold text-[#101828]">{title}</h2>
-      {description ? <p className="mt-1.5 max-w-sm text-sm text-[#667085]">{description}</p> : null}
-      <span className="mt-5 inline-flex items-center rounded-full bg-[#F0FDF4] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#15803D]">
+      <h2 className="mt-4 text-lg font-bold text-[#111111]">{title}</h2>
+      {description ? <p className="mt-1.5 max-w-sm text-sm text-[#666666]">{description}</p> : null}
+      <span className="mt-5 inline-flex items-center rounded-full bg-[#F8F8F8] px-3 py-1 text-xs font-bold uppercase tracking-wide text-[#15803D]">
         Coming soon
       </span>
     </div>

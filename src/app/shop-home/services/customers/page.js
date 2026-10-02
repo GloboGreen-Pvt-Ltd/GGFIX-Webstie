@@ -1,412 +1,465 @@
 'use client';
 
 /**
- * /shop-home/services/customers — customer roster, derived client-side.
+ * /shop-home/services/customers — search-first customer screen, the web
+ * counterpart of the Partner app's OwnerSearchScreen ("Device, ticket or
+ * customer").
  *
- * There is no dedicated shop-scoped customer-roster endpoint anywhere in
- * this backend (confirmed by a full-tree search) — this page derives one
- * customer per unique phone number (falling back to name when a booking has
- * no phone) out of GET {ORDER_BASE}/repair-bookings/shop (fetchShopBookings()).
- * That means "Total Bookings" per customer counts bookings this dashboard
- * can see, not literally every repair job ever done for them (a walk-in
- * ticket created without a matching booking wouldn't be counted) — an
- * honest limitation of there being no real customer API, not a bug.
+ * Data: the same joined booking + ticket rows as the Bookings page
+ * (useOrderRows -> GET {ORDER_BASE}/repair-bookings/shop + GET /tickets),
+ * matched locally by tracking ID, customer name, mobile or device — with '#'
+ * and spaces ignored, as the app does, so "#CSPEN 1386390" finds CSPEN1386390.
+ * A result opens the booking's existing Device Details page.
  *
- * The base derivation (name/phone/email/address dedup) lives in
- * src/lib/customerDirectory.js and is shared with Book Service's "previous
- * customers" type-ahead — this file only adds the page-specific enrichment
- * (active/totalSpent/history) on top, so the two pages can never disagree
- * about who a customer is.
+ * Recent searches live in this browser only (localStorage, the app's
+ * `owner.search.recents` key and 6-item cap); a term is saved on Enter or
+ * when a result is opened. Clear removes only that list.
+ *
+ * Mic uses the browser's Web Speech API and Scan the browser's
+ * BarcodeDetector on the camera (booking QR codes encode the tracking ID as
+ * plain text — see bookings/view/qr). Both are feature-detected: where the
+ * browser lacks one, its button is disabled with an explanation instead of
+ * pretending to work.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ChevronDown, ChevronRight, Clock, Mail, MapPin, Phone, PlusCircle, Repeat, Smartphone, User, UserCheck, UserPlus, Users } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Camera, Clock, Loader2, Mic, Phone, Search, Smartphone, User, X } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
-import Icon3D from '@/components/shop-dashboard/Icon3D';
-import SearchField, { FOCUS_RING } from '@/components/shop-dashboard/SearchField';
 import ErrorBanner from '@/components/shop-dashboard/ErrorBanner';
-import { SkeletonRows, SkeletonStatCards } from '@/components/shop-dashboard/SkeletonBlocks';
-import { fetchShopBookings, friendlyBookingStatus } from '@/lib/shopDashboard';
-import { deriveCustomers as deriveCustomerDirectory } from '@/lib/customerDirectory';
+import { useOrderRows, withHash } from '@/components/shop-dashboard/OrdersList';
+import { getDeviceImage, resolveMediaUrl } from '@/lib/deviceImage';
+import { buildOrderRows } from '@/lib/orderStages';
+import { readShopOwner } from '@/lib/shopAuth';
 
-function initials(name) {
-  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  return (parts[0][0] + (parts[1]?.[0] || '')).toUpperCase();
-}
+const MIN_QUERY = 2;
+const DEBOUNCE_MS = 350;
+// Per shop, so one shop's searched names/numbers never show in another shop's session.
+const RECENTS_PREFIX = 'owner.search.recents';
+const recentsKey = () => `${RECENTS_PREFIX}:${readShopOwner()?.shopId || 'none'}`;
+const MAX_RECENTS = 6;
 
-// Same status buckets friendlyBookingStatus() has always produced — only the
-// pill's color/shape is new here, matching the palette already used by the
-// redesigned Dashboard's Recent Bookings card.
-const STATUS_BADGE = {
-  Created: 'bg-[#DFF8EB] text-[#067A3D]',
-  'In Progress': 'bg-[#E5F2FC] text-[#0875B7]',
-  Pickup: 'bg-[#FEF3D6] text-[#B7791F]',
-  Completed: 'bg-[#EAF9EF] text-[#15803D]',
-  Cancelled: 'bg-[#FDE8EA] text-[#DC2626]',
+const norm = (v) => String(v ?? '').toLowerCase().replace(/[#\s]/g, '');
+
+// Ticket status -> label, as the Partner app's booking cards read them.
+const STATUS_LABEL = {
+  CREATED: 'Service Accepted',
+  ASSIGNED: 'Technician Assigned',
+  IN_DIAGNOSIS: 'In Diagnosis',
+  IN_REPAIR: 'In Service Process',
+  QUOTED: 'Re-Estimated',
+  APPROVED: 'Customer Approved',
+  READY: 'Ready for Delivery',
+  INVOICE_GENERATED: 'Invoice Generated',
+  INVOICE_READY: 'Invoice Ready',
+  DELIVERED_PROCESSING: 'Delivered Processing',
+  DELIVERED: 'Delivered',
+  CANCELLED: 'Cancelled',
+  RETURNED: 'Returned',
 };
 
-// Page-local pastel KPI-card styling — not the shared StatCard (used by
-// ~10 other pages, unaffected): a reference design for this page wants a
-// distinct pastel-gradient + Icon3D + translucent-glyph treatment per card,
-// same idea as the Dashboard's DashboardKpiCard and Pickups' PickupStatCard.
-const CUSTOMER_STAT_STYLES = {
-  green: { card: 'bg-gradient-to-br from-[#F3FBF7] to-[#E4F8EC]', value: 'text-[#10213D]', label: 'text-[#066B39]', wave: 'text-[#BBF7D0]' },
-  blue: { card: 'bg-gradient-to-br from-[#EFF9FF] to-[#D9F0FE]', value: 'text-[#10213D]', label: 'text-[#1D6FA0]', wave: 'text-[#93D6F7]' },
-  orange: { card: 'bg-gradient-to-br from-[#FFF7ED] to-[#FDE7CB]', value: 'text-[#10213D]', label: 'text-[#9A5B27]', wave: 'text-[#FDBA74]' },
-  violet: { card: 'bg-gradient-to-br from-[#F5F3FF] to-[#E8E1FC]', value: 'text-[#10213D]', label: 'text-[#6D5A9E]', wave: 'text-[#C4B5FD]' },
-};
-
-function CustomerStatCard({ icon: Icon, bgIcon: BgIcon, label, value, tone }) {
-  const s = CUSTOMER_STAT_STYLES[tone] || CUSTOMER_STAT_STYLES.green;
-  return (
-    <div
-      className={cx(
-        'relative flex h-full flex-col overflow-hidden rounded-[22px] border border-[#E3ECE8] p-5 shadow-[0_12px_30px_rgba(20,80,55,0.08),0_3px_10px_rgba(20,80,55,0.05)]',
-        s.card,
-      )}
-    >
-      <BgIcon className={cx('pointer-events-none absolute -bottom-4 -right-4 h-24 w-24 opacity-25', s.wave)} aria-hidden="true" />
-      <Icon3D icon={Icon} tone={tone} size="md" className="relative" />
-      <p className={cx('relative mt-4 text-[30px] font-extrabold leading-none tracking-tight', s.value)}>{value}</p>
-      <p className={cx('relative mt-1.5 text-sm font-semibold', s.label)}>{label}</p>
-    </div>
-  );
+function readRecents() {
+  try {
+    const list = JSON.parse(window.localStorage.getItem(recentsKey()) || '[]');
+    return Array.isArray(list) ? list.filter((t) => typeof t === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+function writeRecents(list) {
+  try {
+    if (list.length) window.localStorage.setItem(recentsKey(), JSON.stringify(list));
+    else window.localStorage.removeItem(recentsKey());
+  } catch {
+    // Storage blocked — recents just won't persist.
+  }
 }
 
-/**
- * This page's own enrichment (active/totalSpent/history) layered on top of
- * the shared base directory (src/lib/customerDirectory.js) — the same base
- * Book Service's "previous customers" type-ahead uses, so both agree on who
- * a customer is and what their saved address/last booking was.
- */
-function deriveCustomers(bookings) {
-  return deriveCustomerDirectory(bookings).map((c) => {
-    const withStatus = c.bookings.map((b) => ({ ...b, ...friendlyBookingStatus(b.status) }));
-    const active = withStatus.some((b) => ['Created', 'Pickup', 'In Progress'].includes(b.statusLabel));
-    const totalSpent = c.bookings.reduce((sum, b) => sum + Number(b.pricing?.finalAmount ?? b.pricing?.estimatedAmount ?? 0), 0);
-    return {
-      ...c,
-      active,
-      totalSpent,
-      history: withStatus.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)),
-    };
-  });
+function deviceNameOf(row) {
+  const model = row.deviceDisplayName || row.modelName || '';
+  const brand = row.brandName || '';
+  if (!model) return 'Device not specified';
+  return brand && !model.toLowerCase().startsWith(brand.toLowerCase()) ? `${brand} ${model}` : model;
 }
 
-export default function CustomersPage() {
-  const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+function rowMatches(row, needle) {
+  return [row.bookingNumber, row.customerName, row.customerMobile, row.deviceDisplayName, row.modelName, row.brandName, deviceNameOf(row), row.id]
+    .filter(Boolean)
+    .some((v) => norm(v).includes(needle));
+}
+
+export default function CustomersSearchPage() {
+  const router = useRouter();
+  const { bookings, tickets, loading, error, reload } = useOrderRows();
   const [query, setQuery] = useState('');
-  const [expandedKey, setExpandedKey] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
+  const [needle, setNeedle] = useState('');
+  const [recents, setRecents] = useState([]);
+  const [scanOpen, setScanOpen] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => setRecents(readRecents()), []);
 
   useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    setError('');
-    fetchShopBookings()
-      .then((list) => {
-        if (alive) setBookings(list);
-      })
-      .catch((err) => {
-        if (alive) setError(err.message || 'Could not load customers.');
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [reloadKey]);
+    const t = setTimeout(() => setNeedle(norm(query)), DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query]);
 
-  const customers = useMemo(() => deriveCustomers(bookings), [bookings]);
+  const pushRecent = useCallback((term) => {
+    const t = String(term || '').trim();
+    if (norm(t).length < MIN_QUERY) return;
+    setRecents((prev) => {
+      const next = [t, ...prev.filter((x) => x.toLowerCase() !== t.toLowerCase())].slice(0, MAX_RECENTS);
+      writeRecents(next);
+      return next;
+    });
+  }, []);
 
-  const now = new Date();
-  const newThisMonth = customers.filter((c) => {
-    if (!c.firstServiceAt) return false;
-    const d = new Date(c.firstServiceAt);
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  }).length;
-  const activeCount = customers.filter((c) => c.active).length;
-  const repeatCount = customers.filter((c) => c.totalBookings > 1).length;
+  function clearRecents() {
+    setRecents([]);
+    writeRecents([]);
+  }
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter(
-      (c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q) || c.email.toLowerCase().includes(q),
-    );
-  }, [customers, query]);
+  // Put a term in the box and search it now (recent tap, voice, scan).
+  const searchFor = useCallback((term) => {
+    setQuery(term);
+    setNeedle(norm(term));
+  }, []);
 
-  const stats = [
-    { label: 'Total Customers', value: customers.length, icon: Users, bgIcon: Users, tone: 'green' },
-    { label: 'New This Month', value: newThisMonth, icon: UserPlus, bgIcon: UserPlus, tone: 'blue' },
-    { label: 'Active Customers', value: activeCount, icon: UserCheck, bgIcon: UserCheck, tone: 'orange' },
-    { label: 'Repeat Customers', value: repeatCount, icon: Repeat, bgIcon: Repeat, tone: 'violet' },
-  ];
+  const rows = useMemo(() => buildOrderRows(bookings, tickets), [bookings, tickets]);
+  const results = useMemo(() => (needle.length >= MIN_QUERY ? rows.filter((r) => rowMatches(r, needle)) : []), [rows, needle]);
+
+  const typed = norm(query);
+  const pending = typed !== needle;
+  const tooShort = typed.length > 0 && typed.length < MIN_QUERY;
+  const searching = typed.length >= MIN_QUERY;
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Hero — soft mint gradient banner with abstract waves + a decorative
-          customer-group illustration on the far right, matching the same
-          premium design system as the Dashboard/Book Service/Pickups pages.
-          Title/subtitle are the exact same content this page always had. */}
-      {/* Hero — compact premium banner, matching a reference design's
-          "white -> mint" spec. The right-side artwork is the real
-          public/customer.png asset (a people/contact-card illustration
-          cluster), CSS-cropped via background-position to show only that
-          cluster — the same file also has a full mockup of this banner
-          (title/subtitle/accent line) baked into its left side, so only the
-          illustration portion is windowed in; the title/subtitle below are
-          real, unchanged text. */}
-      <div
-        className="relative overflow-hidden rounded-[20px] p-5 shadow-[0_8px_24px_rgba(35,84,68,0.07)] sm:p-6"
-        style={{
-          background: 'linear-gradient(110deg, #ffffff 0%, #f8fcfb 45%, #ecfaf4 100%)',
-          border: '1px solid rgba(20, 140, 90, 0.10)',
-        }}
-      >
-        <span className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full bg-[#86EFAC]/20 blur-3xl" aria-hidden="true" />
-        <span className="pointer-events-none absolute left-1/3 top-2 h-2 w-2 rounded-full bg-[#93C5FD]/50" aria-hidden="true" />
-        <span className="pointer-events-none absolute left-1/2 bottom-6 h-1.5 w-1.5 rounded-full bg-[#4ADE80]/50" aria-hidden="true" />
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-14 w-full text-[#E4F8EC]/60"
-          viewBox="0 0 500 80"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,40 C120,90 280,0 500,50 L500,80 L0,80 Z" />
-        </svg>
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-9 w-full text-[#D9F3E9]/70"
-          viewBox="0 0 500 50"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,22 C150,45 320,4 500,26 L500,50 L0,50 Z" />
-        </svg>
+    <div className="-m-4 min-h-full bg-white sm:-m-6">
+      <div className="sticky top-0 z-10 border-b border-[#ECECEC] bg-white px-4 py-3.5 sm:px-6">
+        <div className="mx-auto flex max-w-[900px] items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            aria-label="Back"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#111111] transition hover:bg-[#F3F3F3]"
+          >
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+          </button>
 
-        <div className="relative flex flex-wrap items-center gap-4 py-2 md:pr-[230px] md:pl-2">
-          <span className="h-10 w-1 shrink-0 rounded-full bg-gradient-to-b from-[#22C55E] to-[#0A934D]" aria-hidden="true" />
-          <div className="min-w-0">
-            <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#10213D] sm:text-[34px]">Customers</h1>
-            <p className="mt-1.5 text-[15px] text-[#5B7085] sm:text-base">Manage your customer relationships and service history.</p>
-          </div>
+          <form
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              pushRecent(query);
+              setNeedle(norm(query));
+            }}
+            className="flex h-12 min-w-0 flex-1 items-center gap-2 rounded-full border border-[#ECECEC] bg-white pl-4 pr-1.5 transition focus-within:border-[#079455]"
+          >
+            <Search className="h-[18px] w-[18px] shrink-0 text-[#087A0A]" aria-hidden="true" />
+            <input
+              ref={inputRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Device, ticket or customer"
+              aria-label="Search by device, ticket or customer"
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              enterKeyHint="search"
+              className="min-w-0 flex-1 bg-transparent text-[15px] text-[#111111] outline-none placeholder:text-[#8FA08F] [&::-webkit-search-cancel-button]:hidden"
+            />
+            {query ? (
+              <button
+                type="button"
+                onClick={() => {
+                  searchFor('');
+                  inputRef.current?.focus();
+                }}
+                aria-label="Clear search"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#666666]"
+              >
+                <X className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            ) : null}
+            <VoiceButton onResult={(text) => { searchFor(text); pushRecent(text); }} />
+            <ScanButton onOpen={() => setScanOpen(true)} />
+          </form>
         </div>
-
-        {/* public/customer.png, windowed to its right-side illustration
-            cluster only (original asset is 2171x724; the people + contact
-            card cluster sits roughly at x:1515-2169, y:240-480 in that
-            image) — background-size scales the whole image up,
-            background-position shifts it so only that region falls inside
-            this box. */}
-        <div
-          className="pointer-events-none absolute bottom-0 right-6 hidden h-[140px] w-[382px] md:block lg:right-8 lg:h-[150px] lg:w-[409px]"
-          style={{
-            backgroundImage: "url('/customer.png')",
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '1267px 422px',
-            backgroundPosition: '-884px -140px',
-          }}
-          aria-hidden="true"
-        />
       </div>
 
-      {error ? <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
+      <div className="mx-auto max-w-[900px] px-4 py-5 sm:px-6">
+        {error ? <ErrorBanner message={error} onRetry={reload} /> : null}
 
-      {loading ? (
-        <SkeletonStatCards count={4} />
-      ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {stats.map((s) => (
-            <CustomerStatCard key={s.label} icon={s.icon} bgIcon={s.bgIcon} label={s.label} value={s.value} tone={s.tone} />
-          ))}
-        </div>
-      )}
-
-      <section className="rounded-[22px] border border-[#E3ECE8] bg-white/96 shadow-[0_10px_28px_rgba(20,80,55,0.06),0_2px_8px_rgba(20,80,55,0.03)]">
-        <div className="border-b border-[#EEF3F0] px-4 py-4 sm:px-5">
-          <div className="relative">
-            <SearchField value={query} onChange={setQuery} placeholder="Search by name, phone, or email" />
-          </div>
-        </div>
-
-        {loading ? (
-          <SkeletonRows rows={5} />
-        ) : filtered.length === 0 ? (
-          customers.length === 0 ? (
-            <div className="flex flex-col items-center px-4 py-14 text-center sm:px-5">
-              <Icon3D icon={Users} tone="green" size="lg" />
-              <p className="mt-3 text-sm font-bold text-[#10213D]">No customers yet</p>
-              <p className="mt-1 text-sm text-[#667085]">Customers will appear here once service bookings are created.</p>
-            </div>
+        {!searching ? (
+          tooShort ? (
+            <p className="pt-8 text-center text-[13px] text-[#666666]">Keep typing — at least {MIN_QUERY} characters.</p>
           ) : (
-            <div className="flex flex-col items-center px-4 py-14 text-center sm:px-5">
-              <Icon3D icon={Users} tone="gray" size="lg" />
-              <p className="mt-3 text-sm font-bold text-[#10213D]">No customers match your search</p>
-              <p className="mt-1 text-sm text-[#667085]">Try a different name, phone, or email.</p>
-            </div>
+            <section>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-[11.5px] font-extrabold tracking-[0.08em] text-[#666666]">RECENT</p>
+                {recents.length ? (
+                  <button type="button" onClick={clearRecents} className="text-[12px] font-extrabold text-[#087A0A] hover:underline">
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              {recents.length ? (
+                <ul className="space-y-2">
+                  {recents.map((t) => (
+                    <li key={t}>
+                      <button
+                        type="button"
+                        onClick={() => searchFor(t)}
+                        className="flex w-full items-center gap-2.5 rounded-xl border border-[#ECECEC] bg-white px-3.5 py-3 text-left transition hover:border-[#ECECEC] hover:bg-[#F8F8F8]"
+                      >
+                        <Clock className="h-4 w-4 shrink-0 text-[#8FA08F]" aria-hidden="true" />
+                        <span className="truncate text-[14px] text-[#344054]">{t}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="pt-6 text-center text-[13px] text-[#98A2B3]">No recent searches</p>
+              )}
+            </section>
           )
-        ) : (
-          <div className="divide-y divide-[#EEF3F0]">
-            {filtered.map((c) => (
-              <CustomerRow key={c.key} customer={c} expanded={expandedKey === c.key} onToggle={() => setExpandedKey(expandedKey === c.key ? null : c.key)} />
-            ))}
+        ) : loading || pending ? (
+          <div className="flex justify-center pt-10">
+            <Loader2 className="h-6 w-6 animate-spin text-[#087A0A]" aria-hidden="true" />
+          </div>
+        ) : results.length ? (
+          <section>
+            <p className="mb-2 text-[11.5px] font-extrabold tracking-[0.08em] text-[#666666]">BOOKINGS · {results.length}</p>
+            <ul className="space-y-2">
+              {results.map((r) => (
+                <li key={r.id}>
+                  <ResultCard row={r} onOpen={() => pushRecent(query)} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : error ? null : (
+          <div className="px-6 pt-10 text-center">
+            <p className="text-[15px] font-extrabold text-[#344054]">No matches</p>
+            <p className="mt-1 text-[13px] text-[#666666]">
+              Nothing found for “{query.trim()}”. Try a tracking ID, customer name, mobile number or device.
+            </p>
           </div>
         )}
-      </section>
+      </div>
+
+      {scanOpen ? (
+        <ScanDialog
+          onClose={() => setScanOpen(false)}
+          onCode={(code) => {
+            setScanOpen(false);
+            searchFor(code);
+            pushRecent(code);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
-function CustomerRow({ customer, expanded, onToggle }) {
+function Thumb({ url }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [url]);
   return (
-    <div>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className={cx(
-          'group flex w-full items-center gap-3 px-4 py-3.5 text-left transition duration-200 ease-out hover:translate-x-0.5 hover:bg-gradient-to-r hover:from-[#E7F9EF]/65 hover:to-white sm:px-5',
-          FOCUS_RING,
-        )}
+    <span className="flex h-14 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#F8F8F8] p-1">
+      {url && !broken ? (
+        // eslint-disable-next-line @next/next/no-img-element -- device photos are arbitrary catalog URLs.
+        <img src={url} alt="" loading="lazy" onError={() => setBroken(true)} className="h-full w-full object-contain" />
+      ) : (
+        <Smartphone className="h-5 w-5 text-[#8FA08F]" aria-hidden="true" />
+      )}
+    </span>
+  );
+}
+
+function ResultCard({ row, onOpen }) {
+  const status = STATUS_LABEL[String(row.ticketStatus || '').toUpperCase()] || row.statusLabel || String(row.status || '').replace(/_/g, ' ');
+  const image = resolveMediaUrl(row.deviceImageUrl) || resolveMediaUrl(row.frontImageUrl) || getDeviceImage(row);
+  return (
+    <Link
+      href={`/shop-home/services/bookings/view/details/?id=${encodeURIComponent(row.id)}`}
+      onClick={onOpen}
+      className="flex items-center gap-3 rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-3 transition hover:border-[#ECECEC]"
+    >
+      <Thumb url={image} />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[12px] font-extrabold text-[#087A0A]">{withHash(row.bookingNumber || row.id)}</span>
+          {status ? (
+            <span className="shrink-0 rounded-full bg-[#F3F3F3] px-2 py-0.5 text-[10.5px] font-extrabold uppercase tracking-wide text-[#067647]">{status}</span>
+          ) : null}
+        </div>
+        <p className="mt-0.5 truncate text-[15px] font-extrabold text-[#111111]">{deviceNameOf(row)}</p>
+        <p className="mt-0.5 flex min-w-0 items-center gap-1 text-[12.5px] text-[#666666]">
+          <User className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate">{row.customerName || 'Customer'}</span>
+          {row.customerMobile ? (
+            <>
+              <Phone className="ml-2 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="shrink-0">{row.customerMobile}</span>
+            </>
+          ) : null}
+        </p>
+      </div>
+    </Link>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Voice + scan                                                                */
+/* -------------------------------------------------------------------------- */
+
+const ICON_BTN = 'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#087A0A] transition hover:bg-[#F3F3F3] disabled:cursor-not-allowed disabled:opacity-40';
+
+function VoiceButton({ onResult }) {
+  const [supported, setSupported] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recRef = useRef(null);
+
+  useEffect(() => {
+    setSupported(Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
+    return () => recRef.current?.abort();
+  }, []);
+
+  function toggle() {
+    if (listening) {
+      recRef.current?.stop();
+      return;
+    }
+    const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Rec) return;
+    const rec = new Rec();
+    rec.lang = 'en-IN';
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      const text = e.results?.[0]?.[0]?.transcript?.trim();
+      if (text) onResult(text);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recRef.current = rec;
+    setListening(true);
+    rec.start();
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      disabled={!supported}
+      aria-label={listening ? 'Stop listening' : 'Search by voice'}
+      title={supported ? (listening ? 'Listening… tap to stop' : 'Search by voice') : 'Voice search isn’t supported in this browser'}
+      className={cx(ICON_BTN, listening && 'animate-pulse bg-[#087A0A] text-white hover:bg-[#087A0A]')}
+    >
+      <Mic className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
+}
+
+function ScanButton({ onOpen }) {
+  const [supported, setSupported] = useState(false);
+  useEffect(() => {
+    setSupported(Boolean(window.BarcodeDetector && navigator.mediaDevices?.getUserMedia));
+  }, []);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!supported}
+      aria-label="Scan a booking QR or barcode"
+      title={supported ? 'Scan a booking QR or barcode' : 'Camera scanning isn’t supported in this browser'}
+      className={ICON_BTN}
+    >
+      <Camera className="h-4 w-4" aria-hidden="true" />
+    </button>
+  );
+}
+
+function ScanDialog({ onClose, onCode }) {
+  const videoRef = useRef(null);
+  const [error, setError] = useState('');
+  // Latest callbacks without restarting the camera on every parent render.
+  const handlers = useRef({ onClose, onCode });
+  handlers.current = { onClose, onCode };
+
+  useEffect(() => {
+    let stream;
+    let timer;
+    let stopped = false;
+    (async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        if (stopped) return;
+        const video = videoRef.current;
+        video.srcObject = stream;
+        await video.play();
+        const detector = new window.BarcodeDetector();
+        const tick = async () => {
+          if (stopped) return;
+          try {
+            const codes = await detector.detect(video);
+            const value = codes?.[0]?.rawValue?.trim();
+            if (value) {
+              handlers.current.onCode(value);
+              return;
+            }
+          } catch {
+            // Frame not ready — try the next one.
+          }
+          timer = setTimeout(tick, 250);
+        };
+        tick();
+      } catch (err) {
+        if (!stopped) setError(err?.name === 'NotAllowedError' ? 'Camera access was blocked. Allow the camera for this site and try again.' : 'Could not start the camera.');
+      }
+    })();
+    const onKey = (e) => e.key === 'Escape' && handlers.current.onClose();
+    document.addEventListener('keydown', onKey);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      stream?.getTracks().forEach((t) => t.stop());
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#0B1739]/60 sm:items-center sm:p-4" onMouseDown={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Scan booking code"
+        onMouseDown={(e) => e.stopPropagation()}
+        className="w-full overflow-hidden rounded-t-[28px] bg-white sm:max-w-[480px] sm:rounded-[24px]"
       >
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#DFF8EB] to-[#BBF7D0] text-sm font-bold text-[#066B39] shadow-[inset_0_1px_0_rgba(255,255,255,0.6),0_4px_10px_rgba(8,145,75,0.14)]">
-          {initials(customer.name)}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-bold text-[#10213D]">{customer.name}</p>
-          <p className="truncate text-xs text-[#667085]">
-            {customer.phone || 'No phone'} {customer.email ? `· ${customer.email}` : ''}
-          </p>
-        </div>
-        <span className="hidden shrink-0 items-center gap-1 rounded-full bg-[#EAF9EF] px-3 py-1.5 text-xs font-semibold text-[#067A3D] sm:inline-flex">
-          {customer.totalBookings} booking{customer.totalBookings === 1 ? '' : 's'}
-        </span>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EAF9EF] text-[#067A3D] transition group-hover:bg-[#DFF8EB] group-hover:shadow-[0_2px_10px_rgba(6,122,61,0.18)]">
-          <ChevronDown className={cx('h-4 w-4 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
-        </span>
-      </button>
-
-      {expanded ? (
-        <div className="border-t border-dashed border-[#EAECF0] bg-[#F3FBF7] px-4 py-4 sm:px-5">
-          <div className="flex flex-wrap gap-2">
-            {customer.phone ? (
-              <a
-                href={`tel:${customer.phone}`}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-bold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]"
-              >
-                <Phone className="h-3.5 w-3.5" aria-hidden="true" />
-                Call Customer
-              </a>
-            ) : null}
-            <Link
-              href="/shop-home/services/book-service"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-[#16B45F] to-[#087A3E] px-3 py-1.5 text-xs font-bold text-white shadow-[0_4px_12px_rgba(8,122,62,0.28)] transition hover:brightness-105"
-            >
-              <PlusCircle className="h-3.5 w-3.5" aria-hidden="true" />
-              Create Booking
-            </Link>
+        <div className="flex items-center justify-between px-5 py-4">
+          <div>
+            <p className="text-[16px] font-extrabold text-[#111111]">Scan booking code</p>
+            <p className="text-[12.5px] text-[#666666]">Point the camera at the booking’s QR or barcode.</p>
           </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {/* Customer Information — same phone/email/address fields this
-                panel has always shown ("Customer Profile"), just relabeled
-                and restyled to match a reference design's card. */}
-            <div className="rounded-2xl border border-[#E3ECE8] bg-white p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <Icon3D icon={User} tone="green" size="sm" />
-                <h3 className="text-sm font-bold text-[#10213D]">Customer Information</h3>
-              </div>
-              <div className="space-y-2.5 text-sm">
-                <p className="flex items-center gap-2 text-[#344054]">
-                  <User className="h-3.5 w-3.5 shrink-0 text-[#98A2B3]" aria-hidden="true" />
-                  {customer.name}
-                </p>
-                <p className="flex items-center gap-2 text-[#344054]">
-                  <Phone className="h-3.5 w-3.5 shrink-0 text-[#98A2B3]" aria-hidden="true" />
-                  {customer.phone || '—'}
-                </p>
-                <p className="flex items-center gap-2 text-[#344054]">
-                  <Mail className="h-3.5 w-3.5 shrink-0 text-[#98A2B3]" aria-hidden="true" />
-                  {customer.email || '—'}
-                </p>
-                {customer.address ? (
-                  <p className="flex items-start gap-2 text-[#344054]">
-                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#98A2B3]" aria-hidden="true" />
-                    {customer.address}
-                  </p>
-                ) : null}
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[#EEF3F0] pt-3">
-                <div>
-                  <p className="text-xs text-[#667085]">Total Spent</p>
-                  <p className="text-sm font-bold text-[#10213D]">₹{customer.totalSpent.toLocaleString('en-IN')}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-[#667085]">Pending Payments</p>
-                  <p className="text-sm font-bold text-[#98A2B3]">— <span className="text-[0.65rem] font-normal">not tracked yet</span></p>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Bookings — same customer.history this panel has always
-                shown ("Service History"), now with a device icon, status
-                pill and a real link to that booking's detail page. */}
-            <div className="rounded-2xl border border-[#E3ECE8] bg-white p-4">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2">
-                  <Icon3D icon={Clock} tone="green" size="sm" />
-                  <h3 className="text-sm font-bold text-[#10213D]">Recent Bookings ({customer.history.length})</h3>
-                </span>
-                <Link
-                  href="/shop-home/services/bookings"
-                  className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-[#EAF9EF] px-2.5 py-1 text-xs font-bold text-[#067A3D] transition hover:bg-[#DFF8EB]"
-                >
-                  View all
-                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-                </Link>
-              </div>
-              {customer.history.length === 0 ? (
-                <p className="py-4 text-center text-xs text-[#98A2B3]">No bookings yet.</p>
-              ) : (
-                <div className="divide-y divide-[#EEF3F0]">
-                  {customer.history.slice(0, 6).map((b) => (
-                    <Link
-                      key={b.id}
-                      href={`/shop-home/services/bookings/${b.id}`}
-                      className="group/row flex items-center gap-2.5 py-2.5 transition hover:bg-[#F3FBF7]"
-                    >
-                      <Icon3D icon={Smartphone} tone="green" size="sm" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-bold text-[#10213D]">#{b.bookingNumber || b.id}</p>
-                        <p className="truncate text-[11px] text-[#667085]">{b.issueSummary || 'Service booking'}</p>
-                      </div>
-                      <span className="hidden shrink-0 text-[11px] text-[#98A2B3] sm:block">
-                        {b.createdAt ? new Date(b.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : ''}
-                      </span>
-                      <span
-                        className={cx(
-                          'shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide',
-                          STATUS_BADGE[b.statusLabel] || 'bg-[#F0FDF4] text-[#667085]',
-                        )}
-                      >
-                        {b.statusLabel}
-                      </span>
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-[#98A2B3] transition group-hover/row:text-[#067A3D]" aria-hidden="true" />
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-full p-1.5 text-[#98A2B3] hover:bg-[#F3F3F3] hover:text-[#344054]">
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
         </div>
-      ) : null}
+        <div className="relative aspect-square bg-black sm:aspect-[4/3]">
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption -- live camera preview, no audio track. */}
+          <video ref={videoRef} muted playsInline className="h-full w-full object-cover" />
+          {error ? (
+            <p className="absolute inset-x-4 top-1/2 -translate-y-1/2 rounded-xl bg-white/95 px-4 py-3 text-center text-[13px] font-semibold text-[#B42318]">{error}</p>
+          ) : (
+            <span className="pointer-events-none absolute inset-[18%] rounded-2xl border-2 border-white/80" aria-hidden="true" />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

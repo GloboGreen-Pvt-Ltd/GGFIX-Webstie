@@ -1,12 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import SellFlowBulkActions from '@/components/SellFlowBulkActions';
 import SellFlowImportModal from '@/components/SellFlowImportModal';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 // Split a typed/pasted value into individual values on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -30,8 +29,6 @@ export default function MasterDeviceConfigurationPage() {
   const [optInput, setOptInput] = useState('');
   const [optNames, setOptNames] = useState([]);
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -95,17 +92,8 @@ export default function MasterDeviceConfigurationPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!deviceCategoryId) { setError('Select a device category.'); return; }
-    const { errors, firstErrorField, isValid } = validateForm(
-      { name: required('Name is required.') },
-      { name },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!deviceCategoryId) { notifyError('Select a device category.'); return; }
+    if (!name.trim()) return;
     const options = [...new Set([...optNames, ...splitNames(optInput)].map((x) => x.trim()).filter(Boolean))];
     setSubmitting(true);
     try {
@@ -118,7 +106,7 @@ export default function MasterDeviceConfigurationPage() {
       closeModal();
       reload();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -130,7 +118,7 @@ export default function MasterDeviceConfigurationPage() {
       await masterApi.delete(`/master/config-fields/${row.id}`);
       reload();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -217,21 +205,16 @@ export default function MasterDeviceConfigurationPage() {
                   {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
                 </select>
               </div>
-              <div ref={registerField(fieldRefs, 'name')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Field key</label>
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.name)}
+                  onChange={(e) => setName(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   placeholder="e.g. Device Processor"
                   required
                 />
-                {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
               </div>
               <div>
                 <label className="block text-sm text-admin-muted mb-1">Options (values)</label>

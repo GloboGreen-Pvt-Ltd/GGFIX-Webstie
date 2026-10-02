@@ -36,9 +36,11 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { BarChart3, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Flag, RefreshCw, Truck } from 'lucide-react';
+import { BarChart3, CheckCircle2, ChevronDown, Flag, RefreshCw, Truck } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
+import { HEADER_BUTTON, MonthPicker } from '@/components/shop-dashboard/HeaderControls';
 import Icon3D from '@/components/shop-dashboard/Icon3D';
 import FilterChips from '@/components/shop-dashboard/FilterChips';
 import EmptyState from '@/components/shop-dashboard/EmptyState';
@@ -48,7 +50,6 @@ import { MONTHS, shiftMonth } from '@/components/shop-dashboard/MonthSwitcher';
 import { fetchShopBookings, friendlyBookingStatus } from '@/lib/shopDashboard';
 import { BOOKING_STATUS_BADGE, bookingEstimatedAmount, formatBookingDate, formatPickupAddress } from '@/lib/bookingFormat';
 
-const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
 const FULL_LIST_FILTERS = [
   { value: 'All', label: 'All' },
   { value: 'Completed', label: 'Completed' },
@@ -125,7 +126,7 @@ function InProgressEmptyIllustration() {
 // same approach as the redesigned Delivery/Pickups/Requote/Bookings pages.
 const PICKUP_REPORT_STAT_STYLES = {
   orange: {
-    card: 'bg-gradient-to-br from-[#FFFBF5] to-[#FFF0D9]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#FBBF54] to-[#FF7A1A]',
     value: 'text-[#10213D]',
     label: 'text-[#9A5B27]',
@@ -133,7 +134,7 @@ const PICKUP_REPORT_STAT_STYLES = {
     glow: 'bg-[#FDD08A]',
   },
   blue: {
-    card: 'bg-gradient-to-br from-[#F7FBFF] to-[#E4F3FF]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#38BDF8] to-[#199DE8]',
     value: 'text-[#10213D]',
     label: 'text-[#1D6FA0]',
@@ -141,15 +142,15 @@ const PICKUP_REPORT_STAT_STYLES = {
     glow: 'bg-[#93D6F7]',
   },
   green: {
-    card: 'bg-gradient-to-br from-[#F5FFF9] to-[#DFF9EC]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#22C55E] to-[#0FA958]',
     value: 'text-[#10213D]',
     label: 'text-[#066B39]',
     wave: 'text-[#BBF7D0]',
-    glow: 'bg-[#86EFAC]',
+    glow: 'bg-[#F3F3F3]',
   },
   violet: {
-    card: 'bg-gradient-to-br from-[#FAF8FF] to-[#EDE6FE]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8247F5]',
     value: 'text-[#10213D]',
     label: 'text-[#6D5A9E]',
@@ -163,16 +164,15 @@ function PickupReportStatCard({ icon: Icon, label, value, tone }) {
   return (
     <div
       className={cx(
-        'group relative flex h-[150px] flex-col justify-between overflow-hidden rounded-[20px] border border-[#E6ECE9] p-5 shadow-[0_8px_22px_rgba(20,40,60,0.06)] transition-all duration-200 hover:-translate-y-[2px] hover:shadow-[0_14px_30px_rgba(20,40,60,0.1)]',
+        'group relative flex h-[150px] flex-col justify-between overflow-hidden rounded-[20px] border border-[#ECECEC] p-5 transition-all duration-200 hover:-translate-y-[2px]',
         s.card,
       )}
     >
-      <span className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 rounded-b-[20px] bg-gradient-to-t from-white/40 to-transparent" aria-hidden="true" />
       <Icon className={cx('pointer-events-none absolute -bottom-4 -right-4 h-24 w-24 opacity-[0.1]', s.wave)} aria-hidden="true" />
 
       <span
         className={cx(
-          'relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_9px_22px_rgba(0,0,0,0.16),inset_0_1px_0_rgba(255,255,255,0.5)]',
+          'relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white',
           s.chip,
         )}
       >
@@ -294,90 +294,33 @@ export default function PickupReportClient() {
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Hero — uses the real existing /public/pickup-bg.png asset as the
-          background (not a generated illustration): plain CSS
-          background-image, referenced by its public root path exactly as
-          Next.js serves anything under /public. A left-to-transparent white
-          overlay sits between the image and the text so the title/subtitle
-          stay readable regardless of what's under them in the photo, without
-          hiding the image itself (the overlay fades to fully transparent by
-          the image's right half). Title/subtitle copy and the Refresh
-          handler are unchanged in behavior — only the hero's visual chrome
-          changed. */}
-      <div
-        className="relative min-h-[200px] overflow-hidden rounded-[24px] border border-[#E6ECE9] shadow-[0_12px_32px_rgba(20,80,55,0.07),0_3px_10px_rgba(20,80,55,0.04)]"
-        style={{ backgroundImage: "url('/pickup-bg.png')", backgroundSize: 'cover', backgroundPosition: 'center right', backgroundRepeat: 'no-repeat' }}
+      <PageHeader
+        title="Pickup Report"
+        subtitle={
+          singleMode
+            ? `Pickups assigned to ${employeeName || 'this pickup person'}.`
+            : 'Track pickup requests, assignments, status, and completion details.'
+        }
+        action={
+          <button type="button" onClick={() => setReloadKey((k) => k + 1)} className={HEADER_BUTTON}>
+            <RefreshCw className={cx('h-4 w-4 text-[#0FA958]', loading && 'animate-spin')} aria-hidden="true" />
+            Refresh
+          </button>
+        }
       >
-        <span
-          className="pointer-events-none absolute inset-0 z-0"
-          style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.94) 0%, rgba(255,255,255,0.75) 32%, rgba(255,255,255,0.15) 58%, rgba(255,255,255,0) 72%)' }}
-          aria-hidden="true"
+        <MonthPicker
+          label={`${MONTHS[viewDate.getMonth()]} ${viewDate.getFullYear()}`}
+          onPrev={goPrevMonth}
+          onNext={goNextMonth}
         />
-
-        <div className="relative z-[4] p-6 md:p-7">
-          <div className="max-w-[560px]">
-            <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.13em] text-[#0A6E39]">
-              <span className="h-1.5 w-4 rounded-full bg-gradient-to-r from-[#22C55E] to-[#0A934D]" aria-hidden="true" />
-              Reports
-            </span>
-            <h1 className="mt-2 text-[30px] font-extrabold leading-[1.05] tracking-tight text-[#071B3B] sm:text-[36px] md:text-[44px]">
-              Pickup Report
-            </h1>
-            <p className="mt-3 max-w-[520px] text-base leading-6 text-[#3F5A6E]">
-              {singleMode
-                ? `Pickups assigned to ${employeeName || 'this pickup person'}.`
-                : 'Track pickup requests, assignments, status, and completion details.'}
-            </p>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setReloadKey((k) => k + 1)}
-          className={cx(
-            'absolute right-6 top-6 z-10 inline-flex items-center gap-1.5 rounded-full border border-[#E6ECE9] bg-white px-4 py-2.5 text-sm font-semibold text-[#10213D] shadow-sm transition hover:border-[#0FA958] hover:text-[#0FA958] md:right-7 md:top-7',
-            FOCUS_RING,
-          )}
-        >
-          <RefreshCw className={cx('h-4 w-4 text-[#0FA958]', loading && 'animate-spin')} aria-hidden="true" />
-          Refresh
-        </button>
-      </div>
+      </PageHeader>
 
       {error ? <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
 
-      {/* "This Month" + month navigator — page-local styling only; the
-          underlying viewDate/goPrevMonth/goNextMonth state and handlers are
-          the exact same ones the shared MonthSwitcher used, untouched. Not
-          switched to a bespoke shared-component change since MonthSwitcher
-          is used by 11 other report pages. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <span className="flex items-center gap-2 text-[17px] font-extrabold text-[#071B3B]">
-          <Icon3D icon={BarChart3} tone="green" size="sm" />
-          This Month
-        </span>
-        <div className="inline-flex h-[46px] w-[250px] items-center justify-between rounded-full bg-gradient-to-r from-[#22C55E] to-[#0FA958] px-2 shadow-[0_4px_12px_rgba(15,169,88,0.28)]">
-          <button
-            type="button"
-            onClick={goPrevMonth}
-            aria-label="Previous month"
-            className={cx('flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/15', FOCUS_RING)}
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <span className="text-sm font-bold text-white">
-            {MONTHS[viewDate.getMonth()]} {viewDate.getFullYear()}
-          </span>
-          <button
-            type="button"
-            onClick={goNextMonth}
-            aria-label="Next month"
-            className={cx('flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/15', FOCUS_RING)}
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
+      <span className="flex items-center gap-2 text-[17px] font-extrabold text-[#071B3B]">
+        <Icon3D icon={BarChart3} tone="green" size="sm" />
+        This Month
+      </span>
 
       {loading ? (
         <SkeletonStatCards count={4} />
@@ -391,13 +334,13 @@ export default function PickupReportClient() {
 
       {/* Recent Assigned / In Progress — side-by-side on desktop. */}
       <div className="grid grid-cols-1 gap-[18px] lg:grid-cols-2">
-        <section className="flex min-h-[370px] flex-col rounded-[20px] border border-[#E7ECEA] bg-white p-6 shadow-[0_10px_28px_rgba(21,44,58,0.05)]">
+        <section className="flex min-h-[370px] flex-col rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8] p-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <Icon3D icon={Flag} tone="orange" size="md" />
               <div>
                 <p className="text-[20px] font-bold text-[#071B3B]">Recent Assigned</p>
-                <p className="text-[13px] text-[#64748B]">Latest pickup assignments for the selected month.</p>
+                <p className="text-[13px] text-[#666666]">Latest pickup assignments for the selected month.</p>
               </div>
             </div>
             {recentAssigned.length > 0 ? (
@@ -414,10 +357,10 @@ export default function PickupReportClient() {
               <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
                 <RecentAssignedEmptyIllustration />
                 <p className="mt-3 text-base font-bold text-[#071B3B]">No new pickup assignments.</p>
-                <p className="mt-1 max-w-xs text-sm text-[#64748B]">New pickup assignments for this month will appear here.</p>
+                <p className="mt-1 max-w-xs text-sm text-[#666666]">New pickup assignments for this month will appear here.</p>
               </div>
             ) : (
-              <div className="divide-y divide-[#EEF3F0] overflow-hidden rounded-2xl border border-[#EEF3F0]">
+              <div className="divide-y divide-[#ECECEC] overflow-hidden rounded-2xl border border-[#ECECEC]">
                 {recentAssigned.map((b) => (
                   <PickupReportRow key={b.id} booking={b} showAssignee={!singleMode} expanded={expandedId === b.id} onToggle={() => toggleExpanded(b.id)} />
                 ))}
@@ -426,13 +369,13 @@ export default function PickupReportClient() {
           </div>
         </section>
 
-        <section className="flex min-h-[370px] flex-col rounded-[20px] border border-[#E7ECEA] bg-white p-6 shadow-[0_10px_28px_rgba(21,44,58,0.05)]">
+        <section className="flex min-h-[370px] flex-col rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8] p-6">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <Icon3D icon={Truck} tone="blue" size="md" />
               <div>
                 <p className="text-[20px] font-bold text-[#071B3B]">In Progress</p>
-                <p className="text-[13px] text-[#64748B]">Pickups currently being handled by employees.</p>
+                <p className="text-[13px] text-[#666666]">Pickups currently being handled by employees.</p>
               </div>
             </div>
             {inProgressList.length > 0 ? (
@@ -449,10 +392,10 @@ export default function PickupReportClient() {
               <div className="flex flex-1 flex-col items-center justify-center py-6 text-center">
                 <InProgressEmptyIllustration />
                 <p className="mt-3 text-base font-bold text-[#071B3B]">No pickups in progress.</p>
-                <p className="mt-1 max-w-xs text-sm text-[#64748B]">Active pickup jobs will appear here once an assignment starts.</p>
+                <p className="mt-1 max-w-xs text-sm text-[#666666]">Active pickup jobs will appear here once an assignment starts.</p>
               </div>
             ) : (
-              <div className="divide-y divide-[#EEF3F0] overflow-hidden rounded-2xl border border-[#EEF3F0]">
+              <div className="divide-y divide-[#ECECEC] overflow-hidden rounded-2xl border border-[#ECECEC]">
                 {inProgressList.map((b) => (
                   <PickupReportRow key={b.id} booking={b} showAssignee={!singleMode} expanded={expandedId === b.id} onToggle={() => toggleExpanded(b.id)} />
                 ))}
@@ -464,8 +407,8 @@ export default function PickupReportClient() {
 
       <div ref={fullListRef}>
         <p className="mb-2.5 text-sm font-bold text-[#071B3B]">Previous Pickups</p>
-        <section className="overflow-hidden rounded-[20px] border border-[#E7ECEA] bg-white shadow-[0_10px_28px_rgba(21,44,58,0.05)]">
-          <div className="border-b border-[#EEF3F0] px-4 py-4 sm:px-5">
+        <section className="overflow-hidden rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8]">
+          <div className="border-b border-[#ECECEC] px-4 py-4 sm:px-5">
             <FilterChips options={FULL_LIST_FILTERS} value={filter} onChange={setFilter} counts={counts} />
           </div>
 
@@ -482,7 +425,7 @@ export default function PickupReportClient() {
               <EmptyState icon={Truck} tone="muted" title="No pickups found." description="Try a different status." />
             )
           ) : (
-            <div className="divide-y divide-[#EEF3F0]">
+            <div className="divide-y divide-[#ECECEC]">
               {filtered.map((b) => (
                 <PickupReportRow key={b.id} booking={b} showAssignee={!singleMode} expanded={expandedId === b.id} onToggle={() => toggleExpanded(b.id)} />
               ))}
@@ -501,23 +444,23 @@ function PickupReportRow({ booking, showAssignee, expanded, onToggle }) {
 
   return (
     <div>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F9FAFB] sm:px-5">
+      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F8F8F8] sm:px-5">
         <Icon3D icon={Truck} tone="green" size="md" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-[#101828]">{booking.customerName || 'Not available'}</p>
-          <p className="truncate text-xs text-[#667085]">
+          <p className="truncate text-sm font-bold text-[#111111]">{booking.customerName || 'Not available'}</p>
+          <p className="truncate text-xs text-[#666666]">
             #{booking.bookingNumber || booking.id} · {formatBookingDate(booking.pickupDate)}
             {showAssignee ? ` · ${assignee || 'Unassigned'}` : ''}
           </p>
         </div>
-        <span className={cx('hidden shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide sm:inline-block', BOOKING_STATUS_BADGE[booking.statusLabel] || 'bg-[#F0FDF4] text-[#667085]')}>
+        <span className={cx('hidden shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide sm:inline-block', BOOKING_STATUS_BADGE[booking.statusLabel] || 'bg-[#F8F8F8] text-[#666666]')}>
           {booking.displayStatus}
         </span>
         <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
       </button>
 
       {expanded ? (
-        <div className="space-y-3 border-t border-dashed border-[#EAECF0] bg-[#F9FAFB] px-4 py-4 sm:px-5">
+        <div className="space-y-3 border-t border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-4 sm:px-5">
           <div>
             <p className="mb-1 text-[0.7rem] font-bold uppercase tracking-wide text-[#98A2B3]">Customer</p>
             <p className="text-sm text-[#344054]">{booking.customerName || 'Not available'} · {booking.customerMobile || 'Not available'}</p>
@@ -535,15 +478,15 @@ function PickupReportRow({ booking, showAssignee, expanded, onToggle }) {
               <p className="mb-1 text-[0.7rem] font-bold uppercase tracking-wide text-[#98A2B3]">Services</p>
               <ul className="space-y-1">
                 {services.map((s, i) => (
-                  <li key={s.repairServiceId || i} className="flex items-center justify-between text-xs text-[#667085]">
+                  <li key={s.repairServiceId || i} className="flex items-center justify-between text-xs text-[#666666]">
                     <span>{s.serviceName || s.serviceCode}</span>
-                    {s.estimatedPrice != null ? <span className="font-semibold text-[#101828]">₹{Number(s.estimatedPrice).toLocaleString('en-IN')}</span> : null}
+                    {s.estimatedPrice != null ? <span className="font-semibold text-[#111111]">₹{Number(s.estimatedPrice).toLocaleString('en-IN')}</span> : null}
                   </li>
                 ))}
               </ul>
             </div>
           ) : null}
-          <p className="text-sm font-bold text-[#101828]">{amount != null ? `₹${Number(amount).toLocaleString('en-IN')} estimated` : 'Amount not available'}</p>
+          <p className="text-sm font-bold text-[#111111]">{amount != null ? `₹${Number(amount).toLocaleString('en-IN')} estimated` : 'Amount not available'}</p>
         </div>
       ) : null}
     </div>

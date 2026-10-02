@@ -6,6 +6,7 @@ import {
   exportSellFlowTemplateWorkbook,
   exportSellFlowWorkbook,
 } from '@/lib/sellFlowExcel';
+import { notifyError } from '@/lib/toast';
 
 const COPY = {
   screeningQuestions: {
@@ -65,7 +66,6 @@ export default function SellFlowBulkActions({
   const [exportMenu, setExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -93,12 +93,11 @@ export default function SellFlowBulkActions({
 
   const runExport = async (task) => {
     setExportMenu(false);
-    setError('');
     setExporting(true);
     try {
       await task();
     } catch (exportError) {
-      setError(exportError?.message || 'Could not build the Excel file.');
+      notifyError(exportError?.message || 'Could not build the Excel file.');
     } finally {
       setExporting(false);
     }
@@ -188,11 +187,6 @@ export default function SellFlowBulkActions({
         <Upload size={16} />
         Import
       </button>
-      {error && (
-        <p className="absolute right-0 top-full z-30 mt-2 w-80 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 shadow-sm">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

@@ -1,12 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import SellFlowBulkActions from '@/components/SellFlowBulkActions';
 import SellFlowImportModal from '@/components/SellFlowImportModal';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 export default function MasterScreeningQuestionsPage() {
   const [categories, setCategories] = useState([]);
@@ -22,8 +21,6 @@ export default function MasterScreeningQuestionsPage() {
   const [description, setDescription] = useState(''); // stored as helperText
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -79,17 +76,8 @@ export default function MasterScreeningQuestionsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!deviceCategoryId) { setError('Select a device category.'); return; }
-    const { errors, firstErrorField, isValid } = validateForm(
-      { question: required('Question is required.') },
-      { question },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!deviceCategoryId) { notifyError('Select a device category.'); return; }
+    if (!question.trim()) return;
     setSubmitting(true);
     try {
       const body = {
@@ -106,7 +94,7 @@ export default function MasterScreeningQuestionsPage() {
       closeModal();
       reload();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -118,7 +106,7 @@ export default function MasterScreeningQuestionsPage() {
       await masterApi.delete(`/master/screening-questions/${row.id}`);
       reload();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -194,21 +182,16 @@ export default function MasterScreeningQuestionsPage() {
                   {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
                 </select>
               </div>
-              <div ref={registerField(fieldRefs, 'question')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Question</label>
                 <textarea
                   value={question}
-                  onChange={(e) => {
-                    setQuestion(e.target.value);
-                    if (fieldErrors.question) setFieldErrors((prev) => ({ ...prev, question: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.question)}
+                  onChange={(e) => setQuestion(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   rows={2}
                   placeholder="e.g. Is your phone working properly?"
                   required
                 />
-                {fieldErrors.question ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.question}</p> : null}
               </div>
               <div>
                 <label className="block text-sm text-admin-muted mb-1">Description</label>

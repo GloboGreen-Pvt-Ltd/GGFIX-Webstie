@@ -8,21 +8,12 @@
  * bearer token instead of a customer's; /media/upload only requires *some*
  * authenticated caller, not a specific role.
  *
- * createShopBooking() is a STUB. There is no backend endpoint yet for a shop
- * to create a booking on a walk-in customer's behalf — the only
- * POST /repair-bookings in this codebase (src/lib/repairBooking.js) requires
- * a CUSTOMER bearer token and is only ever called from the public /repair
- * site flow; the shop dashboard today only reads bookings
- * (GET {ORDER_BASE}/repair-bookings/shop, src/lib/shopDashboard.js). Once a
- * shop-scoped create endpoint exists, replace this stub's body with:
- *   import { ORDER_BASE } from '@/lib/api';
- *   import { shopRequest } from '@/lib/shopApi';
- *   return shopRequest(ORDER_BASE(), '/repair-bookings', { method: 'POST', body: JSON.stringify(payload) });
- * — the payload shape the new page builds already mirrors RepairBookingRequest
- * plus the extra walk-in customer/pricing fields this form collects.
+ * createShopBooking() saves the booking through the real ticket-service
+ * endpoints (see its own doc comment below).
  */
 
-import { MEDIA_UPLOAD_URL } from '@/lib/api';
+import { MEDIA_UPLOAD_URL, ORDER_BASE, TICKET_BASE } from '@/lib/api';
+import { shopRequest } from '@/lib/shopApi';
 import { SHOP_TOKEN_KEY } from '@/lib/shopAuth';
 
 function shopToken() {
@@ -75,22 +66,114 @@ export function estimateTotal({
   return { subtotal, tax, total: subtotal + tax };
 }
 
-function randomBookingNumber() {
-  return `GG${Math.floor(100000 + Math.random() * 900000)}`;
-}
+const isDev = process.env.NODE_ENV !== 'production';
+const log = (...args) => {
+  if (isDev) console.log('[Booking]', ...args); // eslint-disable-line no-console
+};
 
 /**
- * STUB — see file doc comment. Simulates network latency and returns a
- * locally-generated booking so the UI can be built and reviewed end-to-end
- * ahead of the real backend contract.
+ * Create a shop booking for real — the same two calls the GGFIX Partner app's
+ * booking flow makes (CustomerDetailsScreen + ServiceBookingDevicesListScreen):
+ *
+ *   1. POST {TICKET_BASE}/customers   { name, phone, email?, address… }
+ *        upserts the shop's customer by mobile and returns { id, … }.
+ *   2. POST {TICKET_BASE}/tickets     TicketRequest (customerId required)
+ *        creates the repair ticket (one DB transaction in ticket-service);
+ *        the backend mirrors it into repair_bookings with this shop's id,
+ *        which is what GET {ORDER_BASE}/repair-bookings/shop — the web
+ *        Bookings page — reads.
+ *   3. GET  {ORDER_BASE}/repair-bookings/shop
+ *        confirms the booking is really listed, and gives its booking id
+ *        (the View/Receipt/Barcode/Details pages key on that id).
+ *
+ * Success only when the ticket comes back with an id; any non-2xx throws with
+ * the backend's own message (shopRequest), so the form is never cleared on a
+ * failed save. `payload` is the Book Service form payload.
  */
 export async function createShopBooking(payload) {
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  // 1 — customer
+  const customerBody = {
+    name: payload.customerName,
+    phone: payload.customerMobile,
+    email: payload.customerEmail || null,
+    addressLine: payload.pickupAddress?.addressLine || null,
+    city: payload.pickupAddress?.district || payload.pickupAddress?.city || null,
+    state: payload.pickupAddress?.state || null,
+    pincode: payload.pickupAddress?.pincode || null,
+    address: payload.pickupAddress
+      ? [payload.pickupAddress.addressLine, payload.pickupAddress.landmark, payload.pickupAddress.city, payload.pickupAddress.state, payload.pickupAddress.pincode]
+          .filter(Boolean)
+          .join(', ')
+      : null,
+  };
+  log('endpoint:', `${TICKET_BASE()}/customers`, '(POST)');
+  const customer = await shopRequest(TICKET_BASE(), '/customers', { method: 'POST', body: JSON.stringify(customerBody) });
+  if (!customer?.id) throw new Error('Could not save the customer — the server returned no customer id.');
+
+  // 2 — ticket
+  const pricing = payload.pricing || {};
+  const priceItems = [
+    ...(payload.services || []).map((s) => ({ id: s.repairServiceId || null, code: s.serviceCode || null, label: s.serviceName || 'Service', amount: 0 })),
+    ...[
+      ['Inspection Charge', pricing.inspectionCharge],
+      ['Service Charge', pricing.serviceCharge],
+      ['Parts Charge', pricing.partsCharge],
+      ['Pickup Charge', pricing.pickupCharge],
+    ]
+      .filter(([, v]) => Number(v) > 0)
+      .map(([label, v]) => ({ id: null, code: null, label, amount: Number(v) })),
+  ];
+  const photos = {
+    front: payload.frontImageUrl || null,
+    back: payload.backImageUrl || null,
+    damage: payload.damageImageUrl || null,
+    additional: payload.additionalImageUrls || [],
+  };
+  const hasPhotos = photos.front || photos.back || photos.damage || photos.additional.length;
+  const ticketBody = {
+    customerId: customer.id,
+    customerName: payload.customerName,
+    customerPhone: payload.customerMobile,
+    brandId: payload.brandId || null,
+    modelId: payload.modelId || null,
+    color: payload.color || null,
+    imei: payload.imei || null,
+    issueDescription: payload.issueDescription || payload.issueSummary || null,
+    estimatedPrice: Number(pricing.estimatedAmount) || 0,
+    deviceDisplayName: [payload.modelName, payload.ramStorage].filter(Boolean).join(' · ') || null,
+    repairServicesSummary: (payload.services || []).map((s) => s.serviceName).filter(Boolean).join(', ') || null,
+    priceItemsJson: priceItems.length ? JSON.stringify(priceItems) : null,
+    deviceSecurityType: payload.deviceSecurityType || 'NONE',
+    deviceSecurityValue: payload.devicePin || null,
+    missingPartsJson: payload.missingDamageParts ? JSON.stringify(String(payload.missingDamageParts).split(/,\s*/)) : null,
+    devicePhotosJson: hasPhotos ? JSON.stringify(photos) : null,
+    customerApproval: payload.customerApproval ?? null,
+  };
+  log('endpoint:', `${TICKET_BASE()}/tickets`, '(POST)');
+  log('request payload:', { ...ticketBody, deviceSecurityValue: ticketBody.deviceSecurityValue ? '[hidden]' : null });
+  log('identifiers:', { shopId: payload.shopId, customerId: customer.id });
+  const ticket = await shopRequest(TICKET_BASE(), '/tickets', { method: 'POST', body: JSON.stringify(ticketBody) });
+  log('response body:', ticket);
+  if (!ticket?.id) throw new Error('The booking was not created — the server returned no ticket id.');
+  log('created ticket id:', ticket.id, 'service number:', ticket.trackingId);
+
+  // 3 — confirm it is in the shop's Bookings list (the mirror is written in the same request)
+  let booking = null;
+  try {
+    const list = await shopRequest(ORDER_BASE(), '/repair-bookings/shop');
+    booking = (Array.isArray(list) ? list : []).find((b) => String(b.ticketId) === String(ticket.id)) || null;
+  } catch (err) {
+    log('could not re-read bookings:', err.message);
+  }
+  if (!booking) log('WARNING: ticket saved but not yet listed in /repair-bookings/shop');
+
   return {
-    id: `local-${Date.now()}`,
-    bookingNumber: randomBookingNumber(),
-    status: 'CREATED',
-    createdAt: new Date().toISOString(),
     ...payload,
+    id: booking?.id || ticket.id,
+    ticketId: ticket.id,
+    bookingNumber: ticket.trackingId || booking?.bookingNumber,
+    status: ticket.status || booking?.status,
+    createdAt: ticket.createdAt,
+    customerId: customer.id,
   };
 }

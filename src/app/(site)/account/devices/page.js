@@ -32,6 +32,7 @@ import {
   Chip,
   Panel,
 } from '@/components/site/account/ui';
+import { notifyError } from '@/lib/toast';
 
 const CATEGORIES = [
   { code: 'ALL', label: 'All' },
@@ -160,7 +161,7 @@ export default function ManageDevicePage() {
       await setDefaultDevice(device.id);
       await load();
     } catch (cause) {
-      setError(cause?.message || 'Could not update the default device.');
+      notifyError(cause, 'Could not update the default device.');
     } finally {
       setMutating(false);
     }
@@ -173,7 +174,7 @@ export default function ManageDevicePage() {
       await deleteDevice(device.id);
       await load();
     } catch (cause) {
-      setError(cause?.message || 'Could not delete this device.');
+      notifyError(cause, 'Could not delete this device.');
     } finally {
       setMutating(false);
     }

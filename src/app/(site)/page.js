@@ -14,7 +14,8 @@ import {
   Store,
 } from 'lucide-react';
 
-import HeroCarousel from '@/components/site/HeroCarousel';
+import HomeHeroSlide from '@/components/site/HomeHeroSlide';
+import HomeRepairCategories from '@/components/site/HomeRepairCategories';
 import {
   Badge,
   Button,
@@ -33,7 +34,6 @@ import {
   CTA,
   CUSTOMER_EXTRAS,
   FAQS,
-  HOME_MENU_GROUPS,
   REPAIR_STEPS,
   SELL_HIGHLIGHT,
   SELL_STEPS,
@@ -68,21 +68,6 @@ export const metadata = {
  */
 const ANCHOR_OFFSET = 'scroll-mt-24 lg:scroll-mt-36';
 
-/**
- * Artwork per "Our Services" card, keyed by HOME_MENU_GROUPS[].key.
- *
- * These are real files in public/ (1254x1254 each), not remote URLs — so unlike
- * the banner and category images they are guaranteed present at build time and
- * need no loading or failure state. Plain <img> rather than next/image: the
- * config sets images.unoptimized, so next/image would emit the same tag while
- * adding nothing.
- */
-const SERVICE_IMAGES = {
-  repair: '/repair.png',
-  sell: '/sell.png',
-  buy: '/buy.png',
-};
-
 /** My Orders really splits into these five groups. */
 const ORDER_TABS = ['Buy', 'Sell', 'Pickup', 'Enquiry', 'Service'];
 
@@ -115,40 +100,12 @@ export default function HomePage() {
       {/* ---------------------------------------------------------------- */}
       {/* 1. Hero                                                          */}
       {/* ---------------------------------------------------------------- */}
-      {/* padding="hairline" (2px): the hero is a single image sitting straight
-          under the sticky header, whose bottom border already separates the two.
-          Anything more than a couple of px reads as a gap, not breathing room. */}
-      <Section
-        tone="white"
-        padding="hairline"
-        className="relative overflow-hidden"
-        containerClassName="relative"
-      >
-        {/* decorative gradient blobs */}
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute -left-32 -top-40 h-72 w-72 rounded-full bg-brand-100 opacity-70 blur-3xl"
-        />
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute -right-24 top-24 h-72 w-72 rounded-full bg-accent-100 opacity-60 blur-3xl"
-        />
-
-        {/* The hero is now purely the banner slider — the headline, CTAs and
-            feature list were removed. A page still needs exactly one <h1> for
-            search engines and for screen-reader document navigation, and a
-            banner image cannot supply one, so it lives here visually hidden.
-            Remove this only if a visible <h1> comes back to the hero. */}
-        <h1 className="sr-only">
-          {BRAND.name} — {BRAND.tagline}
-        </h1>
-
-        {/* Admin-managed banner slider. Slides come from /master/banners, so
-            adding one in the admin changes the hero with no code change. */}
-        {/* Full container width. Banners are authored at 1920x700, so at the
-            1280px container this renders ~467px tall — full-bleed within the
-            page gutters without the ~640px slab the old 2:1 art produced. */}
-        <HeroCarousel exclude={['Repair']} className="relative mx-auto w-full max-w-[1028px]" />
+      {/* padding="snug": the hero sits straight under the sticky header, but its
+          stats bar hangs 10px below the artwork on xl+, so it needs a little
+          room underneath. No overflow-hidden here — it would clip that bar. */}
+      {/* "Your Devices In Safe Hands" — HomeHeroSlide carries the page's <h1>. */}
+      <Section tone="white" padding="snug">
+        <HomeHeroSlide />
       </Section>
 
       {/* ---------------------------------------------------------------- */}
@@ -162,41 +119,9 @@ export default function HomePage() {
           "Our Services". Both tight puts them a comfortable distance apart
           without the gap reading as a missing section. */}
       <Section id="menu" tone="page" padding="tight" className={ANCHOR_OFFSET}>
-        {/* Three cards, one per journey — icon and name only. The per-category
-            device tiles that used to fill this section are gone; each card is a
-            single link into its detail section further down the page. */}
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
-            Our Services
-          </h2>
-
-          <ul role="list" className="mt-6 grid list-none grid-cols-1 gap-5 p-0 sm:grid-cols-3">
-            {HOME_MENU_GROUPS.map((group) => (
-              <li key={group.key}>
-                <Link
-                  href={group.href}
-                  className="group flex h-full flex-col items-center gap-2.5 rounded-2xl border border-brand-line bg-white p-4 text-center shadow-soft transition hover:border-brand-200 hover:shadow-lift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5 sm:p-5"
-                >
-                  {/* Decorative: the card's own label sits directly beneath and
-                      the link already has an accessible name from it, so a
-                      descriptive alt here would just be announced twice. */}
-                  <img
-                    src={SERVICE_IMAGES[group.key]}
-                    alt=""
-                    width={1254}
-                    height={1254}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-16 w-16 object-contain transition motion-safe:group-hover:scale-105 sm:h-20 sm:w-20"
-                  />
-                  <span className="text-base font-bold tracking-tight text-brand-ink sm:text-lg">
-                    {group.action}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {/* Repair device categories, then the admin's Buy / Sell menu rows, then
+            Nearby Shops — one flat tile each (see HomeRepairCategories). */}
+        <HomeRepairCategories />
       </Section>
 
       {/* ---------------------------------------------------------------- */}

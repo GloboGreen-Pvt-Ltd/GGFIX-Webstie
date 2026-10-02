@@ -35,14 +35,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, ChevronRight, Info, Phone, PlusCircle, ShieldCheck, Users } from 'lucide-react';
+import { ChevronRight, Info, Phone, PlusCircle, ShieldCheck, Users } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
 import Icon3D from '@/components/shop-dashboard/Icon3D';
 import EmptyState from '@/components/shop-dashboard/EmptyState';
 import { fetchTechnicians } from '@/lib/shopDashboard';
 import { fetchMyProfile } from '@/lib/shopProfile';
+import { readShopOwner } from '@/lib/shopAuth';
+import { isOwnerSession } from '@/lib/shopAccess';
 import { fetchMySubscription } from '@/lib/shopSubscription';
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
@@ -53,8 +55,8 @@ const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visibl
 function roleBadgeTone(roleLabel) {
   const r = String(roleLabel || '').toLowerCase();
   if (r === 'pickup person') return 'bg-[#FFF1E0] text-[#B45A00]';
-  if (r === 'technician') return 'bg-[#DFF8EB] text-[#066B39]';
-  return 'bg-[#E6FBF7] text-[#0F766E]';
+  if (r === 'technician') return 'bg-[#F3F3F3] text-[#066B39]';
+  return 'bg-[#F3F3F3] text-[#0F766E]';
 }
 
 function initials(name) {
@@ -71,7 +73,7 @@ function Avatar({ name, url, active }) {
   const [broken, setBroken] = useState(false);
   if (url && !broken) {
     return (
-      <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-[#E4ECE8]">
+      <span className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-[#ECECEC]">
         {/* eslint-disable-next-line @next/next/no-img-element -- employee profile photos are arbitrary shop-catalog URLs, not app assets Next can optimize. */}
         <img src={url} alt="" onError={() => setBroken(true)} className="h-full w-full object-cover" />
         <span className={cx('absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white', active ? 'bg-[#15803D]' : 'bg-[#98A2B3]')} aria-hidden="true" />
@@ -79,7 +81,7 @@ function Avatar({ name, url, active }) {
     );
   }
   return (
-    <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#DFF8EB] to-[#BBF7D0] text-sm font-bold text-[#066B39] shadow-[inset_0_1px_0_rgba(255,255,255,0.6),0_4px_10px_rgba(8,145,75,0.14)]">
+    <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-sm font-bold text-[#066B39]">
       {initials(name)}
       <span className={cx('absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white', active ? 'bg-[#15803D]' : 'bg-[#98A2B3]')} aria-hidden="true" />
     </span>
@@ -125,7 +127,6 @@ function CircularProgress({ value, total }) {
 }
 
 export default function EmployeeManagementPage() {
-  const router = useRouter();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -151,6 +152,9 @@ export default function EmployeeManagementPage() {
   }, []);
 
   useEffect(() => {
+    // The seat limit lives on the OWNER's subscription (owner profile + plan) —
+    // a shop login never fetches either; its ring just counts its own team.
+    if (!isOwnerSession(readShopOwner())) return undefined;
     let alive = true;
     fetchMyProfile()
       .then((profile) => (profile?.id ? fetchMySubscription(profile.id) : null))
@@ -178,35 +182,27 @@ export default function EmployeeManagementPage() {
   const ringTotal = seats?.limit ?? counts.total;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1320px] flex-col gap-5">
-      {/* Header — back / title / Add Employee, compact per reference. */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            aria-label="Back"
-            className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E4ECE8] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]', FOCUS_RING)}
+    <div className="flex w-full flex-col gap-5">
+      {/* Add Employee: real navigation to the new "Add Staff" flow
+          (/team/new -> /team/new/create), matching the real GGFIX Staff
+          mobile app screens of the same name. Those screens' own
+          Create/upload actions stay honestly disabled pending a confirmed
+          create-employee endpoint (TECHNICIAN_BASE is defined in
+          src/lib/api.js but never called anywhere in this web app yet) —
+          this button itself is real, working navigation, not a dead end. */}
+      <PageHeader
+        title="Employees"
+        subtitle="View, add, edit, activate and deactivate employees."
+        action={
+          <Link
+            href="/shop-home/employee/team/new"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A]"
           >
-            <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
-          </button>
-          <h1 className="truncate text-xl font-extrabold tracking-tight text-[#10213D]">Employees</h1>
-        </div>
-        {/* Real navigation to the new "Add Staff" flow (/team/new ->
-            /team/new/create), matching the real GGFIX Staff mobile app
-            screens of the same name. Those screens' own Create/upload
-            actions stay honestly disabled pending a confirmed
-            create-employee endpoint (TECHNICIAN_BASE is defined in
-            src/lib/api.js but never called anywhere in this web app yet) —
-            this button itself is real, working navigation, not a dead end. */}
-        <Link
-          href="/shop-home/employee/team/new"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-gradient-to-br from-[#16B45F] to-[#087A3E] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_12px_rgba(8,122,62,0.2)] transition hover:from-[#12A052] hover:to-[#076A36]"
-        >
-          <PlusCircle className="h-4 w-4" aria-hidden="true" />
-          Add Employee
-        </Link>
-      </div>
+            <PlusCircle className="h-4 w-4" aria-hidden="true" />
+            Add Employee
+          </Link>
+        }
+      />
 
       {error ? (
         <div role="alert" className="flex items-start gap-2.5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -216,12 +212,12 @@ export default function EmployeeManagementPage() {
       ) : null}
 
       {/* All Employees summary card */}
-      <div className="flex items-center justify-between gap-4 rounded-[22px] border border-[#E4ECE8] bg-white p-4 shadow-[0_8px_24px_rgba(20,80,55,0.06)] sm:p-5">
+      <div className="flex items-center justify-between gap-4 rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-4 sm:p-5">
         <div className="flex min-w-0 items-center gap-3">
           <Icon3D icon={Users} tone="green" size="md" />
           <div className="min-w-0">
             <p className="text-sm font-extrabold text-[#10213D]">All Employees</p>
-            <p className="mt-0.5 truncate text-xs text-[#667085]">
+            <p className="mt-0.5 truncate text-xs text-[#666666]">
               {loading ? 'Loading…' : `${counts.active} active · ${counts.total} total`}
             </p>
           </div>
@@ -239,11 +235,11 @@ export default function EmployeeManagementPage() {
       {loading ? (
         <div className="space-y-2.5">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-[76px] animate-pulse rounded-2xl border border-[#EAECF0] bg-[#F9FAFB]" />
+            <div key={i} className="h-[76px] animate-pulse rounded-2xl border border-[#ECECEC] bg-[#F8F8F8]" />
           ))}
         </div>
       ) : list.length === 0 ? (
-        <div className="rounded-[22px] border border-[#E4ECE8] bg-white py-6">
+        <div className="rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] py-6">
           <EmptyState
             icon={Users}
             title="No employees yet"
@@ -251,7 +247,7 @@ export default function EmployeeManagementPage() {
             action={
               <Link
                 href="/shop-home/employee/team/new"
-                className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-br from-[#16B45F] to-[#087A3E] px-4 py-2.5 text-sm font-semibold text-white shadow-[0_4px_12px_rgba(8,122,62,0.2)] transition hover:from-[#12A052] hover:to-[#076A36]"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A]"
               >
                 <PlusCircle className="h-4 w-4" aria-hidden="true" />
                 Add Employee
@@ -268,7 +264,7 @@ export default function EmployeeManagementPage() {
       )}
 
       {/* Bottom info card */}
-      <div className="flex items-center gap-3 rounded-2xl border border-[rgba(15,140,90,0.14)] bg-gradient-to-br from-[#F3FBF7] to-[#E4F8EC] px-4 py-3.5">
+      <div className="flex items-center gap-3 rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] px-4 py-3.5">
         <Info className="h-4.5 w-4.5 shrink-0 text-[#0A934D]" aria-hidden="true" />
         <p className="min-w-0 flex-1 text-xs leading-relaxed text-[#345245]">
           You can add, edit or deactivate employees. Only active employees can access the shop.
@@ -288,9 +284,9 @@ export default function EmployeeManagementPage() {
 function EmployeeCard({ employee }) {
   return (
     <Link
-      href={`/shop-home/employee/team/${employee.id}`}
+      href={`/shop-home/employee/team/view/?id=${encodeURIComponent(employee.id)}`}
       className={cx(
-        'flex items-center gap-3.5 rounded-2xl border border-[#E4ECE8] bg-white p-4 transition hover:border-[#079447] hover:shadow-[0_8px_20px_rgba(20,80,55,0.08)]',
+        'flex items-center gap-3.5 rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-4 transition hover:border-[#079447]',
         FOCUS_RING,
       )}
     >
@@ -299,7 +295,7 @@ function EmployeeCard({ employee }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-bold text-[#10213D]">{employee.name}</p>
         {employee.phone ? (
-          <span className="mt-0.5 flex items-center gap-1 text-xs text-[#667085]">
+          <span className="mt-0.5 flex items-center gap-1 text-xs text-[#666666]">
             <Phone className="h-3 w-3 shrink-0" aria-hidden="true" />
             {employee.phone}
           </span>
@@ -317,7 +313,7 @@ function EmployeeCard({ employee }) {
             aria-hidden="true"
             className={cx('flex h-[18px] w-8 shrink-0 items-center rounded-full p-0.5 transition', employee.active ? 'justify-end bg-[#15803D]/70' : 'justify-start bg-[#D0D5DD]')}
           >
-            <span className="h-[14px] w-[14px] rounded-full bg-white shadow-sm" />
+            <span className="h-[14px] w-[14px] rounded-full bg-white" />
           </span>
         </div>
         <ChevronRight className="h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />

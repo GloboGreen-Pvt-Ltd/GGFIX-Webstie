@@ -1,21 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadBannerImage } from '@/lib/modelMedia';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 export default function DirectoryBannersPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, because
-  // the modal closes on save — and a replacement deletes the old file from the
-  // bucket, which is worth saying in words rather than leaving to be inferred.
-  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null);
   const [title, setTitle] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -24,8 +19,6 @@ export default function DirectoryBannersPage() {
   const [sortOrder, setSortOrder] = useState('0');
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -67,18 +60,8 @@ export default function DirectoryBannersPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { errors, firstErrorField, isValid } = validateForm(
-      { title: required('Title is required.') },
-      { title },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!title.trim()) return;
     setSubmitting(true);
-    setNotice('');
     try {
       const body = {
         title: title.trim(),
@@ -97,12 +80,13 @@ export default function DirectoryBannersPage() {
       }
       if (imageFile && bannerId) {
         const uploaded = await uploadBannerImage(bannerId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Banner image'));
+        const notice = imageReplacementNotice(uploaded, 'Banner image');
+        if (notice) notifySuccess(notice);
       }
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -114,7 +98,7 @@ export default function DirectoryBannersPage() {
       await masterApi.delete(`/master/banners/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -150,11 +134,6 @@ export default function DirectoryBannersPage() {
         Promotional banners shown in the mobile app (GET /api/master/banners).
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
       ) : (
@@ -174,20 +153,15 @@ export default function DirectoryBannersPage() {
               {modal.type === 'create' ? 'New banner' : 'Edit banner'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div ref={registerField(fieldRefs, 'title')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Title</label>
                 <input
                   type="text"
                   value={title}
-                  onChange={(e) => {
-                    setTitle(e.target.value);
-                    if (fieldErrors.title) setFieldErrors((prev) => ({ ...prev, title: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.title)}
+                  onChange={(e) => setTitle(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   required
                 />
-                {fieldErrors.title ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.title}</p> : null}
               </div>
               {/* aspect="wide" matches the shape the mobile carousel renders.
                   allowBase64Fallback={false}: master_banners.image_url is a

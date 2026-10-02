@@ -155,7 +155,7 @@ export default function BookingReportPage() {
               type="button"
               onClick={() => setReloadKey((k) => k + 1)}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-xl border border-[#EAECF0] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
+                'inline-flex items-center gap-1.5 rounded-xl border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
                 FOCUS_RING,
               )}
             >
@@ -167,7 +167,7 @@ export default function BookingReportPage() {
               onClick={handleExport}
               disabled={loading || exporting || rows.length === 0}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-60',
+                'inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60',
                 FOCUS_RING,
               )}
             >
@@ -195,7 +195,7 @@ export default function BookingReportPage() {
 
       <div>
         <div className="mb-2.5 flex items-center justify-between gap-3">
-          <p className="text-sm font-bold text-[#101828]">Recent Created</p>
+          <p className="text-sm font-bold text-[#111111]">Recent Created</p>
           {recentCreated.length > 0 ? (
             <button type="button" onClick={() => goToFilter('Created')} className="text-xs font-bold text-[#15803D] hover:underline">
               View all
@@ -207,7 +207,7 @@ export default function BookingReportPage() {
         ) : recentCreated.length === 0 ? (
           <EmptyState icon={Inbox} title="No new bookings." description="Newly created bookings will show up here." />
         ) : (
-          <div className="divide-y divide-[#EAECF0] rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+          <div className="divide-y divide-[#ECECEC] rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
             {recentCreated.map((b) => (
               <BookingRow key={b.id} booking={b} expanded={expandedId === b.id} onToggle={() => toggleExpanded(b.id)} />
             ))}
@@ -217,7 +217,7 @@ export default function BookingReportPage() {
 
       <div>
         <div className="mb-2.5 flex items-center justify-between gap-3">
-          <p className="text-sm font-bold text-[#101828]">In Progress</p>
+          <p className="text-sm font-bold text-[#111111]">In Progress</p>
           {inProgress.length > 0 ? (
             <button type="button" onClick={() => goToFilter('In Progress')} className="text-xs font-bold text-[#15803D] hover:underline">
               View all
@@ -229,7 +229,7 @@ export default function BookingReportPage() {
         ) : inProgress.length === 0 ? (
           <EmptyState icon={Truck} title="No bookings in progress." description="Nothing being worked on right now." />
         ) : (
-          <div className="divide-y divide-[#EAECF0] rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+          <div className="divide-y divide-[#ECECEC] rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
             {inProgress.map((b) => (
               <BookingRow key={b.id} booking={b} expanded={expandedId === b.id} onToggle={() => toggleExpanded(b.id)} />
             ))}
@@ -238,9 +238,9 @@ export default function BookingReportPage() {
       </div>
 
       <div ref={fullListRef}>
-        <p className="mb-2.5 text-sm font-bold text-[#101828]">All Bookings</p>
-        <section className="rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
-          <div className="border-b border-[#EAECF0] px-4 py-4 sm:px-5">
+        <p className="mb-2.5 text-sm font-bold text-[#111111]">All Bookings</p>
+        <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
+          <div className="border-b border-[#ECECEC] px-4 py-4 sm:px-5">
             <FilterChips options={FULL_LIST_FILTERS} value={filter} onChange={setFilter} counts={counts} />
           </div>
 
@@ -253,7 +253,7 @@ export default function BookingReportPage() {
               <EmptyState icon={ClipboardList} tone="muted" title="No bookings found." description="Try a different status." />
             )
           ) : (
-            <div className="divide-y divide-[#EAECF0]">
+            <div className="divide-y divide-[#ECECEC]">
               {filtered.map((b) => (
                 <BookingRow key={b.id} booking={b} expanded={expandedId === b.id} onToggle={() => toggleExpanded(b.id)} />
               ))}
@@ -269,31 +269,31 @@ function BookingRow({ booking, expanded, onToggle }) {
   const amount = bookingEstimatedAmount(booking);
   return (
     <div>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F9FAFB] sm:px-5">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4]">
+      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F8F8F8] sm:px-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8]">
           <Smartphone className="h-5 w-5 text-[#15803D]" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-[#101828]">{booking.issueSummary || booking.deviceDisplayName || 'Service booking'}</p>
-          <p className="truncate text-xs text-[#667085]">
+          <p className="truncate text-sm font-bold text-[#111111]">{booking.issueSummary || booking.deviceDisplayName || 'Service booking'}</p>
+          <p className="truncate text-xs text-[#666666]">
             {booking.customerName || 'Customer'} · #{booking.bookingNumber || booking.id} · {SERVICE_MODE_LABEL[booking.serviceMode] || booking.serviceMode}
           </p>
         </div>
-        <div className="hidden shrink-0 text-right text-xs text-[#667085] sm:block">
+        <div className="hidden shrink-0 text-right text-xs text-[#666666] sm:block">
           {booking.createdAt ? new Date(booking.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
         </div>
-        <span className={cx('hidden shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide sm:inline-block', BOOKING_STATUS_BADGE[booking.statusLabel] || 'bg-[#F0FDF4] text-[#667085]')}>
+        <span className={cx('hidden shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide sm:inline-block', BOOKING_STATUS_BADGE[booking.statusLabel] || 'bg-[#F8F8F8] text-[#666666]')}>
           {booking.statusLabel}
         </span>
         <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
       </button>
 
       {expanded ? (
-        <div className="space-y-2 border-t border-dashed border-[#EAECF0] bg-[#F9FAFB] px-4 py-4 text-sm text-[#344054] sm:px-5">
-          <p>Customer: <span className="font-semibold text-[#101828]">{booking.customerName || 'Not available'}</span> · {booking.customerMobile || 'Not available'}</p>
-          <p>Estimated Amount: <span className="font-semibold text-[#101828]">{amount != null ? `₹${Number(amount).toLocaleString('en-IN')}` : 'Not available'}</span></p>
-          <p className="text-xs text-[#667085]">
-            Created: <span className="font-semibold text-[#101828]">{booking.createdAt ? new Date(booking.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Not available'}</span>
+        <div className="space-y-2 border-t border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-4 text-sm text-[#344054] sm:px-5">
+          <p>Customer: <span className="font-semibold text-[#111111]">{booking.customerName || 'Not available'}</span> · {booking.customerMobile || 'Not available'}</p>
+          <p>Estimated Amount: <span className="font-semibold text-[#111111]">{amount != null ? `₹${Number(amount).toLocaleString('en-IN')}` : 'Not available'}</span></p>
+          <p className="text-xs text-[#666666]">
+            Created: <span className="font-semibold text-[#111111]">{booking.createdAt ? new Date(booking.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Not available'}</span>
           </p>
         </div>
       ) : null}

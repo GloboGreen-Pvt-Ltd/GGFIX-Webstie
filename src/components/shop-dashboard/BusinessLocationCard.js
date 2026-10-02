@@ -9,7 +9,7 @@ const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visibl
 
 function DocDot({ ok, label }) {
   return (
-    <span className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold', ok ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-[#F2F4F7] text-[#98A2B3]')}>
+    <span className={cx('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold', ok ? 'bg-[#F3F3F3] text-[#15803D]' : 'bg-[#F3F3F3] text-[#98A2B3]')}>
       <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
       {label}
     </span>
@@ -26,8 +26,8 @@ export default function BusinessLocationCard({ location, isMain, onView, onEdit,
   const headerImageUrl = location.frontImageUrl || location.bannerImageUrl;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)] transition hover:shadow-[0_4px_16px_rgba(16,24,40,0.10)]">
-      <div className="relative h-28 w-full bg-gradient-to-br from-[#DCFCE7] via-[#F0FDF4] to-white">
+    <div className="flex flex-col overflow-hidden rounded-3xl border border-[#ECECEC] bg-[#F8F8F8] transition">
+      <div className="relative h-28 w-full bg-[#F8F8F8]">
         {headerImageUrl ? (
           <SafeImage
             src={headerImageUrl}
@@ -50,13 +50,13 @@ export default function BusinessLocationCard({ location, isMain, onView, onEdit,
 
       <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
         <div className="min-w-0">
-          <p className="truncate text-base font-bold text-[#101828]">{location.name || 'Untitled location'}</p>
-          <p className="mt-1 flex items-center gap-1.5 truncate text-sm text-[#667085]">
+          <p className="truncate text-base font-bold text-[#111111]">{location.name || 'Untitled location'}</p>
+          <p className="mt-1 flex items-center gap-1.5 truncate text-sm text-[#666666]">
             <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {addr}
           </p>
           {location.mobile ? (
-            <p className="mt-1 flex items-center gap-1.5 text-sm text-[#667085]">
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-[#666666]">
               <Phone className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               {location.mobile}
             </p>
@@ -73,9 +73,9 @@ export default function BusinessLocationCard({ location, isMain, onView, onEdit,
         <div>
           <div className="mb-1 flex items-center justify-between text-xs">
             <span className="font-semibold text-[#475467]">Profile completeness</span>
-            <span className="font-bold text-[#101828]">{progress}%</span>
+            <span className="font-bold text-[#111111]">{progress}%</span>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#F2F4F7]">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#F3F3F3]">
             <div className={cx('h-full rounded-full transition-all', progressColor)} style={{ width: `${progress}%` }} />
           </div>
         </div>
@@ -84,27 +84,32 @@ export default function BusinessLocationCard({ location, isMain, onView, onEdit,
           <button
             type="button"
             onClick={onView}
-            className={cx('inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#D0D5DD] bg-white px-3 py-2 text-xs font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+            className={cx('inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-[#D0D5DD] bg-white px-3 py-2 text-xs font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
           >
             <Eye className="h-3.5 w-3.5" aria-hidden="true" />
             View
           </button>
-          <button
-            type="button"
-            onClick={onEdit}
-            className={cx('inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#15803D] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#166534]', FOCUS_RING)}
-          >
-            <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-            Edit
-          </button>
-          <button
-            type="button"
-            onClick={onDelete}
-            aria-label={`Delete ${location.name || 'location'}`}
-            className={cx('inline-flex shrink-0 items-center justify-center rounded-xl border border-[#D0D5DD] bg-white p-2 text-[#98A2B3] transition hover:border-red-200 hover:bg-red-50 hover:text-red-600', FOCUS_RING)}
-          >
-            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+          {/* Edit / Delete only when the caller allows them (owners) — a shop login views only. */}
+          {onEdit ? (
+            <button
+              type="button"
+              onClick={onEdit}
+              className={cx('inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#F3BF23] px-3 py-2 text-xs font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A]', FOCUS_RING)}
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+              Edit
+            </button>
+          ) : null}
+          {onDelete ? (
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label={`Delete ${location.name || 'location'}`}
+              className={cx('inline-flex shrink-0 items-center justify-center rounded-xl border border-[#D0D5DD] bg-white p-2 text-[#98A2B3] transition hover:border-red-200 hover:bg-red-50 hover:text-red-600', FOCUS_RING)}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

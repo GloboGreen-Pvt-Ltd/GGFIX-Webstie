@@ -176,18 +176,18 @@ export default function BookingReceiptPage() {
           type="button"
           onClick={() => router.back()}
           aria-label="Back"
-          className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#EAECF0] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]"
+          className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]"
         >
           <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
         </button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold tracking-tight text-[#101828] sm:text-[28px]">Receipt</h1>
-          <p className="mt-1 text-sm text-[#667085]">Booking receipt for this service.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-[#111111] sm:text-[28px]">Receipt</h1>
+          <p className="mt-1 text-sm text-[#666666]">Booking receipt for this service.</p>
         </div>
         <button
           type="button"
           onClick={copyTrackingId}
-          className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#F0FDF4] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#15803D] transition hover:bg-[#DCFCE7]"
+          className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#F8F8F8] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#15803D] transition hover:bg-[#F3F3F3]"
         >
           #{trackingId}
           <Copy className="h-3.5 w-3.5" aria-hidden="true" />
@@ -197,8 +197,8 @@ export default function BookingReceiptPage() {
 
       {loading ? (
         <div className="space-y-4">
-          <div className="h-24 animate-pulse rounded-3xl border border-[#EAECF0] bg-[#F9FAFB]" />
-          <div className="h-96 animate-pulse rounded-3xl border border-[#EAECF0] bg-[#F9FAFB]" />
+          <div className="h-24 animate-pulse rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]" />
+          <div className="h-96 animate-pulse rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]" />
         </div>
       ) : error ? (
         <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} />
@@ -206,57 +206,57 @@ export default function BookingReceiptPage() {
         <EmptyState icon={AlertTriangle} tone="muted" title="Booking not found" description="We couldn't find this booking." />
       ) : (
         <>
-          <section className="overflow-hidden rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+          <section className="overflow-hidden rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
             <div className="bg-[#15803D] px-6 py-6 text-white">
               <p className="text-2xl font-extrabold">GGFix</p>
               <p className="mt-1 text-sm text-white/85">Booking Receipt</p>
             </div>
 
             <div className="p-6">
-              <div className="rounded-2xl border border-[#DCFCE7] bg-[#F0FDF4] p-4">
+              <div className="rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-4">
                 <p className="text-[0.7rem] font-bold uppercase tracking-wide text-[#15803D]">Tracking ID</p>
-                <p className="mt-1 text-xl font-extrabold text-[#101828]">#{trackingId}</p>
-                <p className="mt-1 text-sm text-[#667085]">Status: <span className="font-bold text-[#15803D]">{currentLabel}</span></p>
+                <p className="mt-1 text-xl font-extrabold text-[#111111]">#{trackingId}</p>
+                <p className="mt-1 text-sm text-[#666666]">Status: <span className="font-bold text-[#15803D]">{currentLabel}</span></p>
               </div>
 
               <div className="mt-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-[#15803D]">Customer</p>
                 <div className="mt-2 space-y-1.5 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-[#667085]">Name</span>
-                    <span className="font-bold text-[#101828]">{booking.customerName || 'Not available'}</span>
+                    <span className="text-[#666666]">Name</span>
+                    <span className="font-bold text-[#111111]">{booking.customerName || 'Not available'}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[#667085]">Mobile</span>
-                    <span className="font-bold text-[#101828]">{booking.customerMobile || 'Not available'}</span>
+                    <span className="text-[#666666]">Mobile</span>
+                    <span className="font-bold text-[#111111]">{booking.customerMobile || 'Not available'}</span>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-5 border-t border-[#EAECF0] pt-5">
+              <div className="mt-5 border-t border-[#ECECEC] pt-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-[#15803D]">Device</p>
                 <div className="mt-2 space-y-1.5 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-[#667085]">Model</span>
-                    <span className="font-bold text-[#101828]">{deviceLine || 'Not specified'}</span>
+                    <span className="text-[#666666]">Model</span>
+                    <span className="font-bold text-[#111111]">{deviceLine || 'Not specified'}</span>
                   </div>
                   {booking.color ? (
                     <div className="flex items-center justify-between">
-                      <span className="text-[#667085]">Variant</span>
-                      <span className="font-bold text-[#101828]">{booking.color}</span>
+                      <span className="text-[#666666]">Variant</span>
+                      <span className="font-bold text-[#111111]">{booking.color}</span>
                     </div>
                   ) : null}
                 </div>
               </div>
 
-              <div className="mt-5 border-t border-[#EAECF0] pt-5">
+              <div className="mt-5 border-t border-[#ECECEC] pt-5">
                 <p className="text-xs font-bold uppercase tracking-wide text-[#15803D]">Services</p>
                 <div className="mt-2 space-y-1.5 text-sm">
                   {services.length ? (
                     services.map((s, i) => (
                       <div key={s.repairServiceId || i} className="flex items-center justify-between">
                         <span className="text-[#344054]">{i + 1}. {s.serviceName || s.serviceCode || 'Service'}</span>
-                        <span className="font-bold text-[#101828]">{money(s.estimatedPrice)}</span>
+                        <span className="font-bold text-[#111111]">{money(s.estimatedPrice)}</span>
                       </div>
                     ))
                   ) : (
@@ -280,7 +280,7 @@ export default function BookingReceiptPage() {
           <button
             type="button"
             onClick={printReceipt}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#14532D] px-5 py-3 text-sm font-bold text-white transition hover:bg-[#166534]"
+            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-[#F3BF23] px-5 py-3 text-sm font-bold text-[#1E1E1E] transition hover:bg-[#E5B11A]"
           >
             <Printer className="h-4.5 w-4.5" aria-hidden="true" />
             Print Receipt

@@ -26,109 +26,6 @@ import { TICKET_STAGES, TICKET_STAGE_BADGE, ticketStageLabel, ticketStageProgres
 
 const FILTERS = ['All', ...TICKET_STAGES.map((s) => s.label), 'Cancelled'];
 
-/**
- * ServiceStatusIllustration — small decorative graphic for the hero's right
- * side (a "SERVICE STATUS" clipboard with a checklist, a gear, a phone, a
- * wrench, a package and a clock), matching a reference design. Hand-drawn
- * inline SVG with layered gradients/filter-based drop shadows for a soft-3D
- * feel, purely decorative — no data — same technique as the other
- * redesigned Partner Dashboard pages' hero illustrations.
- */
-function ServiceStatusIllustration() {
-  return (
-    <svg viewBox="0 0 300 190" className="h-full w-full" aria-hidden="true">
-      <defs>
-        <linearGradient id="ssClip" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#EAF9EF" />
-        </linearGradient>
-        <linearGradient id="ssGear" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#4ADE80" />
-          <stop offset="1" stopColor="#0A934D" />
-        </linearGradient>
-        <linearGradient id="ssPhone" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#22C55E" />
-          <stop offset="1" stopColor="#0A934D" />
-        </linearGradient>
-        <linearGradient id="ssBox" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#EBD3A8" />
-          <stop offset="1" stopColor="#C69B5F" />
-        </linearGradient>
-        <filter id="ssShadow" x="-40%" y="-40%" width="180%" height="180%">
-          <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#0C6636" floodOpacity="0.2" />
-        </filter>
-      </defs>
-
-      <ellipse cx="170" cy="178" rx="120" ry="9" fill="#0C6636" opacity="0.08" />
-
-      <g fill="#BFE8FF" opacity="0.55">
-        <ellipse cx="56" cy="28" rx="18" ry="10" />
-        <ellipse cx="40" cy="22" rx="12" ry="8" />
-        <ellipse cx="272" cy="38" rx="14" ry="8" />
-      </g>
-      <g>
-        <path d="M118 190 q-6 -30 18 -40 q4 22 -18 40" fill="#4ADE80" opacity="0.8" />
-        <path d="M236 188 q6 -26 -14 -36 q-4 20 14 36" fill="#22C55E" opacity="0.8" />
-      </g>
-
-      {/* package box, left */}
-      <g filter="url(#ssShadow)">
-        <rect x="112" y="128" width="42" height="38" rx="3" fill="url(#ssBox)" />
-        <rect x="112" y="128" width="42" height="10" fill="#B99568" opacity="0.8" />
-        <rect x="130" y="138" width="6" height="28" fill="#8A6238" opacity="0.5" />
-      </g>
-
-      {/* clock, floating above the box */}
-      <g filter="url(#ssShadow)">
-        <circle cx="126" cy="104" r="16" fill="#FDE68A" />
-        <circle cx="126" cy="104" r="12" fill="white" />
-        <path d="M126 96 v9 l6 5" stroke="#B45309" strokeWidth="2.4" strokeLinecap="round" fill="none" />
-      </g>
-
-      {/* gear */}
-      <g filter="url(#ssShadow)" transform="translate(232,150)">
-        <circle r="18" fill="url(#ssGear)" />
-        <circle r="7" fill="white" opacity="0.9" />
-        {[0, 60, 120, 180, 240, 300].map((deg) => (
-          <rect key={deg} x="-3" y="-24" width="6" height="10" rx="2" fill="url(#ssGear)" transform={`rotate(${deg})`} />
-        ))}
-      </g>
-
-      {/* wrench, floating */}
-      <g filter="url(#ssShadow)" transform="translate(252,108) rotate(-30)">
-        <rect x="0" y="0" width="38" height="8" rx="4" fill="#0A934D" />
-        <circle cx="0" cy="4" r="8" fill="none" stroke="#0A934D" strokeWidth="6" />
-      </g>
-
-      {/* main SERVICE STATUS clipboard */}
-      <g filter="url(#ssShadow)">
-        <rect x="148" y="30" width="80" height="118" rx="10" fill="url(#ssClip)" stroke="#DCFCE7" strokeWidth="2" />
-        <rect x="172" y="22" width="32" height="16" rx="6" fill="#0A934D" />
-        <rect x="158" y="52" width="60" height="15" rx="4" fill="#FFFFFF" stroke="#DFF8EB" strokeWidth="1.5" />
-        <text x="188" y="63" textAnchor="middle" fontSize="7.5" fontWeight="800" fill="#0C6636">SERVICE STATUS</text>
-
-        {[0, 1, 2].map((i) => (
-          <g key={i} transform={`translate(158,${78 + i * 17})`}>
-            <circle cx="6" cy="6" r="6" fill="#0A934D" />
-            <path d="M3 6 l2 2 l4 -4" stroke="white" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-            <rect x="18" y="3" width="48" height="6" rx="3" fill="#DCFCE7" />
-          </g>
-        ))}
-      </g>
-
-      {/* phone, right */}
-      <g filter="url(#ssShadow)">
-        <rect x="248" y="56" width="34" height="56" rx="9" fill="url(#ssPhone)" />
-        <rect x="252" y="62" width="26" height="38" rx="2" fill="#EAF5FF" />
-        <circle cx="265" cy="105" r="1.8" fill="white" opacity="0.85" />
-      </g>
-
-      <circle cx="126" cy="46" r="3.5" fill="#86EFAC" />
-      <circle cx="272" cy="150" r="3" fill="#86EFAC" />
-    </svg>
-  );
-}
-
 /** Small decorative empty-state graphic — a wrench + gear over a checklist, matching a reference design. Purely decorative. */
 function ServiceStatusEmptyIllustration() {
   return (
@@ -162,15 +59,15 @@ function ServiceStatusEmptyIllustration() {
 // same approach as the redesigned Delivery/Pickups/Requote/Bookings pages.
 const SERVICE_STATUS_STYLES = {
   green: {
-    card: 'bg-gradient-to-br from-[#F3FBF7] to-[#E4F8EC]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#22C55E] to-[#0A934D]',
     value: 'text-[#10213D]',
     label: 'text-[#066B39]',
     wave: 'text-[#BBF7D0]',
-    glow: 'bg-[#86EFAC]',
+    glow: 'bg-[#F3F3F3]',
   },
   orange: {
-    card: 'bg-gradient-to-br from-[#FFF7ED] to-[#FDE7CB]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#FB923C] to-[#FF7A1A]',
     value: 'text-[#10213D]',
     label: 'text-[#9A5B27]',
@@ -178,7 +75,7 @@ const SERVICE_STATUS_STYLES = {
     glow: 'bg-[#FDBA74]',
   },
   blue: {
-    card: 'bg-gradient-to-br from-[#EFF9FF] to-[#D9F0FE]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#38BDF8] to-[#1DA8E8]',
     value: 'text-[#10213D]',
     label: 'text-[#1D6FA0]',
@@ -186,7 +83,7 @@ const SERVICE_STATUS_STYLES = {
     glow: 'bg-[#93D6F7]',
   },
   purple: {
-    card: 'bg-gradient-to-br from-[#F5F3FF] to-[#E8E1FC]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8B5CF6]',
     value: 'text-[#10213D]',
     label: 'text-[#6D5A9E]',
@@ -200,23 +97,20 @@ function ServiceStatusStatCard({ icon: Icon, bgIcon: BgIcon, label, value, tone 
   return (
     <div
       className={cx(
-        'relative flex h-[178px] flex-col overflow-hidden rounded-[22px] border border-[#E4ECE8] p-5 shadow-[0_12px_30px_rgba(20,80,55,0.07),0_2px_8px_rgba(20,80,55,0.03)]',
+        'relative flex h-[178px] flex-col overflow-hidden rounded-[22px] border border-[#ECECEC] p-5',
         s.card,
       )}
     >
-      <span className="pointer-events-none absolute inset-x-0 top-0 h-1/2 rounded-t-[22px] bg-gradient-to-b from-white/55 to-transparent" aria-hidden="true" />
       <BgIcon className={cx('pointer-events-none absolute -bottom-7 -right-7 h-32 w-32 rotate-[-10deg] opacity-[0.28]', s.wave)} aria-hidden="true" />
-      <span className={cx('pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full blur-2xl opacity-40', s.glow)} aria-hidden="true" />
 
       <span className="relative flex h-14 w-14 shrink-0 items-center justify-center">
-        <span className={cx('absolute inset-0 -m-1.5 rounded-full blur-md opacity-50', s.glow)} aria-hidden="true" />
         <span
           className={cx(
-            'relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white shadow-[0_8px_18px_rgba(0,0,0,0.12),inset_0_1.5px_0_rgba(255,255,255,0.5),inset_0_-4px_8px_rgba(0,0,0,0.12)]',
+            'relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white',
             s.chip,
           )}
         >
-          <Icon className="h-6 w-6 drop-shadow-[0_1px_1px_rgba(0,0,0,0.15)]" aria-hidden="true" />
+          <Icon className="h-6 w-6" aria-hidden="true" />
         </span>
       </span>
 
@@ -302,45 +196,18 @@ export default function ServiceStatusPage() {
           system as the other redesigned Partner Dashboard pages.
           Title/subtitle/Refresh are the exact same content/handler this page
           always had. */}
-      <div className="relative min-h-[200px] overflow-hidden rounded-3xl border border-[#E4ECE8] bg-gradient-to-br from-[#F3FBF7] via-white to-[#EAF5FF] p-6 shadow-[0_12px_32px_rgba(20,80,55,0.07),0_3px_10px_rgba(20,80,55,0.04)] sm:p-8">
-        <span className="pointer-events-none absolute -right-14 -top-14 h-52 w-52 rounded-full bg-[#86EFAC]/25 blur-3xl" aria-hidden="true" />
-        <span className="pointer-events-none absolute -bottom-16 right-32 h-40 w-40 rounded-full bg-[#93C5FD]/20 blur-3xl" aria-hidden="true" />
-        <span className="pointer-events-none absolute -left-10 top-10 h-36 w-36 rounded-full bg-[#BFE8FF]/15 blur-3xl" aria-hidden="true" />
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-24 w-full text-[#DFF8EB]/55"
-          viewBox="0 0 500 100"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,50 C120,110 280,0 500,60 L500,100 L0,100 Z" />
-        </svg>
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-16 w-full text-[#BFE8FF]/35"
-          viewBox="0 0 500 70"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,35 C150,65 320,10 500,40 L500,70 L0,70 Z" />
-        </svg>
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-10 w-full text-white/70"
-          viewBox="0 0 500 45"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,22 C170,45 300,5 500,25 L500,45 L0,45 Z" />
-        </svg>
+      <div className="relative overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-6 sm:p-7">
 
-        <div className="relative flex flex-wrap items-start justify-between gap-4 md:pr-[280px]">
+        <div className="relative flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-[32px] font-extrabold tracking-tight text-[#10213D] sm:text-[38px]">Service Status</h1>
-            <p className="mt-1.5 text-[15px] text-[#667085] sm:text-base">Track the current progress and status of active repair services.</p>
+            <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#111111] sm:text-[34px]">Service Status</h1>
+            <p className="mt-1 text-[14px] text-[#666666] sm:text-[15px]">Track the current progress and status of active repair services.</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((k) => k + 1)}
             className={cx(
-              'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E4ECE8] bg-white px-4 py-2.5 text-sm font-semibold text-[#10213D] shadow-sm transition hover:border-[#079447] hover:text-[#079447]',
+              'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#10213D] transition hover:border-[#079447] hover:text-[#079447]',
               FOCUS_RING,
             )}
           >
@@ -349,9 +216,6 @@ export default function ServiceStatusPage() {
           </button>
         </div>
 
-        <div className="pointer-events-none absolute bottom-0 right-2 hidden h-[160px] w-[240px] md:block lg:right-4 lg:h-[190px] lg:w-[290px]">
-          <ServiceStatusIllustration />
-        </div>
       </div>
 
       {error ? <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
@@ -366,8 +230,8 @@ export default function ServiceStatusPage() {
         </div>
       )}
 
-      <section className="overflow-hidden rounded-[22px] border border-[#E4ECE8] bg-gradient-to-b from-white to-[#FBFEFC]/96 shadow-[0_12px_30px_rgba(20,80,55,0.07),0_2px_8px_rgba(20,80,55,0.03)]">
-        <div className="flex flex-col gap-3.5 border-b border-[#EEF3F0] px-5 py-5 sm:px-6">
+      <section className="overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8]">
+        <div className="flex flex-col gap-3.5 border-b border-[#ECECEC] px-5 py-5 sm:px-6">
           <FilterChips options={FILTERS} value={filter} onChange={setFilter} counts={counts} />
           <SearchField value={query} onChange={setQuery} placeholder="Search by tracking ID, customer, or device" />
         </div>
@@ -379,13 +243,13 @@ export default function ServiceStatusPage() {
             <div className="flex flex-col items-center px-4 py-14 text-center sm:px-5">
               <ServiceStatusEmptyIllustration />
               <p className="mt-3 text-base font-bold text-[#10213D]">No service records found</p>
-              <p className="mt-1 max-w-sm text-sm text-[#667085]">Active repair service updates will appear here.</p>
+              <p className="mt-1 max-w-sm text-sm text-[#666666]">Active repair service updates will appear here.</p>
             </div>
           ) : (
             <div className="flex flex-col items-center px-4 py-14 text-center sm:px-5">
               <Icon3D icon={Clock} tone="gray" size="lg" />
               <p className="mt-3 text-sm font-bold text-[#10213D]">No services match your filters</p>
-              <p className="mt-1 text-sm text-[#667085]">Try a different stage or search term.</p>
+              <p className="mt-1 text-sm text-[#666666]">Try a different stage or search term.</p>
             </div>
           )
         ) : (
@@ -405,51 +269,50 @@ function ServiceStatusRow({ ticket, expanded, onToggle }) {
   const cancelled = String(ticket.status || '').toUpperCase() === 'CANCELLED';
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#E7EFEB] bg-white shadow-[0_5px_16px_rgba(20,80,55,0.04)] transition duration-200 ease-out hover:-translate-y-px hover:shadow-[0_8px_22px_rgba(20,80,55,0.07)]">
+    <div className="overflow-hidden rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] transition duration-200 ease-out hover:-translate-y-px">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
         className={cx(
-          'group flex w-full items-center gap-3.5 px-4 py-4 text-left transition duration-200 ease-out hover:bg-gradient-to-r hover:from-[#E7F9EF]/55 hover:to-white sm:px-5',
+          'group flex w-full items-center gap-3.5 px-4 py-4 text-left transition duration-200 ease-out hover:bg-gradient-to-r hover:from-[#F3F3F3]/55 hover:to-white sm:px-5',
           FOCUS_RING,
         )}
       >
         <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-          <span className="absolute inset-0 -m-1 rounded-full bg-[#86EFAC] opacity-40 blur-md" aria-hidden="true" />
-          <Icon3D icon={Clock} tone="green" size="lg" className="relative shadow-[0_5px_14px_rgba(8,145,75,0.16),inset_0_1.5px_0_rgba(255,255,255,0.5)]" />
+          <Icon3D icon={Clock} tone="green" size="lg" className="relative" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-base font-bold text-[#10213D]">{ticket.customerName || ticket.deviceDisplayName || 'Ticket'}</p>
-          <p className="truncate text-[13px] text-[#667085]">
+          <p className="truncate text-[13px] text-[#666666]">
             #{ticket.trackingId || ticket.id} {ticket.deviceDisplayName ? `· ${ticket.deviceDisplayName}` : ''}
           </p>
         </div>
         <span
           className={cx(
             'hidden shrink-0 items-center rounded-full px-3.5 py-2 text-[0.68rem] font-bold uppercase tracking-wide sm:inline-flex',
-            TICKET_STAGE_BADGE[ticket.stageLabel] || 'bg-[#F0FDF4] text-[#667085]',
+            TICKET_STAGE_BADGE[ticket.stageLabel] || 'bg-[#F8F8F8] text-[#666666]',
           )}
         >
           {ticket.stageLabel}
         </span>
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E4ECE8] bg-white text-[#10213D] shadow-sm transition group-hover:shadow-[0_2px_10px_rgba(6,122,61,0.14)]">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#10213D] transition">
           <ChevronDown className={cx('h-4 w-4 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
         </span>
       </button>
 
       {expanded ? (
-        <div className="border-t border-dashed border-[#EAECF0] bg-[#F3FBF7] px-4 py-4 sm:px-5">
+        <div className="border-t border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-4 sm:px-5">
           <span
             className={cx(
               'mb-3 inline-block rounded-full px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wide sm:hidden',
-              TICKET_STAGE_BADGE[ticket.stageLabel] || 'bg-[#F0FDF4] text-[#667085]',
+              TICKET_STAGE_BADGE[ticket.stageLabel] || 'bg-[#F8F8F8] text-[#666666]',
             )}
           >
             {ticket.stageLabel}
           </span>
           {ticket.updatedAt ? (
-            <p className="mb-3 text-xs text-[#667085]">Last updated {new Date(ticket.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
+            <p className="mb-3 text-xs text-[#666666]">Last updated {new Date(ticket.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
           ) : null}
 
           {cancelled ? (
@@ -471,12 +334,12 @@ function ServiceStatusRow({ ticket, expanded, onToggle }) {
                     <span
                       className={cx(
                         'relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
-                        done ? 'bg-[#15803D] text-white' : current ? 'bg-[#15803D] text-white ring-4 ring-[#DCFCE7]' : 'bg-white text-[#98A2B3] ring-1 ring-[#D0D5DD]',
+                        done ? 'bg-[#15803D] text-white' : current ? 'bg-[#15803D] text-white ring-4 ring-[#ECECEC]' : 'bg-white text-[#98A2B3] ring-1 ring-[#D0D5DD]',
                       )}
                     >
                       {done ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : <span className="h-1.5 w-1.5 rounded-full bg-current" />}
                     </span>
-                    <span className={cx('text-sm', current ? 'font-bold text-[#101828]' : done ? 'font-semibold text-[#344054]' : 'text-[#98A2B3]', upcoming && 'opacity-80')}>
+                    <span className={cx('text-sm', current ? 'font-bold text-[#111111]' : done ? 'font-semibold text-[#344054]' : 'text-[#98A2B3]', upcoming && 'opacity-80')}>
                       {stage.label}
                     </span>
                   </li>

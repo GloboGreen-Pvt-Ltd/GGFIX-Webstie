@@ -24,7 +24,7 @@ export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', '
 export default function MonthSwitcher({ viewDate, onPrev, onNext, label = 'This Month' }) {
   return (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm font-bold text-[#101828]">{label}</p>
+      <p className="text-sm font-bold text-[#111111]">{label}</p>
       <div className="inline-flex items-center gap-0.5 rounded-full bg-[#15803D] p-1">
         <button
           type="button"

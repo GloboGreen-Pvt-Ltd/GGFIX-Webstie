@@ -962,7 +962,7 @@ export const CTA = {
      SHOP_LOGIN accounts by src/lib/shopAuth.js. Kept distinct from
      `forShops` (the marketing page selling the idea of joining) since they
      are different destinations for different audiences. */
-  businessLogin: { label: 'Business Login', href: '/shopmanagement' },
+  businessLogin: { label: 'Business Login', href: '/sell-with-us/?login=1' },
 };
 
 /* -------------------------------------------------------------------------- */

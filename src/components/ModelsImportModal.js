@@ -13,6 +13,7 @@ import {
   planModelImport,
   slugify,
 } from '@/lib/modelsExcel';
+import { notifyError } from '@/lib/toast';
 
 // master-data runs with -Xmx384m on a t3.micro; four writes in flight keeps a
 // thousand-row import moving without putting the service back into an OOM.
@@ -103,7 +104,6 @@ export default function ModelsImportModal({
   const [parsed, setParsed] = useState(null);
   const [plan, setPlan] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
   // Which slice of the plan the row list is showing: null = everything.
@@ -118,7 +118,6 @@ export default function ModelsImportModal({
     // The catalogue the plan matches against has to be everything, so fetch it here
     // rather than reusing the page's filtered list.
     setBusy(true);
-    setError('');
     return masterApi
       .get('/master/models')
       .then((models) => {
@@ -134,7 +133,7 @@ export default function ModelsImportModal({
         setPlan(next);
         setStep('review');
       })
-      .catch((e) => setError(e.body?.message || e.message || 'Could not read the current model list to compare against.'))
+      .catch((e) => notifyError(e.body?.message || e.message || 'Could not read the current model list to compare against.'))
       .finally(() => setBusy(false));
   };
 
@@ -142,11 +141,10 @@ export default function ModelsImportModal({
     if (!f) return;
     setFile(f);
     setBusy(true);
-    setError('');
     try {
       const p = await parseModelsFile(f);
       if (!p.rows.length) {
-        setError('That sheet has no data rows below the header.');
+        notifyError('That sheet has no data rows below the header.');
         setBusy(false);
         return;
       }
@@ -154,7 +152,7 @@ export default function ModelsImportModal({
       setBusy(false);
       await buildPlan(p, allowCreateSeries);
     } catch (e) {
-      setError(e.message || 'Could not read that file.');
+      notifyError(e.message || 'Could not read that file.');
       setBusy(false);
     }
   };
@@ -296,10 +294,6 @@ export default function ModelsImportModal({
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {error && (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-          )}
-
           {/* ---------- Step 1: pick a file ---------- */}
           {step === 'pick' && (
             <>
@@ -334,7 +328,7 @@ export default function ModelsImportModal({
                     categories: categories.map((c) => c.name),
                     brands: brands.map((b) => b.name),
                     series: allSeries.map((x) => x.name),
-                  }).catch((e) => setError(e.message))}
+                  }).catch((e) => notifyError(e))}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-admin-accent hover:underline"
                 >
                   <Download size={14} />
@@ -354,7 +348,7 @@ export default function ModelsImportModal({
                 </p>
                 <button
                   type="button"
-                  onClick={() => { setStep('pick'); setPlan(null); setParsed(null); setFile(null); setError(''); }}
+                  onClick={() => { setStep('pick'); setPlan(null); setParsed(null); setFile(null); }}
                   className="text-xs font-medium text-admin-accent hover:underline"
                 >
                   Choose a different file
@@ -542,7 +536,7 @@ export default function ModelsImportModal({
             {step === 'done' && result?.failures.length > 0 && (
               <button
                 type="button"
-                onClick={() => exportErrorReport(result.failures).catch((e) => setError(e.message))}
+                onClick={() => exportErrorReport(result.failures).catch((e) => notifyError(e))}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark"
               >
                 <Download size={16} />

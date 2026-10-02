@@ -6,6 +6,7 @@ import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadCategoryMenuImage } from '@/lib/modelMedia';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 /**
  * The three customer-app/website category menus. Single source for this list —
@@ -45,10 +46,6 @@ export default function CategoryMenuPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, for
-  // the same reason Banners does this: the modal closes on save, and a
-  // replacement deletes the old file from the bucket — worth saying in words.
-  const [notice, setNotice] = useState('');
 
   // Above-the-table filters. Type is sent to the backend (it already supports
   // the query param, so there is no reason to fetch everything and filter
@@ -125,7 +122,6 @@ export default function CategoryMenuPage() {
     e.preventDefault();
     if (!menuName.trim()) return;
     setSubmitting(true);
-    setNotice('');
     try {
       const body = {
         categoryType,
@@ -148,12 +144,13 @@ export default function CategoryMenuPage() {
       }
       if (imageFile && rowId) {
         const uploaded = await uploadCategoryMenuImage(rowId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Menu image'));
+        const notice = imageReplacementNotice(uploaded, 'Menu image');
+        if (notice) notifySuccess(notice);
       }
       closeModal();
       load();
     } catch (e2) {
-      setError(e2.body?.message || e2.message || 'Request failed');
+      notifyError(e2.body?.message || e2.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -166,7 +163,7 @@ export default function CategoryMenuPage() {
       });
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Could not change status');
+      notifyError(e.body?.message || e.message || 'Could not change status');
     }
   };
 
@@ -176,7 +173,7 @@ export default function CategoryMenuPage() {
       await masterApi.delete(`/master/category-menu/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -251,11 +248,6 @@ export default function CategoryMenuPage() {
       </div>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
       ) : (

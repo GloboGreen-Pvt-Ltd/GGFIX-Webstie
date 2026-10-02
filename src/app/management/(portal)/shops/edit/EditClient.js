@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
 import BusinessLocationsManager from '@/components/BusinessLocationsManager';
 import SafeImage from '@/components/SafeImage';
-import { emailFormat, required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 const EMPTY_OWNER = {
   name: '', email: '', phone: '', secondaryMobile: '', password: '', otpCode: '',
@@ -37,8 +36,6 @@ export default function EditShopOwnerPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
   const [uploading, setUploading] = useState({});
   const [locations, setLocations] = useState([]);
   const [kycDocument, setKycDocument] = useState(null);
@@ -90,10 +87,7 @@ export default function EditShopOwnerPage() {
     }
   };
 
-  const setField = (k, v) => {
-    setOwner((o) => ({ ...o, [k]: v }));
-    if (fieldErrors[k]) setFieldErrors((prev) => ({ ...prev, [k]: undefined }));
-  };
+  const setField = (k, v) => setOwner((o) => ({ ...o, [k]: v }));
 
   const handleUpload = async (field, file, folder, opts) => {
     if (!file) return;
@@ -101,23 +95,16 @@ export default function EditShopOwnerPage() {
     try {
       const url = await uploadFile(file, folder, opts);
       if (url) setField(field, url);
-    } catch (e) { setError(e.message || 'Upload failed'); }
+    } catch (e) { notifyError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [field]: false })); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    const { errors, firstErrorField, isValid } = validateForm(
-      { name: required('Owner name is required.'), email: [required('Owner email is required.'), emailFormat('Enter a valid email address.')] },
-      { name: owner.name, email: owner.email },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
+    if (!owner.name.trim() || !owner.email.trim()) {
+      notifyError('Owner name and email are required');
       return;
     }
-    setFieldErrors({});
     setSubmitting(true);
     try {
       const payload = {
@@ -147,7 +134,7 @@ export default function EditShopOwnerPage() {
       await authApi.patch(`/auth/shop-owners/${id}`, payload);
       router.push(`/management/shops/view/?id=${id}`);
     } catch (e) {
-      setError(e.body?.message || e.message || 'Update failed');
+      notifyError(e.body?.message || e.message || 'Update failed');
     } finally {
       setSubmitting(false);
     }
@@ -178,26 +165,11 @@ export default function EditShopOwnerPage() {
           <div className="lg:col-span-2 rounded-xl bg-admin-card border border-admin-border p-5">
             <SectionHeader icon="👤" title="Basic Information" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-              <Field label="FULL NAME *" fieldRef={registerField(fieldRefs, 'name')} error={fieldErrors.name}>
-                <input
-                  value={owner.name}
-                  onChange={(e) => setField('name', e.target.value)}
-                  className="input"
-                  placeholder="Full Name"
-                  required
-                  aria-invalid={Boolean(fieldErrors.name)}
-                />
+              <Field label="FULL NAME *">
+                <input value={owner.name} onChange={(e) => setField('name', e.target.value)} className="input" placeholder="Full Name" required />
               </Field>
-              <Field label="EMAIL ADDRESS *" fieldRef={registerField(fieldRefs, 'email')} error={fieldErrors.email}>
-                <input
-                  type="email"
-                  value={owner.email}
-                  onChange={(e) => setField('email', e.target.value)}
-                  className="input"
-                  placeholder="Email"
-                  required
-                  aria-invalid={Boolean(fieldErrors.email)}
-                />
+              <Field label="EMAIL ADDRESS *">
+                <input type="email" value={owner.email} onChange={(e) => setField('email', e.target.value)} className="input" placeholder="Email" required />
               </Field>
               <Field label="PRIMARY MOBILE">
                 <input value={owner.phone} onChange={(e) => setField('phone', e.target.value)} className="input" placeholder="Primary Mobile" />
@@ -299,12 +271,12 @@ function SectionHeader({ icon, title, small }) {
   );
 }
 
-function Field({ label, hint, children, full, fieldRef, error }) {
+function Field({ label, hint, children, full }) {
   return (
-    <div ref={fieldRef} className={full ? 'md:col-span-2' : ''}>
+    <div className={full ? 'md:col-span-2' : ''}>
       <label className="block text-[10px] uppercase tracking-wider text-admin-muted mb-1 font-medium">{label}</label>
       {children}
-      {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : hint ? <p className="text-[10px] text-admin-muted mt-1">{hint}</p> : null}
+      {hint ? <p className="text-[10px] text-admin-muted mt-1">{hint}</p> : null}
     </div>
   );
 }

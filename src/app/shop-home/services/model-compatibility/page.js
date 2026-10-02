@@ -1,294 +1,629 @@
 'use client';
 
 /**
- * /shop-home/services/model-compatibility — spare-parts box lookup.
+ * /shop-home/services/model-compatibility — "will this part fit?", the web
+ * counterpart of the Partner app's OwnerModelCompatibilityScreen.
  *
- * Reads GET {MASTER_BASE}/master/model-compatibility and
- * GET {MASTER_BASE}/master/model-compatibility-types via `masterApi`
- * (src/lib/api.js) — the same public, permitAll master-data endpoints the
- * admin portal's model-compatibility page already uses
- * (src/app/management/(portal)/model-compatibility/CompatibilityClient.js),
- * read-only here.
+ * Three part-type tabs, labels from the admin's model-compatibility types:
+ *   Mobile Model Number  the manufacturer part-number index built from the
+ *                        whole model catalogue (lib/modelCompatibility.js).
+ *                        A row opens that model's detail: its part numbers
+ *                        and every model sharing one.
+ *   Tempered Glass /     one card per shelf box from
+ *   UV Glass             GET /master/model-compatibility?type=<slug>, its
+ *                        models grouped by brand. Search filters to the boxes
+ *                        that fit and highlights the matching models.
  *
- * Important scope note: this endpoint answers "which storage box holds the
- * spare part for this brand/model" — a warehouse-location lookup keyed by
- * PART TYPE (Tempered Glass, Back Panel, Charging Port, ...). It does NOT
- * answer "which repair services (Screen Replacement, Battery Replacement,
- * ...) are available for a model" — repair services in this backend are
- * defined per device CATEGORY, not restricted per specific model, and no
- * per-model service-availability data exists anywhere in this codebase. A
- * ✓/✕ compatible-services checklist (as the original design brief asked
- * for) would have to be fabricated, so this page is honestly a box/part
- * lookup instead, using "Part Type" where the brief asked for "Service
- * Type" since that's the real filter this data actually supports.
+ * Read-only; boxes are maintained in the admin panel (Master Data → Model
+ * Compatibility). ?tab= keeps the selected tab across refresh/back.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { Package, RefreshCw, Smartphone } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Barcode, Boxes, ChevronRight, Info, Loader2, Puzzle, Search, Smartphone, X } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
-import { masterApi } from '@/lib/api';
-import Icon3D from '@/components/shop-dashboard/Icon3D';
-import FilterChips from '@/components/shop-dashboard/FilterChips';
-import SearchField, { FOCUS_RING } from '@/components/shop-dashboard/SearchField';
 import ErrorBanner from '@/components/shop-dashboard/ErrorBanner';
-import { SkeletonRows } from '@/components/shop-dashboard/SkeletonBlocks';
+import { resolveMediaUrl } from '@/lib/deviceImage';
+import { readQueryParam, writeQueryParam } from '@/lib/orderStages';
+import {
+  boxMatches,
+  boxModelLabel,
+  brandCount,
+  buildCompatIndex,
+  findByCode,
+  findInterchangeable,
+  getAllModels,
+  getBrands,
+  getCompatibilityBoxes,
+  getCompatibilityTypes,
+  getDeviceCategories,
+  groupModelsByBrand,
+  looksLikeCode,
+  normalizeCode,
+  searchModels,
+  modelsWithCrossFit,
+} from '@/lib/modelCompatibility';
 
-function unwrap(res) {
-  return Array.isArray(res) ? res : Array.isArray(res?.content) ? res.content : [];
-}
+const INDEX_SLUG = 'mobile-model-number';
+// The three tabs this page shows, in order; names come from the admin's types when present.
+const TAB_DEFS = [
+  { slug: INDEX_SLUG, key: 'all', name: 'Mobile Model Number' },
+  { slug: 'tempered-glass', key: 'tempered-glass', name: 'Tempered Glass' },
+  { slug: 'uv-glass', key: 'uv-glass', name: 'UV Glass' },
+];
+const TAB_KEYS = TAB_DEFS.map((t) => t.key);
+const PAGE = 60;
 
-/**
- * ModelCompatibilityIllustration — small decorative device/accessory graphic
- * for the hero's right side (phone, tempered-glass layer, case, charging
- * connector + cable, floating spheres), matching a reference design. Hand-
- * drawn inline SVG, purely decorative — no data — same treatment as the
- * other redesigned Partner Dashboard pages' hero illustrations.
- */
-function ModelCompatibilityIllustration() {
-  return (
-    <svg viewBox="0 0 220 150" className="h-full w-full" aria-hidden="true">
-      <defs>
-        <linearGradient id="mcPhone" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#4ADE80" />
-          <stop offset="1" stopColor="#15803D" />
-        </linearGradient>
-      </defs>
-
-      <ellipse cx="120" cy="132" rx="70" ry="10" fill="#15803D" opacity="0.08" />
-      <circle cx="34" cy="40" r="7" fill="#BFE8FF" opacity="0.7" />
-      <circle cx="192" cy="30" r="5" fill="#BFE8FF" opacity="0.6" />
-      <circle cx="200" cy="70" r="4" fill="#DCFCE7" opacity="0.9" />
-
-      {/* transparent case, slightly behind/right */}
-      <rect x="128" y="42" width="52" height="92" rx="14" fill="white" opacity="0.55" stroke="#BBF7D0" strokeWidth="2" />
-
-      {/* phone */}
-      <rect x="76" y="30" width="56" height="100" rx="13" fill="url(#mcPhone)" />
-      <rect x="82" y="38" width="44" height="78" rx="4" fill="#EAF5FF" />
-      <circle cx="104" cy="123" r="2.6" fill="white" opacity="0.85" />
-
-      {/* tempered-glass layer, leaning in front */}
-      <g transform="rotate(-8 60 90)">
-        <rect x="40" y="52" width="40" height="76" rx="8" fill="white" opacity="0.75" stroke="#86EFAC" strokeWidth="2" />
-        <rect x="46" y="58" width="28" height="4" rx="2" fill="#DCFCE7" />
-      </g>
-
-      {/* charging connector + cable */}
-      <g>
-        <rect x="150" y="18" width="14" height="20" rx="3" fill="#10213D" />
-        <rect x="154" y="34" width="6" height="10" fill="#94A3B8" />
-        <path d="M157 44 C150 60, 168 70, 160 90" fill="none" stroke="#94A3B8" strokeWidth="4" strokeLinecap="round" />
-      </g>
-
-      {/* floating mint spheres */}
-      <circle cx="46" cy="26" r="5" fill="#86EFAC" opacity="0.8" />
-      <circle cx="188" cy="112" r="6" fill="#86EFAC" opacity="0.7" />
-    </svg>
-  );
-}
-
-// Best-guess pastel badge tone for a part-type name — same idea as
-// iconForRepairCategory()/guessColorHex() elsewhere in this codebase (derive
-// a visual from real text, not a hand-maintained per-id table), so it works
-// for whatever part types the backend actually returns (types.map(t=>t.name)
-// stays the only source of truth for category names/values).
-const BADGE_TONES = {
-  blue: 'bg-[#E5F2FC] text-[#0E7BCF]',
-  orange: 'bg-[#FFF1E0] text-[#B45A00]',
-  violet: 'bg-[#F1EBFC] text-[#6D28D9]',
-  green: 'bg-[#DFF8EB] text-[#067A3D]',
-  teal: 'bg-[#DDF6F3] text-[#0F766E]',
-  amber: 'bg-[#FEF3D6] text-[#B7791F]',
-  red: 'bg-[#FDE8EA] text-[#DC2626]',
-  mint: 'bg-[#EAF9EF] text-[#15803D]',
-};
-
-function badgeToneForType(name) {
-  const n = String(name || '').toLowerCase();
-  if (/model number/.test(n)) return BADGE_TONES.blue;
-  if (/tempered/.test(n)) return BADGE_TONES.orange;
-  if (/\buv\b/.test(n)) return BADGE_TONES.violet;
-  if (/flip/.test(n)) return BADGE_TONES.teal;
-  if (/case/.test(n)) return BADGE_TONES.green;
-  if (/display/.test(n)) return BADGE_TONES.blue;
-  if (/charging/.test(n)) return BADGE_TONES.red;
-  if (/connector/.test(n)) return BADGE_TONES.amber;
-  return BADGE_TONES.mint;
-}
+const CARD = 'rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8]';
+const plural = (n, one, many = `${one}s`) => `${n.toLocaleString('en-IN')} ${n === 1 ? one : many}`;
 
 export default function ModelCompatibilityPage() {
-  const [boxes, setBoxes] = useState([]);
+  const router = useRouter();
+  const [tabKey, setTabKey] = useState('all');
   const [types, setTypes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [typeFilter, setTypeFilter] = useState('All');
   const [query, setQuery] = useState('');
-  const [reloadKey, setReloadKey] = useState(0);
+
+  // Catalogue (Mobile Model Number)
+  const [index, setIndex] = useState(null);
+  const [mobileCategoryId, setMobileCategoryId] = useState(null);
+  const [catLoading, setCatLoading] = useState(true);
+  const [catError, setCatError] = useState('');
+  const [catReload, setCatReload] = useState(0);
+  const [selected, setSelected] = useState(null);
+
+  // Boxes (glass tabs), cached per slug
+  const [boxesBySlug, setBoxesBySlug] = useState({});
+  const [boxError, setBoxError] = useState('');
+  const [boxReload, setBoxReload] = useState(0);
+
+  useEffect(() => {
+    setTabKey(readQueryParam('tab', TAB_KEYS));
+    getCompatibilityTypes().then(setTypes).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let alive = true;
-    setLoading(true);
-    setError('');
-    Promise.all([masterApi.get('/master/model-compatibility'), masterApi.get('/master/model-compatibility-types')])
-      .then(([boxRes, typeRes]) => {
+    setCatLoading(true);
+    setCatError('');
+    Promise.all([getAllModels({ force: catReload > 0 }), getBrands().catch(() => []), getDeviceCategories().catch(() => [])])
+      .then(([models, brands, categories]) => {
         if (!alive) return;
-        setBoxes(unwrap(boxRes));
-        setTypes(unwrap(typeRes));
+        const active = categories.filter((c) => c?.isActive !== false);
+        const mobile =
+          active.find((c) => String(c.code || '').toUpperCase() === 'MOBILE') || active.find((c) => String(c.name || '').trim().toLowerCase() === 'mobile');
+        setMobileCategoryId(mobile?.id || null);
+        setIndex(buildCompatIndex(models, { brands, categories: active }));
       })
+      .catch((err) => alive && setCatError(err.message || 'Could not load the model catalogue.'))
+      .finally(() => alive && setCatLoading(false));
+    return () => {
+      alive = false;
+    };
+  }, [catReload]);
+
+  const tabs = useMemo(
+    () => TAB_DEFS.map((t) => ({ ...t, name: types.find((x) => x.slug === t.slug)?.name || t.name })),
+    [types],
+  );
+  const tab = tabs.find((t) => t.key === tabKey) || tabs[0];
+  const isIndex = tab.slug === INDEX_SLUG;
+  const boxes = boxesBySlug[tab.slug];
+
+  useEffect(() => {
+    if (isIndex) return undefined;
+    let alive = true;
+    setBoxError('');
+    getCompatibilityBoxes(tab.slug)
+      .then((rows) => alive && setBoxesBySlug((prev) => ({ ...prev, [tab.slug]: rows })))
       .catch((err) => {
-        if (alive) setError(err.message || 'Could not load model compatibility data.');
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
+        if (!alive) return;
+        setBoxError(err.message || 'Could not load boxes for this type.');
+        setBoxesBySlug((prev) => ({ ...prev, [tab.slug]: prev[tab.slug] || [] }));
       });
     return () => {
       alive = false;
     };
-  }, [reloadKey]);
+  }, [tab.slug, isIndex, boxReload]);
 
-  const typeNameById = useMemo(() => new Map(types.map((t) => [t.id, t.name])), [types]);
+  function selectTab(key) {
+    setTabKey(key);
+    setQuery('');
+    setSelected(null);
+    writeQueryParam('tab', key);
+  }
 
-  const rows = useMemo(
-    () =>
-      boxes.map((b) => ({
-        ...b,
-        typeName: typeNameById.get(b.partTypeId) || 'Unassigned',
-        brands: Array.from(
-          (b.models || []).reduce((map, m) => {
-            const list = map.get(m.brandName || 'Other') || [];
-            list.push(m.modelName);
-            map.set(m.brandName || 'Other', list);
-            return map;
-          }, new Map()),
-        ),
-      })),
-    [boxes, typeNameById],
-  );
+  const back = useCallback(() => {
+    if (selected) setSelected(null);
+    else if (window.history.length > 1) router.back();
+    else router.push('/shop-home');
+  }, [router, selected]);
 
-  const typeFilters = ['All', ...types.map((t) => t.name)];
+  const trimmed = query.trim();
+  const visibleBoxes = useMemo(() => (boxes || []).filter((b) => boxMatches(b, trimmed)), [boxes, trimmed]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return rows.filter((r) => {
-      if (typeFilter !== 'All' && r.typeName !== typeFilter) return false;
-      if (!q) return true;
-      if ((r.boxName || '').toLowerCase().includes(q) || String(r.boxNo || '').toLowerCase().includes(q)) return true;
-      return (r.models || []).some((m) => (m.modelName || '').toLowerCase().includes(q) || (m.brandName || '').toLowerCase().includes(q));
-    });
-  }, [rows, typeFilter, query]);
+  const subtitle = isIndex
+    ? index
+      ? `${plural(index.entries.length, 'model')} · ${plural(index.byCode.size, 'part number')}`
+      : ''
+    : boxes
+      ? plural(visibleBoxes.length, 'box', 'boxes')
+      : '';
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Hero — soft mint gradient banner with abstract waves + a decorative
-          device/accessory illustration on the far right, matching the same
-          premium design system as the Dashboard/Book Service/Pickups/
-          Customers pages. Title/subtitle/Refresh are the exact same
-          content/handler this page always had. */}
-      <div className="relative overflow-hidden rounded-3xl border border-[#E4ECE8] bg-gradient-to-br from-[#F3FBF7] via-white to-[#EAF5FF] p-5 shadow-[0_12px_32px_rgba(20,80,55,0.07),0_3px_10px_rgba(20,80,55,0.04)] sm:p-7">
-        <span className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full bg-[#86EFAC]/25 blur-3xl" aria-hidden="true" />
-        <span className="pointer-events-none absolute -bottom-16 right-24 h-36 w-36 rounded-full bg-[#93C5FD]/20 blur-3xl" aria-hidden="true" />
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-14 w-full text-[#DFF8EB]/60"
-          viewBox="0 0 500 80"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,40 C120,90 280,0 500,50 L500,80 L0,80 Z" />
-        </svg>
-
-        <div className="relative flex flex-wrap items-start justify-between gap-4 md:pr-[180px]">
-          <div className="min-w-0">
-            <h1 className="text-[28px] font-extrabold tracking-tight text-[#10213D] sm:text-[34px]">Model Compatibility</h1>
-            <p className="mt-1 text-sm text-[#667085]">Look up which spare-parts box serves a given brand and model.</p>
-          </div>
+    <div className="-m-4 min-h-full bg-white p-4 sm:-m-6 sm:p-6">
+      <div className="mx-auto max-w-[1400px] space-y-4">
+        <header className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setReloadKey((k) => k + 1)}
+            onClick={back}
+            aria-label="Back"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#111111] transition hover:border-[#079455] hover:text-[#079455]"
+          >
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+          </button>
+          <div className="min-w-0">
+            <h1 className="truncate text-[22px] font-extrabold leading-tight tracking-tight text-[#111111] sm:text-[26px]">
+              {selected ? selected.name : 'Model Compatibility'}
+            </h1>
+            <p className="truncate text-[13px] text-[#666666]">{selected ? selected.brandName || ' ' : subtitle || ' '}</p>
+          </div>
+        </header>
+
+        {selected ? (
+          <CompatibilityDetail
+            index={index}
+            model={selected}
+            onOpenModel={setSelected}
+            onLookupCode={(code) => {
+              setSelected(null);
+              setQuery(code);
+            }}
+          />
+        ) : (
+          <>
+            <CompatibilityTabs tabs={tabs} value={tab.key} onChange={selectTab} />
+            <CompatibilitySearch
+              value={query}
+              onChange={setQuery}
+              placeholder={isIndex ? 'Model name or part number (e.g. SM-A127F)' : 'Box number, brand or model'}
+            />
+
+            {isIndex ? (
+              <ModelIndexView
+                index={index}
+                loading={catLoading}
+                error={catError}
+                onRetry={() => setCatReload((k) => k + 1)}
+                query={trimmed}
+                mobileCategoryId={mobileCategoryId}
+                onOpenModel={setSelected}
+              />
+            ) : (
+              <BoxListView
+                boxes={boxes}
+                visible={visibleBoxes}
+                error={boxError}
+                onRetry={() => setBoxReload((k) => k + 1)}
+                query={trimmed}
+                typeName={tab.name}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Shared pieces                                                               */
+/* -------------------------------------------------------------------------- */
+
+function CompatibilityTabs({ tabs, value, onChange }) {
+  return (
+    <div role="tablist" aria-label="Part types" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:px-0">
+      {tabs.map((t) => {
+        const active = t.key === value;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.key)}
             className={cx(
-              'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E4ECE8] bg-white px-4 py-2.5 text-sm font-semibold text-[#10213D] shadow-sm transition hover:border-[#079447] hover:text-[#079447]',
-              FOCUS_RING,
+              'shrink-0 rounded-full border px-5 py-2.5 text-[14px] font-bold transition',
+              active ? 'border-[#0B6B3A] bg-[#0B6B3A] text-white' : 'border-[#ECECEC] bg-white text-[#475467] hover:border-[#ECECEC]',
             )}
           >
-            <RefreshCw className={cx('h-4 w-4 text-[#079447]', loading && 'animate-spin')} aria-hidden="true" />
-            Refresh
+            {t.name}
           </button>
-        </div>
+        );
+      })}
+    </div>
+  );
+}
 
-        <div className="pointer-events-none absolute bottom-0 right-4 hidden h-[130px] w-[190px] md:block lg:right-8 lg:h-[150px] lg:w-[220px]">
-          <ModelCompatibilityIllustration />
+function CompatibilitySearch({ value, onChange, placeholder }) {
+  return (
+    <label className="flex h-14 items-center gap-3 rounded-[18px] border border-[#ECECEC] bg-[#F8F8F8] px-4 transition focus-within:border-[#079455] focus-within:ring-4 focus-within:ring-[#079455]/10">
+      <Search className="h-5 w-5 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+      <input
+        type="search"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={placeholder}
+        autoComplete="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        className="min-w-0 flex-1 bg-transparent text-[15px] text-[#111111] outline-none placeholder:text-[#98A2B3] [&::-webkit-search-cancel-button]:hidden"
+      />
+      {value ? (
+        <button type="button" onClick={() => onChange('')} aria-label="Clear search" className="text-[#98A2B3] hover:text-[#344054]">
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : null}
+    </label>
+  );
+}
+
+function SectionLabel({ icon: Icon, children }) {
+  return (
+    <p className="flex items-center gap-2 text-[15px] font-extrabold text-[#111111]">
+      <Icon className="h-[18px] w-[18px] text-[#0B6B3A]" aria-hidden="true" />
+      {children}
+    </p>
+  );
+}
+
+function CompatibilityEmptyState({ icon: Icon = Boxes, title, text }) {
+  return (
+    <div className="flex flex-col items-center px-6 py-16 text-center">
+      <span className="flex h-24 w-24 items-center justify-center rounded-full bg-[#F3F3F3] text-[#0B6B3A]">
+        <Icon className="h-10 w-10" aria-hidden="true" />
+      </span>
+      <p className="mt-4 text-[18px] font-extrabold text-[#111111]">{title}</p>
+      <p className="mt-1.5 max-w-md text-[13.5px] leading-relaxed text-[#666666]">{text}</p>
+    </div>
+  );
+}
+
+function Loading({ label }) {
+  return (
+    <div className="flex flex-col items-center py-16 text-[#666666]">
+      <Loader2 className="h-6 w-6 animate-spin text-[#079455]" aria-hidden="true" />
+      <p className="mt-2 text-[13px]">{label}</p>
+    </div>
+  );
+}
+
+function ModelThumb({ url, size = 'h-12 w-12' }) {
+  const [broken, setBroken] = useState(false);
+  const src = resolveMediaUrl(url);
+  useEffect(() => setBroken(false), [src]);
+  return (
+    <span className={cx('flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#F3F3F3] p-1', size)}>
+      {src && !broken ? (
+        // eslint-disable-next-line @next/next/no-img-element -- catalog images are arbitrary media URLs.
+        <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} className="h-full w-full object-contain" />
+      ) : (
+        <Smartphone className="h-5 w-5 text-[#98A2B3]" aria-hidden="true" />
+      )}
+    </span>
+  );
+}
+
+function ModelCompatibilityRow({ model, badge, onClick }) {
+  return (
+    <button type="button" onClick={onClick} className={cx(CARD, 'flex w-full items-center gap-3 p-3 text-left transition hover:border-[#ECECEC]')}>
+      <ModelThumb url={model.imageUrl} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14.5px] font-bold text-[#111111]">{model.name}</span>
+        <span className="block truncate text-[12.5px] text-[#666666]">{[model.brandName, model.codes?.[0]].filter(Boolean).join(' · ') || '—'}</span>
+      </span>
+      {badge ? <span className="max-w-[40%] shrink-0 truncate rounded-full bg-[#F3F3F3] px-2.5 py-1 text-[11px] font-extrabold text-[#0B6B3A]">{badge}</span> : null}
+      <ChevronRight className="h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+    </button>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mobile Model Number                                                         */
+/* -------------------------------------------------------------------------- */
+
+function ModelIndexView({ index, loading, error, onRetry, query, mobileCategoryId, onOpenModel }) {
+  const [limit, setLimit] = useState(PAGE);
+  useEffect(() => setLimit(PAGE), [query]);
+
+  const results = useMemo(() => (index && query ? searchModels(index, query) : []), [index, query]);
+  const suggestions = useMemo(() => (index && !query ? modelsWithCrossFit(index, mobileCategoryId ? { categoryId: mobileCategoryId } : {}) : []), [index, query, mobileCategoryId]);
+  const codeHits = useMemo(() => {
+    if (!index || !query || !looksLikeCode(query)) return null;
+    const hits = findByCode(index, query);
+    return hits.length ? { code: normalizeCode(query), hits } : null;
+  }, [index, query]);
+
+  if (loading && !index) return <Loading label="Loading model catalogue…" />;
+  if (error && !index) return <ErrorBanner message={error} onRetry={onRetry} />;
+
+  const list = query ? results : suggestions;
+
+  return (
+    <section className="space-y-3">
+      {error ? <ErrorBanner message={`Couldn’t refresh the catalogue — showing the last copy. ${error}`} onRetry={onRetry} /> : null}
+      {codeHits ? <CodeBanner code={codeHits.code} hits={codeHits.hits} onOpenModel={onOpenModel} /> : null}
+
+      <div>
+        <SectionLabel icon={query ? Search : Puzzle}>
+          {query ? plural(results.length, 'match', 'matches') : `${mobileCategoryId ? 'Mobile devices' : 'Devices'} with a known cross-fit · ${suggestions.length.toLocaleString('en-IN')}`}
+        </SectionLabel>
+        {!query ? (
+          <p className="mt-1 max-w-3xl text-[13px] leading-relaxed text-[#666666]">
+            These share a manufacturer part number with at least one other device. Search above to look up any model — including laptops and other categories — or
+            type the code printed on a part.
+          </p>
+        ) : null}
+      </div>
+
+      {list.length ? (
+        <>
+          <div className="grid gap-2.5 md:grid-cols-2">
+            {list.slice(0, limit).map((m) => (
+              <ModelCompatibilityRow key={m.id} model={m} onClick={() => onOpenModel(m)} />
+            ))}
+          </div>
+          {list.length > limit ? (
+            <div className="flex justify-center pt-1">
+              <button
+                type="button"
+                onClick={() => setLimit((n) => n + PAGE)}
+                className="rounded-full border border-[#ECECEC] bg-white px-5 py-2.5 text-[13.5px] font-bold text-[#067647] transition hover:bg-[#F3F3F3]"
+              >
+                Show more · {(list.length - limit).toLocaleString('en-IN')} left
+              </button>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <CompatibilityEmptyState
+          icon={Search}
+          title={query ? 'No model matched' : 'Nothing to show'}
+          text={
+            query
+              ? `Nothing in the catalogue is named or numbered “${query}”. Check the spelling.`
+              : 'No mobile device in the catalogue shares a part number with another yet. Search above to look up any model.'
+          }
+        />
+      )}
+    </section>
+  );
+}
+
+function CodeBanner({ code, hits, onOpenModel }) {
+  return (
+    <div className="rounded-[18px] border border-[#ECECEC] bg-[#F3F3F3] p-4">
+      <p className="flex items-center gap-2 text-[13.5px] font-extrabold tracking-wide text-[#0B6B3A]">
+        <Barcode className="h-4 w-4" aria-hidden="true" />
+        {code}
+      </p>
+      <p className="mt-1 text-[13px] text-[#344054]">
+        {hits.length === 1 ? 'This part number belongs to one model:' : `This part number is shared by ${hits.length} models — a part for any one of them fits the rest:`}
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-x-4">
+        {hits.map((m) => (
+          <button key={m.id} type="button" onClick={() => onOpenModel(m)} className="flex items-center gap-1 py-1 text-[13.5px] font-bold text-[#0B6B3A] hover:underline">
+            <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+            {m.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CompatibilityDetail({ index, model, onOpenModel, onLookupCode }) {
+  const entry = index?.byId.get(model.id) || model;
+  const matches = useMemo(() => findInterchangeable(index, entry), [index, entry]);
+  const codes = entry.codes || [];
+  const specs = Array.isArray(entry.ramStorage) ? entry.ramStorage : [];
+  const colors = Array.isArray(entry.colors) ? entry.colors : [];
+
+  // Braces on purpose: the effect must return nothing. A one-liner returned
+  // whatever window.scrollTo returns — and when a browser extension wraps
+  // scrollTo to return a value, React called that value as the cleanup and
+  // threw "TypeError: destroy is not a function" on every model click.
+  useEffect(() => {
+    window.scrollTo?.({ top: 0 });
+  }, [entry.id]);
+
+  return (
+    <div className="space-y-5">
+      <div className={cx(CARD, 'flex items-center gap-4 p-4')}>
+        <ModelThumb url={entry.imageUrl} size="h-16 w-16" />
+        <div className="min-w-0">
+          <p className="truncate text-[17px] font-extrabold text-[#111111]">{entry.name}</p>
+          <p className="truncate text-[13px] text-[#666666]">{[entry.brandName, entry.categoryName].filter(Boolean).join(' · ') || 'Device'}</p>
         </div>
       </div>
 
-      {error ? <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
+      <section className="space-y-2">
+        <SectionLabel icon={Barcode}>Part numbers on this device</SectionLabel>
+        {codes.length ? (
+          <div className="flex flex-wrap gap-2">
+            {codes.map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => onLookupCode(code)}
+                title="Find every model with this part number"
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#ECECEC] bg-[#F3F3F3] px-3.5 py-2 text-[13px] font-extrabold tracking-wide text-[#0B6B3A] transition hover:bg-[#F3F3F3]"
+              >
+                {code}
+                <Search className="h-3 w-3" aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <Notice warn>No part number recorded for this model, so compatibility can&apos;t be confirmed from the catalogue. Add it in the admin Models screen.</Notice>
+        )}
+      </section>
 
-      <section className="rounded-[22px] border border-[#E4ECE8] bg-white/96 shadow-[0_12px_30px_rgba(20,80,55,0.06),0_2px_8px_rgba(20,80,55,0.03)]">
-        <div className="flex flex-col gap-3 border-b border-[#EEF3F0] px-4 py-4 sm:px-5">
-          {types.length ? <FilterChips options={typeFilters} value={typeFilter} onChange={setTypeFilter} /> : null}
-          <SearchField value={query} onChange={setQuery} placeholder="Search by brand, model, or box name" />
-        </div>
-
-        <div className="p-3 sm:p-4">
-          {loading ? (
-            <SkeletonRows rows={5} />
-          ) : filtered.length === 0 ? (
-            boxes.length === 0 ? (
-              <div className="flex flex-col items-center px-4 py-14 text-center sm:px-5">
-                <Icon3D icon={Package} tone="green" size="lg" />
-                <p className="mt-3 text-sm font-bold text-[#10213D]">No compatibility data yet</p>
-                <p className="mt-1 text-sm text-[#667085]">Spare-parts boxes and their compatible models will show up here.</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center px-4 py-14 text-center sm:px-5">
-                <Icon3D icon={Smartphone} tone="gray" size="lg" />
-                <p className="mt-3 text-sm font-bold text-[#10213D]">No compatible parts found</p>
-                <p className="mt-1 text-sm text-[#667085]">Try another brand, model, or category.</p>
-              </div>
-            )
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              {filtered.map((box) => (
-                <div
-                  key={box.id}
-                  className="group flex flex-col gap-3 rounded-2xl border border-[#EDF2EF] bg-white px-4 py-3.5 shadow-[0_5px_16px_rgba(20,80,55,0.035)] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#D7EBE0] hover:bg-gradient-to-r hover:from-[#E8F9EF]/75 hover:to-white sm:flex-row sm:items-center sm:gap-4"
-                >
-                  <div className="flex min-w-0 shrink-0 items-center gap-3 sm:w-[220px]">
-                    <Icon3D icon={Package} tone="green" size="md" />
-                    <div className="min-w-0">
-                      <p className="truncate text-[15px] font-bold text-[#10213D]">{box.boxName || `Box ${box.boxNo}`}</p>
-                      <p className="truncate text-xs text-[#667085]">Box No. {box.boxNo}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-                    {box.brands.map(([brandName, models]) => (
-                      <span
-                        key={brandName}
-                        className="inline-flex items-center rounded-full border border-[#DFF8EB] bg-[#F3FBF7] px-3 py-1.5 text-xs text-[#344054]"
-                      >
-                        <span className="font-bold text-[#066B39]">{brandName}:</span>
-                        <span className="ml-1">
-                          {models.slice(0, 4).join(', ')}
-                          {models.length > 4 ? ` +${models.length - 4} more` : ''}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-
-                  <span
-                    className={cx(
-                      'inline-flex shrink-0 items-center self-start rounded-full px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wide sm:self-center',
-                      badgeToneForType(box.typeName),
-                    )}
-                  >
-                    {box.typeName}
-                  </span>
-                </div>
+      <section className="space-y-2">
+        <SectionLabel icon={Puzzle}>Interchangeable · {matches.length}</SectionLabel>
+        {matches.length ? (
+          <>
+            <p className="text-[13px] text-[#666666]">Same manufacturer part number — parts for these are the same hardware.</p>
+            <div className="grid gap-2.5 md:grid-cols-2">
+              {matches.map(({ model: m, sharedCodes }) => (
+                <ModelCompatibilityRow key={m.id} model={m} badge={sharedCodes.join(' · ')} onClick={() => onOpenModel(m)} />
               ))}
             </div>
-          )}
-        </div>
+          </>
+        ) : (
+          <Notice>
+            {codes.length
+              ? 'No other model in the catalogue shares a part number with this device. Treat its parts as model-specific.'
+              : 'Nothing to compare against until this model has a part number.'}
+          </Notice>
+        )}
       </section>
+
+      {specs.length || colors.length ? (
+        <section className="space-y-2">
+          <SectionLabel icon={Boxes}>Variants on record</SectionLabel>
+          <div className={cx(CARD, 'space-y-3 p-4')}>
+            {[
+              ['RAM / Storage', specs],
+              ['Colours', colors],
+            ]
+              .filter(([, list]) => list.length)
+              .map(([label, list]) => (
+                <div key={label}>
+                  <p className="mb-2 text-[11px] font-extrabold uppercase tracking-[0.08em] text-[#98A2B3]">{label}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {list.map((v) => (
+                      <ModelChip key={v} label={v} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+function Notice({ children, warn }) {
+  return (
+    <p className={cx('flex gap-2.5 rounded-2xl p-3.5 text-[13px] leading-relaxed', warn ? 'border border-[#FEDF89] bg-[#FFFAEB] text-[#93370D]' : cx(CARD, 'text-[#666666]'))}>
+      <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <span>{children}</span>
+    </p>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Glass boxes                                                                 */
+/* -------------------------------------------------------------------------- */
+
+function BoxListView({ boxes, visible, error, onRetry, query, typeName }) {
+  if (!boxes) return error ? <ErrorBanner message={error} onRetry={onRetry} /> : <Loading label={`Loading ${typeName}…`} />;
+
+  return (
+    <section className="space-y-3">
+      {error ? <ErrorBanner message={`Couldn’t refresh — showing the last copy. ${error}`} onRetry={onRetry} /> : null}
+      {boxes.length ? (
+        <div>
+          <SectionLabel icon={Boxes}>{query ? plural(visible.length, 'match', 'matches') : `${typeName} · ${boxes.length.toLocaleString('en-IN')}`}</SectionLabel>
+          {!query ? <p className="mt-1 text-[13px] text-[#666666]">Each card is one box on the shelf and the models its part fits. Search a model to find which box to open.</p> : null}
+        </div>
+      ) : null}
+
+      {visible.length ? (
+        <div className="space-y-3">
+          {visible.map((box) => (
+            <GlassBoxCard key={box.id} box={box} query={query} />
+          ))}
+        </div>
+      ) : boxes.length ? (
+        <CompatibilityEmptyState title="No box matched" text={`Nothing under ${typeName} is numbered “${query}” or lists a matching model.`} />
+      ) : (
+        <CompatibilityEmptyState
+          title="No boxes yet"
+          text={`No ${typeName} boxes have been set up yet. Add them in the admin panel under Master Data → Model Compatibility.`}
+        />
+      )}
+    </section>
+  );
+}
+
+function GlassBoxCard({ box, query }) {
+  const [pickedId, setPickedId] = useState(null);
+  const models = useMemo(() => box.models || [], [box.models]);
+  const brands = brandCount(models);
+  const groups = useMemo(() => groupModelsByBrand(models), [models]);
+  const needle = query.toLowerCase();
+  const isMatch = (m) => Boolean(needle) && boxModelLabel(m).toLowerCase().includes(needle);
+  const matchCount = needle ? models.filter(isMatch).length : 0;
+
+  return (
+    <article className={cx(CARD, 'p-4 sm:p-5')}>
+      <div className="flex items-start gap-3">
+        {box.referenceImageUrl ? <ModelThumb url={box.referenceImageUrl} size="h-11 w-11" /> : null}
+        <p className="min-w-0 flex-1 text-[16px] font-extrabold text-[#111111]">
+          {box.boxName}
+          <span className="font-bold text-[#666666]">{`  -  ${box.boxNo}`}</span>
+        </p>
+        <div className="shrink-0 text-right text-[12px] leading-snug text-[#666666]">
+          {matchCount ? <p className="font-extrabold text-[#0B6B3A]">{plural(matchCount, 'match', 'matches')}</p> : null}
+          <p>{plural(models.length, 'model')}</p>
+          {brands ? <p>{plural(brands, 'brand')}</p> : null}
+        </div>
+      </div>
+
+      {models.length ? (
+        <div className="mt-3 divide-y divide-[#ECECEC] border-t border-[#ECECEC]">
+          {groups.map((g) => (
+            <div key={g.key} className="flex flex-wrap gap-1.5 py-2.5 last:pb-0">
+              {g.models.map((m) => (
+                <ModelChip
+                  key={m.modelId}
+                  label={boxModelLabel(m)}
+                  picked={isMatch(m) || pickedId === m.modelId}
+                  onClick={() => setPickedId((id) => (id === m.modelId ? null : m.modelId))}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 text-[13px] text-[#666666]">No models mapped to this box yet.</p>
+      )}
+
+      {box.notes ? (
+        <p className="mt-3 flex gap-2 border-t border-[#ECECEC] pt-2.5 text-[12.5px] text-[#666666]">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          {box.notes}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function ModelChip({ label, picked, onClick }) {
+  const cls = cx(
+    'rounded-full border px-3 py-1 text-[12.5px] transition',
+    picked ? 'border-[#16A34A] bg-[#F3F3F3] font-extrabold text-[#0B6B3A]' : 'border-transparent bg-[#F3F3F3] font-semibold text-[#344054]',
+    onClick && !picked && 'hover:bg-[#F3F3F3]',
+  );
+  return onClick ? (
+    <button type="button" onClick={onClick} aria-pressed={Boolean(picked)} className={cls}>
+      {label}
+    </button>
+  ) : (
+    <span className={cls}>{label}</span>
   );
 }

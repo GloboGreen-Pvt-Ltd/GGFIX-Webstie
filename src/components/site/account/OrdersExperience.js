@@ -53,6 +53,7 @@ import {
   listPickupSlots,
   rescheduleRepairBooking,
 } from '@/lib/customerAccount';
+import { notifyError, notifySuccess } from '@/lib/toast';
 import {
   AccountEmpty,
   AccountError,
@@ -1155,7 +1156,7 @@ function OrderDrawer({ selected, onClose, onViewChange, onRefresh, onReschedule,
   }, [onRefresh, selected]);
 
   if (!selected) return null;
-  const { order, data, loading, error, view, notice } = selected;
+  const { order, data, loading, error, view } = selected;
   const title = view === 'timeline'
     ? (isPickup(order, data) ? 'Pickup status' : 'Service history')
     : view === 'receipt' ? 'Receipt'
@@ -1208,7 +1209,6 @@ function OrderDrawer({ selected, onClose, onViewChange, onRefresh, onReschedule,
           <button type="button" onClick={onClose} aria-label="Close order details" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-brand-line bg-white text-brand-muted transition hover:bg-brand-soften hover:text-brand-ink"><X className="h-5 w-5" /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
-          {notice ? <p className="mb-3 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">{notice}</p> : null}
           {content}
         </div>
         {data && !loading && !error ? (
@@ -1408,7 +1408,7 @@ export default function OrdersExperience() {
   const openOrder = useCallback(async (order, view = 'details', force = false) => {
     const request = ++selectionId.current;
     const cached = details[idKey(order?.id)] || null;
-    setSelected({ order, view, data: cached, loading: true, error: '', notice: '' });
+    setSelected({ order, view, data: cached, loading: true, error: '' });
     try {
       const data = await buildOrderData(order, { includeAddress: true, force });
       if (selectionId.current !== request) return;
@@ -1430,7 +1430,7 @@ export default function OrdersExperience() {
   }, [openOrder, selected]);
 
   const changeView = useCallback((view) => {
-    setSelected((current) => current ? { ...current, view, notice: '' } : current);
+    setSelected((current) => current ? { ...current, view } : current);
   }, []);
 
   const reschedule = useCallback(async (payload) => {
@@ -1440,10 +1440,11 @@ export default function OrdersExperience() {
     try {
       await rescheduleRepairBooking(bookingId, payload);
       const data = await buildOrderData(selected.order, { includeAddress: true, force: true });
-      setSelected((current) => current ? { ...current, data, view: 'details', loading: false, notice: `Pickup re-scheduled for ${formatDate(payload.pickupDate)}${timeRange(payload.pickupSlotStart, payload.pickupSlotEnd) ? ` · ${timeRange(payload.pickupSlotStart, payload.pickupSlotEnd)}` : ''}.` } : current);
+      setSelected((current) => current ? { ...current, data, view: 'details', loading: false } : current);
+      notifySuccess(`Pickup re-scheduled for ${formatDate(payload.pickupDate)}${timeRange(payload.pickupSlotStart, payload.pickupSlotEnd) ? ` · ${timeRange(payload.pickupSlotStart, payload.pickupSlotEnd)}` : ''}.`);
       setReloadKey((key) => key + 1);
     } catch (requestError) {
-      setSelected((current) => current ? { ...current, notice: requestError?.message || 'Could not re-schedule this pickup.' } : current);
+      notifyError(requestError, 'Could not re-schedule this pickup.');
     } finally {
       setSaving(false);
     }
@@ -1457,10 +1458,11 @@ export default function OrdersExperience() {
     try {
       await cancelSellOrder(id);
       const data = await buildOrderData(selected.order, { includeAddress: true, force: true });
-      setSelected((current) => current ? { ...current, data, notice: 'Your sell request has been cancelled.' } : current);
+      setSelected((current) => current ? { ...current, data } : current);
+      notifySuccess('Your sell request has been cancelled.');
       setReloadKey((key) => key + 1);
     } catch (requestError) {
-      setSelected((current) => current ? { ...current, notice: requestError?.message || 'Could not cancel this sell request.' } : current);
+      notifyError(requestError, 'Could not cancel this sell request.');
     } finally {
       setSaving(false);
     }

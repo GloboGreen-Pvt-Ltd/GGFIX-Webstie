@@ -89,12 +89,11 @@ export const PARTNER_NAV = [
       { key: 'requote', label: 'Requote', slug: 'services/requote', icon: FileText, description: 'Manage bookings that require revised quotations.' },
       { key: 'pickups', label: 'Pickups', slug: 'services/pickups', icon: Truck, description: 'Track and manage device pickup bookings.' },
       { key: 'bookings', label: 'Bookings', slug: 'services/bookings', icon: ListChecks, description: 'View and manage all repair and service bookings.' },
-      { key: 'customers', label: 'Customers', slug: 'services/customers', icon: Users, description: 'Manage customer profiles, contact information, booking history and service records.' },
-      { key: 'enquiries', label: 'Enquiries', slug: 'services/enquiries', icon: MessageSquare, description: 'Manage customer enquiries and convert them into service bookings.' },
+      { key: 'customers', inSection: false, label: 'Customers', slug: 'services/customers', icon: Users, description: 'Manage customer profiles, contact information, booking history and service records.' },
+      { key: 'enquiries', inSection: false, label: 'Enquiry', slug: 'services/enquiries', icon: MessageSquare, description: 'Manage customer enquiries and convert them into service bookings.' },
+      { key: 'marketplace', inSection: false, label: 'Buy', slug: 'services/marketplace', icon: ShoppingBag, description: 'Browse devices and products listed in the GGFIX marketplace.' },
       { key: 'model-compatibility', label: 'Model Compatibility', slug: 'services/model-compatibility', icon: Smartphone, description: 'Check and manage device models and supported repair/service compatibility.' },
-      { key: 'service-status', label: 'Service Status', slug: 'services/service-status', icon: Clock, description: 'Track the current progress and status of active repair services.' },
       { key: 'delivery', label: 'Delivery', slug: 'services/delivery', icon: Package, description: 'Manage completed repairs that are ready for delivery or return to customers.' },
-      { key: 'warranty', label: 'Warranty / Rework', slug: 'services/warranty', icon: ShieldCheck, description: 'Manage warranty claims, repeat repair requests and rework jobs.' },
     ],
   },
   {
@@ -104,14 +103,15 @@ export const PARTNER_NAV = [
     items: [
       { key: 'team', label: 'Employee Management', slug: 'employee/team', icon: Users, description: 'View, add, edit, activate, deactivate and manage employees.' },
       { key: 'attendance', label: 'Attendance', slug: 'employee/attendance', icon: CalendarCheck, description: 'Monitor employee attendance, late check-ins, permissions and leaves.' },
-      { key: 'leave', label: 'Leave Management', slug: 'employee/leave', icon: Calendar, description: 'View, approve, reject and manage employee leave requests.' },
-      { key: 'shift-schedule', label: 'Shift Management', slug: 'employee/shift-schedule', icon: Clock, description: 'View employee work schedules and check-in/check-out details.' },
-      { key: 'salary', label: 'Salary & Payslips', slug: 'employee/salary', icon: IndianRupee, description: 'Manage salary records, advances, monthly salary reports and payslips.' },
       { key: 'service-report', label: 'Service Report', slug: 'employee/service-report', icon: BarChart3, description: 'Monitor technician work records and assigned service tasks.' },
       { key: 'pickup-report', label: 'Pickup Report', slug: 'employee/pickup-report', icon: Truck, description: 'Monitor pickup person assignments and completed pickups.' },
-      { key: 'tasks', label: 'Tasks', slug: 'employee/tasks', icon: ListChecks, description: 'Assign and track employee tasks.' },
+      { key: 'leave', label: 'Leave Management', slug: 'employee/leave', icon: Calendar, description: 'View, approve, reject and manage employee leave requests.' },
       { key: 'permissions', label: 'Permissions', slug: 'employee/permissions', icon: ShieldCheck, description: 'Manage short-time employee permission requests.' },
-      { key: 'performance', label: 'Performance', slug: 'employee/performance', icon: BarChart3, description: 'Monitor employee productivity and performance.' },
+      // Removed from the Employee menu on request; the pages still exist at their URLs.
+      { key: 'shift-schedule', inSection: false, label: 'Shift Management', slug: 'employee/shift-schedule', icon: Clock, description: 'View employee work schedules and check-in/check-out details.' },
+      { key: 'salary', inSection: false, label: 'Salary & Payslips', slug: 'employee/salary', icon: IndianRupee, description: 'Manage salary records, advances, monthly salary reports and payslips.' },
+      { key: 'tasks', inSection: false, label: 'Tasks', slug: 'employee/tasks', icon: ListChecks, description: 'Assign and track employee tasks.' },
+      { key: 'performance', inSection: false, label: 'Performance', slug: 'employee/performance', icon: BarChart3, description: 'Monitor employee productivity and performance.' },
     ],
   },
   {
@@ -121,17 +121,17 @@ export const PARTNER_NAV = [
     items: [
       { key: 'overview', label: 'Business Overview', slug: 'reports/overview', icon: LayoutDashboard, description: 'Total bookings, revenue, completed/pending services and customer growth.' },
       { key: 'revenue', label: 'Revenue Report', slug: 'reports/revenue', icon: IndianRupee, description: 'Daily, weekly and monthly revenue, pending payments and payment methods.' },
-      { key: 'reports-service-report', label: 'Service Report', slug: 'reports/service-report', icon: BarChart3, description: 'Service status, technician performance, completion rate and average repair time.' },
-      { key: 'employee-report', label: 'Employee Report', slug: 'reports/employee-report', icon: Users, description: 'Attendance, productivity, completed tasks and leave statistics.' },
-      { key: 'reports-pickup-report', label: 'Pickup Report', slug: 'reports/pickup-report', icon: Truck, description: 'Total, completed and pending pickups, and pickup employee performance.' },
+      { key: 'reports-service-report', label: 'Service Status', slug: 'reports/service-report', icon: BarChart3, description: 'Booking status counts, working-pending jobs and month-by-month snapshots.' },
+      { key: 'employee-report', inSection: false, label: 'Employee Report', slug: 'reports/employee-report', icon: Users, description: 'Attendance, productivity, completed tasks and leave statistics.' },
+      { key: 'reports-pickup-report', inSection: false, label: 'Pickup Report', slug: 'reports/pickup-report', icon: Truck, description: 'Total, completed and pending pickups, and pickup employee performance.' },
       { key: 'cash-book', label: 'Cash Book', slug: 'reports/cash-book', icon: Wallet, description: 'Manage cash-in and cash-out records.' },
-      { key: 'booking-report', label: 'Booking Report', slug: 'reports/booking-report', icon: ListChecks, description: 'View booking statistics and trends.' },
-      { key: 'delivery-report', label: 'Delivery Report', slug: 'reports/delivery-report', icon: Package, description: 'View delivered-device statistics.' },
-      { key: 'customer-report', label: 'Customer Report', slug: 'reports/customer-report', icon: Users, description: 'View customer activity and service history.' },
-      { key: 'sales-report', label: 'Sales Report', slug: 'reports/sales-report', icon: ShoppingBag, description: 'View Buy/Sell transaction reports.' },
-      { key: 'expense-report', label: 'Expense Report', slug: 'reports/expense-report', icon: IndianRupee, description: 'Track business expenses.' },
-      { key: 'payment-report', label: 'Payment Report', slug: 'reports/payment-report', icon: CreditCard, description: 'Analyze payment methods and transaction details.' },
-      { key: 'profit-loss', label: 'Profit & Loss', slug: 'reports/profit-loss', icon: BarChart3, description: 'Compare business income against expenses.' },
+      { key: 'booking-report', inSection: false, label: 'Booking Report', slug: 'reports/booking-report', icon: ListChecks, description: 'View booking statistics and trends.' },
+      { key: 'delivery-report', inSection: false, label: 'Delivery Report', slug: 'reports/delivery-report', icon: Package, description: 'View delivered-device statistics.' },
+      { key: 'customer-report', inSection: false, label: 'Customer Report', slug: 'reports/customer-report', icon: Users, description: 'View customer activity and service history.' },
+      { key: 'sales-report', inSection: false, label: 'Sales Report', slug: 'reports/sales-report', icon: ShoppingBag, description: 'View Buy/Sell transaction reports.' },
+      { key: 'expense-report', inSection: false, label: 'Expense Report', slug: 'reports/expense-report', icon: IndianRupee, description: 'Track business expenses.' },
+      { key: 'payment-report', inSection: false, label: 'Payment Report', slug: 'reports/payment-report', icon: CreditCard, description: 'Analyze payment methods and transaction details.' },
+      { key: 'profit-loss', inSection: false, label: 'Profit & Loss', slug: 'reports/profit-loss', icon: BarChart3, description: 'Compare business income against expenses.' },
     ],
   },
   {
@@ -141,7 +141,7 @@ export const PARTNER_NAV = [
     items: [
       accountProfileItem,
       accountSettingsItem,
-      { key: 'subscription', label: 'Subscription & Plan', slug: 'settings/subscription', icon: CreditCard, description: 'Manage subscription, employee seat limits and billing.' },
+      { key: 'subscription', ownerOnly: true, label: 'Subscription & Plan', slug: 'settings/subscription', icon: CreditCard, description: 'Manage subscription, employee seat limits and billing.' },
       { key: 'notifications', label: 'Notifications', slug: 'settings/notifications', icon: Bell, description: 'Manage notification preferences.' },
     ],
   },
@@ -159,12 +159,21 @@ export const ALL_STUB_SLUGS = PARTNER_NAV_FLAT.map((item) => item.slug);
  * Resolve the current pathname to { title, breadcrumb, sectionKey }.
  * sectionKey tells the sidebar which section to keep expanded.
  */
+const FLOW_PAGES = {
+  '/shop-home/sell/select-brand': { title: 'Sell a Device', breadcrumb: ['Dashboard', 'Sell a Device'] },
+  '/shop-home/sell/select-model': { title: 'Select Model', breadcrumb: ['Dashboard', 'Sell a Device', 'Select Model'] },
+};
+
 export function resolveNavContext(pathname) {
   const clean = String(pathname || '').replace(/\/+$/, '') || '/shop-home';
 
   if (clean === '/shop-home') {
     return { title: 'Dashboard', breadcrumb: ['Dashboard'], sectionKey: null };
   }
+
+  // Step pages reached from the Dashboard rather than from a nav menu.
+  const flowPage = FLOW_PAGES[clean];
+  if (flowPage) return { ...flowPage, sectionKey: null };
 
   const match = PARTNER_NAV_FLAT.find((item) => item.href === clean);
   if (match) {

@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CreditCard, Crown, Gift, Zap, Check, Store } from 'lucide-react';
 import { subscriptionApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import PageHeader, { Button } from '@/components/PageHeader';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 const TABS = [
   { key: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
@@ -241,10 +240,6 @@ function ActivateBasic({ onActivated }) {
   const [quote, setQuote] = useState(null);
   const [quoting, setQuoting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState('');
-  const [ok, setOk] = useState('');
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   // Live-preview total from the backend quote endpoint.
   useEffect(() => {
@@ -280,21 +275,13 @@ function ActivateBasic({ onActivated }) {
   const total = quote?.total ?? localTotal;
 
   const handleActivate = async () => {
-    setErr('');
-    setOk('');
-    const { errors, firstErrorField, isValid } = validateForm(
-      { ownerUserId: required('Enter an owner user ID.') },
-      { ownerUserId },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
+    const n = Number(shopCount);
+    if (!ownerUserId.trim()) {
+      notifyError('Enter an owner user ID.');
       return;
     }
-    setFieldErrors({});
-    const n = Number(shopCount);
     if (!n || n < 1) {
-      setErr('Shop count must be at least 1.');
+      notifyError('Shop count must be at least 1.');
       return;
     }
     setSubmitting(true);
@@ -303,11 +290,11 @@ function ActivateBasic({ onActivated }) {
         ownerUserId: ownerUserId.trim(),
         shopCount: n,
       });
-      setOk('Basic plan activated.');
+      notifySuccess('Basic plan activated.');
       setOwnerUserId('');
       onActivated?.();
     } catch (e) {
-      setErr(e.body?.message || e.message || 'Activation failed');
+      notifyError(e.body?.message || e.message || 'Activation failed');
     } finally {
       setSubmitting(false);
     }
@@ -334,20 +321,15 @@ function ActivateBasic({ onActivated }) {
             className="w-full rounded-lg border border-admin-border bg-white px-3 py-2 text-sm text-slate-900 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
           />
         </div>
-        <div className="sm:col-span-2" ref={registerField(fieldRefs, 'ownerUserId')}>
+        <div className="sm:col-span-2">
           <label className="mb-1 block text-xs font-medium text-admin-muted">Owner user ID</label>
           <input
             type="text"
             value={ownerUserId}
-            onChange={(e) => {
-              setOwnerUserId(e.target.value);
-              if (fieldErrors.ownerUserId) setFieldErrors((prev) => ({ ...prev, ownerUserId: undefined }));
-            }}
+            onChange={(e) => setOwnerUserId(e.target.value)}
             placeholder="ownerUserId (UUID)"
             className="w-full rounded-lg border border-admin-border bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
-            aria-invalid={Boolean(fieldErrors.ownerUserId)}
           />
-          {fieldErrors.ownerUserId ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.ownerUserId}</p> : null}
         </div>
       </div>
 
@@ -367,9 +349,6 @@ function ActivateBasic({ onActivated }) {
           {submitting ? 'Activating…' : 'Activate'}
         </Button>
       </div>
-
-      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
-      {ok && <p className="mt-3 text-sm text-emerald-600">{ok}</p>}
     </div>
   );
 }

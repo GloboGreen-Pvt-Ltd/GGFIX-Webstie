@@ -30,6 +30,7 @@ import { cx } from '@/components/site/ui';
 import { writeSession } from '@/lib/shopAuth';
 import { normalizeMobile, sendMobileOtp, verifyMobileOtp } from '@/lib/shopMobileAuth';
 import Icon3D from '@/components/shop-dashboard/Icon3D';
+import { notifyError } from '@/lib/toast';
 
 const RESEND_SECONDS = 30;
 const OTP_LENGTH = 6;
@@ -154,6 +155,8 @@ export default function ShopLogin() {
 
   const [otp, setOtp] = useState(() => Array(OTP_LENGTH).fill(''));
   const [otpError, setOtpError] = useState('');
+  // The server rejected the code: its message is a toast, but the boxes still turn red.
+  const [otpRejected, setOtpRejected] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verified, setVerified] = useState(false);
   const [shake, setShake] = useState(false);
@@ -202,11 +205,12 @@ export default function ShopLogin() {
     const result = await sendMobileOtp(digits);
     setSending(false);
     if (!result.ok) {
-      setMobileError(result.message || 'Unable to sign in right now. Please try again.');
+      notifyError(result.message || 'Unable to sign in right now. Please try again.');
       return;
     }
     setOtp(Array(OTP_LENGTH).fill(''));
     setOtpError('');
+    setOtpRejected(false);
     attemptedOtpRef.current = '';
     setResendSeconds(RESEND_SECONDS);
     setStep('otp');
@@ -228,7 +232,8 @@ export default function ShopLogin() {
     try {
       const result = await verifyMobileOtp(digits, otpValue);
       if (!result.ok) {
-        setOtpError(result.message || 'The OTP you entered is incorrect. Please try again.');
+        notifyError(result.message || 'The OTP you entered is incorrect. Please try again.');
+        setOtpRejected(true);
         triggerShake();
         return;
       }
@@ -274,6 +279,7 @@ export default function ShopLogin() {
   function handleOtpChange(nextOtp) {
     setOtp(nextOtp);
     if (otpError) setOtpError('');
+    if (otpRejected) setOtpRejected(false);
     // A fresh edit is never "the code we already tried" — let a completed
     // value re-trigger the auto-verify effect above.
     attemptedOtpRef.current = '';
@@ -285,8 +291,9 @@ export default function ShopLogin() {
     setOtpError('');
     const result = await sendMobileOtp(digits);
     setResending(false);
+    setOtpRejected(false);
     if (!result.ok) {
-      setOtpError(result.message || 'Unable to resend right now. Please try again.');
+      notifyError(result.message || 'Unable to resend right now. Please try again.');
       return;
     }
     setOtp(Array(OTP_LENGTH).fill(''));
@@ -298,6 +305,7 @@ export default function ShopLogin() {
     setStep('mobile');
     setOtp(Array(OTP_LENGTH).fill(''));
     setOtpError('');
+    setOtpRejected(false);
     setVerified(false);
     setVerifying(false);
     attemptedOtpRef.current = '';
@@ -416,7 +424,7 @@ export default function ShopLogin() {
                   </div>
                 ) : (
                   <>
-                    <OtpBoxes values={otp} onChange={handleOtpChange} error={Boolean(otpError)} disabled={verifying} shake={shake} />
+                    <OtpBoxes values={otp} onChange={handleOtpChange} error={Boolean(otpError) || otpRejected} disabled={verifying} shake={shake} />
 
                     {otpError ? (
                       <p className="mt-3 text-sm font-medium text-[#D92D20]" role="alert">

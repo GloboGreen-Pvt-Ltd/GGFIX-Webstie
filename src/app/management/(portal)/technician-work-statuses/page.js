@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 // Admin CRUD for the technician Ticket Detail screen's "Technician Work
 // Status" dropdown. The admin only enters a label; the backend infers the
@@ -19,8 +18,6 @@ export default function MasterTechnicianWorkStatusesPage() {
   const [label, setLabel] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -51,16 +48,7 @@ export default function MasterTechnicianWorkStatusesPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { errors, firstErrorField, isValid } = validateForm(
-      { label: required('Label is required.') },
-      { label },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!label.trim()) return;
     setSubmitting(true);
     try {
       // The backend infers ticketStatus from the label (e.g. "done" → READY),
@@ -77,7 +65,7 @@ export default function MasterTechnicianWorkStatusesPage() {
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -89,7 +77,7 @@ export default function MasterTechnicianWorkStatusesPage() {
       await masterApi.delete(`/master/technician-work-statuses/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -142,21 +130,16 @@ export default function MasterTechnicianWorkStatusesPage() {
               {modal.type === 'create' ? 'New status' : 'Edit status'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div ref={registerField(fieldRefs, 'label')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Label</label>
                 <input
                   type="text"
                   value={label}
-                  onChange={(e) => {
-                    setLabel(e.target.value);
-                    if (fieldErrors.label) setFieldErrors((prev) => ({ ...prev, label: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.label)}
+                  onChange={(e) => setLabel(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   placeholder="e.g. Start, In Progress, Done"
                   required
                 />
-                {fieldErrors.label ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.label}</p> : null}
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-800">
                 <input

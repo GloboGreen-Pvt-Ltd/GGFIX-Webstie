@@ -57,8 +57,8 @@ function DashboardLink({ active, onNavigate }) {
         'relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition',
         FOCUS_RING,
         active
-          ? "bg-[#DCFCE7] text-[#15803D] before:absolute before:-left-2.5 before:top-1/2 before:h-6 before:w-[3px] before:-translate-y-1/2 before:rounded-r-full before:bg-[#15803D] before:content-['']"
-          : 'text-[#344054] hover:bg-[#F0FDF4]',
+          ? "bg-[#F3F3F3] text-[#15803D] before:absolute before:-left-2.5 before:top-1/2 before:h-6 before:w-[3px] before:-translate-y-1/2 before:rounded-r-full before:bg-[#15803D] before:content-['']"
+          : 'text-[#344054] hover:bg-[#F8F8F8]',
       )}
     >
       <Icon className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
@@ -82,17 +82,17 @@ function NavSection({ section, open, onToggle, activeItemKey, onNavigate, badges
         className={cx(
           'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-bold transition',
           FOCUS_RING,
-          hasActive && !open ? 'text-[#15803D]' : 'text-[#101828] hover:bg-[#F0FDF4]',
+          hasActive && !open ? 'text-[#15803D]' : 'text-[#111111] hover:bg-[#F8F8F8]',
         )}
       >
-        <SectionIcon className="h-[18px] w-[18px] shrink-0 text-[#667085]" aria-hidden="true" />
+        <SectionIcon className="h-[18px] w-[18px] shrink-0 text-[#666666]" aria-hidden="true" />
         <span className="flex-1 truncate uppercase tracking-wide text-xs">{section.label}</span>
         <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform', open && 'rotate-180')} aria-hidden="true" />
       </button>
 
       <div id={listId} className={cx('grid transition-[grid-template-rows] duration-200 ease-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
         <div className="overflow-hidden">
-          <ul className="ml-[1.55rem] mt-0.5 space-y-0.5 border-l border-[#EAECF0] py-1 pl-3">
+          <ul className="ml-[1.55rem] mt-0.5 space-y-0.5 border-l border-[#ECECEC] py-1 pl-3">
             {section.items.map((item) => {
               const Icon = item.icon;
               const active = item.key === activeItemKey;
@@ -107,8 +107,8 @@ function NavSection({ section, open, onToggle, activeItemKey, onNavigate, badges
                       'relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition',
                       FOCUS_RING,
                       active
-                        ? "bg-[#DCFCE7] text-[#15803D] font-semibold before:absolute before:-left-3 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r-full before:bg-[#15803D] before:content-['']"
-                        : 'text-[#475467] hover:bg-[#F0FDF4] hover:text-[#101828]',
+                        ? "bg-[#F3F3F3] text-[#15803D] font-semibold before:absolute before:-left-3 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-r-full before:bg-[#15803D] before:content-['']"
+                        : 'text-[#475467] hover:bg-[#F8F8F8] hover:text-[#111111]',
                     )}
                   >
                     <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -129,7 +129,7 @@ function DrawerFooter({ onNavigate, shopOwner }) {
   const firstSettingsHref = `/shop-home/${settingsSection.items[0].slug}`;
 
   return (
-    <div className="shrink-0 border-t border-[#EAECF0] px-2.5 py-2.5">
+    <div className="shrink-0 border-t border-[#ECECEC] px-2.5 py-2.5">
       <div className="flex items-center gap-1">
         <a
           href="/faq"
@@ -137,7 +137,7 @@ function DrawerFooter({ onNavigate, shopOwner }) {
           rel="noopener noreferrer"
           title="Help & Support"
           aria-label="Help & Support (opens in a new tab)"
-          className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#667085] transition hover:bg-[#F0FDF4] hover:text-[#15803D]', FOCUS_RING)}
+          className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#666666] transition hover:bg-[#F8F8F8] hover:text-[#15803D]', FOCUS_RING)}
         >
           <CircleHelp className="h-[18px] w-[18px]" aria-hidden="true" />
         </a>
@@ -146,7 +146,7 @@ function DrawerFooter({ onNavigate, shopOwner }) {
           onClick={onNavigate}
           title="Settings"
           aria-label="Settings"
-          className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#667085] transition hover:bg-[#F0FDF4] hover:text-[#15803D]', FOCUS_RING)}
+          className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#666666] transition hover:bg-[#F8F8F8] hover:text-[#15803D]', FOCUS_RING)}
         >
           <SettingsIcon className="h-[18px] w-[18px]" aria-hidden="true" />
         </Link>
@@ -213,11 +213,11 @@ export default function MobileNavDrawer({ mobileOpen, onCloseMobile, shopOwner, 
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className="flex shrink-0 items-center justify-between gap-2.5 border-b border-[#EAECF0] px-4 py-4">
+        <div className="flex shrink-0 items-center justify-between gap-2.5 border-b border-[#ECECEC] px-4 py-4">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <Image src={BRAND.logo} alt="" width={30} height={30} className="h-[30px] w-[30px] shrink-0 rounded-xl object-contain" />
             <div className="min-w-0">
-              <p className="truncate text-sm font-extrabold leading-tight text-[#101828]">GGFIX Partner</p>
+              <p className="truncate text-sm font-extrabold leading-tight text-[#111111]">GGFIX Partner</p>
               {shopOwner?.shopName ? <p className="truncate text-[0.68rem] font-semibold text-[#15803D]">{shopOwner.shopName}</p> : null}
             </div>
           </div>
@@ -225,7 +225,7 @@ export default function MobileNavDrawer({ mobileOpen, onCloseMobile, shopOwner, 
             type="button"
             onClick={onCloseMobile}
             aria-label="Close menu"
-            className={cx('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#667085] hover:bg-[#F0FDF4]', FOCUS_RING)}
+            className={cx('inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#666666] hover:bg-[#F8F8F8]', FOCUS_RING)}
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>

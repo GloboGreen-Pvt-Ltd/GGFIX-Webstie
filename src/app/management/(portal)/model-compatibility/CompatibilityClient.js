@@ -8,8 +8,7 @@ import { masterApi } from '@/lib/api';
 import { imageReplacementNotice, uploadCompatibilityImage } from '@/lib/modelMedia';
 import DataTable, { StatusPill } from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 /**
  * Master Data -> Model Compatibility.
@@ -156,13 +155,6 @@ export default function CompatibilityClient() {
   const [types, setTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, because
-  // the modal closes on save — and a replacement deletes the old file from the
-  // bucket, which is worth saying in words rather than leaving to be inferred.
-  const [notice, setNotice] = useState('');
-  // 'warn' when the save came back missing something it was asked to store —
-  // the same line in the same place, but not dressed as good news.
-  const [noticeTone, setNoticeTone] = useState('ok');
 
   // Part-type management, so a fourth type is a row the shop adds rather than a
   // release. Kept on this page instead of its own route — it is a short list
@@ -170,7 +162,6 @@ export default function CompatibilityClient() {
   const [typeModal, setTypeModal] = useState(false);
   const [typeName, setTypeName] = useState('');
   const [typeBusy, setTypeBusy] = useState(false);
-  const [typeError, setTypeError] = useState('');
 
   // brandId -> [{ id, name }]. Populated on demand; a brand is only fetched once.
   const [modelsByBrand, setModelsByBrand] = useState({});
@@ -192,9 +183,6 @@ export default function CompatibilityClient() {
   const [imageUrl, setImageUrl] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   // Block keys must be stable across re-renders or React remounts the inputs on
   // every keystroke, so they come from a counter rather than the array index —
@@ -274,7 +262,7 @@ export default function CompatibilityClient() {
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
       setModelsByBrand((prev) => ({ ...prev, [brandId]: rows }));
     } catch (e) {
-      setFormError(e.body?.message || e.message || 'Could not load models for that brand.');
+      notifyError(e.body?.message || e.message || 'Could not load models for that brand.');
     } finally {
       setLoadingBrands((prev) => prev.filter((id) => id !== brandId));
     }
@@ -293,7 +281,6 @@ export default function CompatibilityClient() {
     setImageFile(null);
     setPartTypeId('');
     setModelQuery({});
-    setFormError('');
   };
 
   const openCreate = () => {
@@ -432,28 +419,14 @@ export default function CompatibilityClient() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setFormError('');
-    setNotice('');
-    setNoticeTone('ok');
 
-    const { errors, firstErrorField, isValid } = validateForm(
-      {
-        boxNo: required('Box No is required.'),
-        boxName: required('Box Name is required.'),
-      },
-      { boxNo, boxName },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!boxNo.trim()) { notifyError('Box No is required.'); return; }
+    if (!boxName.trim()) { notifyError('Box Name is required.'); return; }
 
     const used = blocks.filter((b) => b.brandId);
     const duplicateBrand = used.find((b, i) => used.findIndex((x) => x.brandId === b.brandId) !== i);
     if (duplicateBrand) {
-      setFormError(`${brandName(duplicateBrand.brandId)} is added twice — merge those two blocks.`);
+      notifyError(`${brandName(duplicateBrand.brandId)} is added twice — merge those two blocks.`);
       return;
     }
 
@@ -492,6 +465,9 @@ export default function CompatibilityClient() {
         : await masterApi.put(`/master/model-compatibility/${modal.row.id}`, payload);
 
       const said = [];
+      // Set when the save came back missing something it was asked to store —
+      // reported as an error toast, not dressed as good news.
+      let warn = false;
 
       // A master-data service that predates added models IGNORES the field
       // rather than rejecting it — Spring drops unknown JSON properties — so the
@@ -500,7 +476,7 @@ export default function CompatibilityClient() {
       const keptCustoms = (saved?.models || []).filter((m) => m.custom).length;
       const dropped = customModels.length - keptCustoms;
       if (customModels.length > 0 && dropped > 0) {
-        setNoticeTone('warn');
+        warn = true;
         said.push(`Saved — but ${dropped} added model name${dropped === 1 ? '' : 's'} did not stick.`
           + ' The master-data service is running a build that cannot store them yet.');
       }
@@ -512,12 +488,16 @@ export default function CompatibilityClient() {
         said.push(imageReplacementNotice(uploaded, 'Reference image'));
       }
 
-      if (said.length) setNotice(said.filter(Boolean).join(' '));
+      const notice = said.filter(Boolean).join(' ');
+      if (notice) {
+        if (warn) notifyError(notice);
+        else notifySuccess(notice);
+      }
 
       closeModal();
       load();
     } catch (err) {
-      setFormError(err.body?.message || err.message || 'Request failed');
+      notifyError(err.body?.message || err.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -528,7 +508,7 @@ export default function CompatibilityClient() {
       await masterApi.put(`/master/model-compatibility/${row.id}`, { isActive: row.isActive === false });
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Could not change status');
+      notifyError(e.body?.message || e.message || 'Could not change status');
     }
   };
 
@@ -538,7 +518,7 @@ export default function CompatibilityClient() {
       await masterApi.delete(`/master/model-compatibility/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -557,16 +537,15 @@ export default function CompatibilityClient() {
   const addType = async (e) => {
     e.preventDefault();
     const name = typeName.trim();
-    if (!name) { setTypeError('Type name is required.'); return; }
+    if (!name) { notifyError('Type name is required.'); return; }
     setTypeBusy(true);
-    setTypeError('');
     try {
       await masterApi.post('/master/model-compatibility-types', { name });
       setTypeName('');
       await loadTypes();
       announceTypesChanged();
     } catch (err) {
-      setTypeError(err.body?.message || err.message || 'Could not add that type.');
+      notifyError(err.body?.message || err.message || 'Could not add that type.');
     } finally {
       setTypeBusy(false);
     }
@@ -575,26 +554,24 @@ export default function CompatibilityClient() {
   const renameType = async (t) => {
     const name = prompt(`Rename "${t.name}" to:`, t.name);
     if (name == null || name.trim() === '' || name.trim() === t.name) return;
-    setTypeError('');
     try {
       await masterApi.put(`/master/model-compatibility-types/${t.id}`, { name: name.trim() });
       await loadTypes();
       announceTypesChanged();
     } catch (err) {
-      setTypeError(err.body?.message || err.message || 'Could not rename that type.');
+      notifyError(err.body?.message || err.message || 'Could not rename that type.');
     }
   };
 
   const deleteType = async (t) => {
     if (!confirm(`Delete part type "${t.name}"?`)) return;
-    setTypeError('');
     try {
       await masterApi.delete(`/master/model-compatibility-types/${t.id}`);
       await loadTypes();
       announceTypesChanged();
     } catch (err) {
       // The backend refuses while boxes still point at it and says how many.
-      setTypeError(err.body?.message || err.message || 'Could not delete that type.');
+      notifyError(err.body?.message || err.message || 'Could not delete that type.');
     }
   };
 
@@ -712,7 +689,7 @@ export default function CompatibilityClient() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { setTypeModal(true); setTypeName(''); setTypeError(''); }}
+            onClick={() => { setTypeModal(true); setTypeName(''); }}
             className="inline-flex items-center gap-2 rounded-lg border border-admin-border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark"
           >
             <Settings2 className="h-4 w-4" /> Part types
@@ -742,15 +719,6 @@ export default function CompatibilityClient() {
       )}
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
-          noticeTone === 'warn'
-            ? 'border-amber-200 bg-amber-50 text-amber-800'
-            : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-        }`}>
-          {notice}
-        </p>
-      )}
 
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
@@ -925,8 +893,6 @@ export default function CompatibilityClient() {
               </button>
             </form>
 
-            {typeError && <p className="mt-3 text-sm text-red-600">{typeError}</p>}
-
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
@@ -966,23 +932,18 @@ export default function CompatibilityClient() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div ref={registerField(fieldRefs, 'boxNo')}>
+                <div>
                   <label className="block text-sm text-admin-muted mb-1">Box No</label>
                   <input
                     type="text"
                     value={boxNo}
-                    onChange={(e) => {
-                      setBoxNo(e.target.value);
-                      if (fieldErrors.boxNo) setFieldErrors((prev) => ({ ...prev, boxNo: undefined }));
-                    }}
+                    onChange={(e) => setBoxNo(e.target.value)}
                     className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                     placeholder="A-12"
                     required
-                    aria-invalid={Boolean(fieldErrors.boxNo)}
                   />
-                  {fieldErrors.boxNo ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.boxNo}</p> : null}
                 </div>
-                <div ref={registerField(fieldRefs, 'boxName')}>
+                <div>
                   <label className="block text-sm text-admin-muted mb-1">Box Name</label>
                   {/* Read-only while a type is chosen: the name IS the type, and
                       letting the two drift is what makes a shelf of "Tempered
@@ -990,24 +951,19 @@ export default function CompatibilityClient() {
                   <input
                     type="text"
                     value={boxName}
-                    onChange={(e) => {
-                      setBoxName(e.target.value);
-                      if (fieldErrors.boxName) setFieldErrors((prev) => ({ ...prev, boxName: undefined }));
-                    }}
+                    onChange={(e) => setBoxName(e.target.value)}
                     readOnly={!!partTypeId}
                     className={`w-full rounded-lg border border-admin-border px-3 py-2 text-slate-900 ${
                       partTypeId ? 'bg-admin-dark/60 cursor-not-allowed' : 'bg-admin-dark'
                     }`}
                     placeholder="Display Combo — 6.5 inch"
                     required
-                    aria-invalid={Boolean(fieldErrors.boxName)}
                   />
                   <p className="mt-1 text-xs text-admin-muted">
                     {partTypeId
                       ? 'Taken from the part type above.'
                       : 'Pick a part type above to name the box automatically.'}
                   </p>
-                  {fieldErrors.boxName ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.boxName}</p> : null}
                 </div>
               </div>
 
@@ -1316,8 +1272,6 @@ export default function CompatibilityClient() {
                 />
                 Active
               </label>
-
-              {formError && <p className="text-sm text-red-600">{formError}</p>}
 
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={closeModal} className="rounded-lg px-4 py-2 text-slate-600 hover:bg-admin-dark">

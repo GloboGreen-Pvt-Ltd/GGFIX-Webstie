@@ -65,7 +65,9 @@ import {
 import { cx } from '@/components/site/ui';
 import PageHeader from '@/components/shop-dashboard/PageHeader';
 import { deriveDisplayName, initialsOf } from '@/components/shop-dashboard/ProfileDropdown';
-import { updateShopOwnerSession } from '@/lib/shopAuth';
+import { readShopOwner, updateShopOwnerSession } from '@/lib/shopAuth';
+import { isOwnerSession, OWNER_ONLY_TABS } from '@/lib/shopAccess';
+import { getShopPublic } from '@/lib/repairBooking';
 import {
   fetchMyProfile,
   saveMyAvatar,
@@ -80,9 +82,10 @@ import { fetchMyKyc, saveMyKyc, uploadMyKycFile } from '@/lib/shopKyc';
 import { fetchMySubscription, fetchSubscriptionPlans } from '@/lib/shopSubscription';
 import { fetchShopBookings, recentBookings } from '@/lib/shopDashboard';
 import { updateShopLocation } from '@/lib/shopLocations';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
-const INPUT_CLS = 'w-full rounded-xl border border-[#D0D5DD] bg-white px-3.5 py-2.5 text-sm text-[#101828] transition focus:border-[#15803D] focus:outline-none focus:ring-[3px] focus:ring-[#DCFCE7]';
+const INPUT_CLS = 'w-full rounded-xl border border-[#D0D5DD] bg-white px-3.5 py-2.5 text-sm text-[#111111] transition focus:border-[#15803D] focus:outline-none focus:ring-[3px] focus:ring-[#ECECEC]';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const TABS = [
@@ -95,13 +98,13 @@ const TABS = [
 ];
 
 const KYC_STATUS_BADGE = {
-  APPROVED: { tone: 'bg-[#DCFCE7] text-[#15803D]', label: 'Verified' },
+  APPROVED: { tone: 'bg-[#F3F3F3] text-[#15803D]', label: 'Verified' },
   REJECTED: { tone: 'bg-red-100 text-red-700', label: 'Rejected' },
   PENDING_REVIEW: { tone: 'bg-sky-100 text-sky-700', label: 'Under Review' },
 };
 
 const STATUS_BADGE = {
-  Created: 'bg-[#DCFCE7] text-[#15803D]',
+  Created: 'bg-[#F3F3F3] text-[#15803D]',
   'In Progress': 'bg-sky-100 text-sky-700',
   Pickup: 'bg-orange-100 text-orange-700',
   Completed: 'bg-violet-100 text-violet-700',
@@ -125,11 +128,11 @@ function formatDate(iso) {
 
 function SectionCard({ title, subtitle, action, children }) {
   return (
-    <section className="rounded-3xl border border-[#EAECF0] bg-white p-5 shadow-[0_1px_3px_rgba(16,24,40,0.08)] sm:p-6">
+    <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:p-6">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold text-[#101828]">{title}</h2>
-          {subtitle ? <p className="mt-0.5 text-sm text-[#667085]">{subtitle}</p> : null}
+          <h2 className="text-base font-bold text-[#111111]">{title}</h2>
+          {subtitle ? <p className="mt-0.5 text-sm text-[#666666]">{subtitle}</p> : null}
         </div>
         {action}
       </div>
@@ -142,8 +145,8 @@ function ReadOnlyField({ label, icon: Icon, value }) {
   return (
     <div>
       <label className="mb-1.5 block text-sm font-semibold text-[#344054]">{label}</label>
-      <div className="flex items-center gap-2.5 rounded-xl border border-[#EAECF0] bg-[#F9FAFB] px-3.5 py-2.5 text-sm font-medium text-[#101828]">
-        {Icon ? <Icon className="h-4 w-4 shrink-0 text-[#667085]" aria-hidden="true" /> : null}
+      <div className="flex items-center gap-2.5 rounded-xl border border-[#ECECEC] bg-[#F8F8F8] px-3.5 py-2.5 text-sm font-medium text-[#111111]">
+        {Icon ? <Icon className="h-4 w-4 shrink-0 text-[#666666]" aria-hidden="true" /> : null}
         <span className="truncate">{value || '—'}</span>
       </div>
     </div>
@@ -175,7 +178,7 @@ function AvatarWithUpload({ avatarUrl, name, uploading, onPick }) {
         disabled={uploading}
         aria-label={avatarUrl ? 'Change profile photo' : 'Upload profile photo'}
         className={cx(
-          'absolute -bottom-0.5 -right-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[#15803D] shadow-[0_1px_4px_rgba(16,24,40,0.2)] ring-2 ring-white transition hover:bg-[#F0FDF4]',
+          'absolute -bottom-0.5 -right-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white text-[#15803D] shadow-[0_1px_4px_rgba(16,24,40,0.2)] ring-2 ring-white transition hover:bg-[#F8F8F8]',
           FOCUS_RING,
         )}
       >
@@ -228,7 +231,7 @@ function EditableNameField({ profile, onSaved }) {
       onSaved(updated);
       setEditing(false);
     } catch (err) {
-      setError(err.body?.message || err.message || 'Could not save your name.');
+      notifyError(err.body?.message || err.message || 'Could not save your name.');
     } finally {
       setSaving(false);
     }
@@ -237,8 +240,8 @@ function EditableNameField({ profile, onSaved }) {
   if (!editing) {
     return (
       <FieldShell label="Full Name" onEdit={startEdit}>
-        <div className="flex items-center gap-2.5 rounded-xl border border-[#EAECF0] bg-[#F9FAFB] px-3.5 py-2.5 text-sm font-medium text-[#101828]">
-          <User className="h-4 w-4 shrink-0 text-[#667085]" aria-hidden="true" />
+        <div className="flex items-center gap-2.5 rounded-xl border border-[#ECECEC] bg-[#F8F8F8] px-3.5 py-2.5 text-sm font-medium text-[#111111]">
+          <User className="h-4 w-4 shrink-0 text-[#666666]" aria-hidden="true" />
           <span className="truncate">{name || '—'}</span>
         </div>
       </FieldShell>
@@ -254,7 +257,7 @@ function EditableNameField({ profile, onSaved }) {
           type="button"
           onClick={save}
           disabled={saving}
-          className={cx('inline-flex items-center gap-1.5 rounded-lg bg-[#15803D] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#166534] disabled:opacity-60', FOCUS_RING)}
+          className={cx('inline-flex items-center gap-1.5 rounded-lg bg-[#F3BF23] px-3 py-1.5 text-xs font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:opacity-60', FOCUS_RING)}
         >
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
           {saving ? 'Saving…' : 'Save'}
@@ -262,7 +265,7 @@ function EditableNameField({ profile, onSaved }) {
         <button
           type="button"
           onClick={cancel}
-          className={cx('inline-flex items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+          className={cx('inline-flex items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
         >
           <X className="h-3.5 w-3.5" aria-hidden="true" />
           Cancel
@@ -306,7 +309,7 @@ function EditableContactField({ type, label, icon: Icon, currentValue, onSaved }
       setHint(res?.defaultOtp ? `For testing, use OTP ${res.defaultOtp}.` : `We've sent a code to ${trimmed}.`);
       setStep('otp');
     } catch (err) {
-      setError(err.body?.message || err.message || 'Could not send OTP.');
+      notifyError(err.body?.message || err.message || 'Could not send OTP.');
     } finally {
       setSending(false);
     }
@@ -325,7 +328,7 @@ function EditableContactField({ type, label, icon: Icon, currentValue, onSaved }
       onSaved(updated);
       setEditing(false);
     } catch (err) {
-      setError(err.status === 401 ? 'Invalid OTP. Please check the code and try again.' : (err.body?.message || err.message || 'Verification failed.'));
+      notifyError(err.status === 401 ? 'Invalid OTP. Please check the code and try again.' : (err.body?.message || err.message || 'Verification failed.'));
     } finally {
       setVerifying(false);
     }
@@ -334,8 +337,8 @@ function EditableContactField({ type, label, icon: Icon, currentValue, onSaved }
   if (!editing) {
     return (
       <FieldShell label={label} onEdit={startEdit}>
-        <div className="flex items-center gap-2.5 rounded-xl border border-[#EAECF0] bg-[#F9FAFB] px-3.5 py-2.5 text-sm font-medium text-[#101828]">
-          {Icon ? <Icon className="h-4 w-4 shrink-0 text-[#667085]" aria-hidden="true" /> : null}
+        <div className="flex items-center gap-2.5 rounded-xl border border-[#ECECEC] bg-[#F8F8F8] px-3.5 py-2.5 text-sm font-medium text-[#111111]">
+          {Icon ? <Icon className="h-4 w-4 shrink-0 text-[#666666]" aria-hidden="true" /> : null}
           <span className="truncate">{currentValue || '—'}</span>
         </div>
       </FieldShell>
@@ -361,7 +364,7 @@ function EditableContactField({ type, label, icon: Icon, currentValue, onSaved }
               type="button"
               onClick={sendOtp}
               disabled={sending}
-              className={cx('inline-flex items-center gap-1.5 rounded-lg bg-[#15803D] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#166534] disabled:opacity-60', FOCUS_RING)}
+              className={cx('inline-flex items-center gap-1.5 rounded-lg bg-[#F3BF23] px-3 py-1.5 text-xs font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:opacity-60', FOCUS_RING)}
             >
               {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
               {sending ? 'Sending…' : 'Send OTP'}
@@ -369,7 +372,7 @@ function EditableContactField({ type, label, icon: Icon, currentValue, onSaved }
             <button
               type="button"
               onClick={cancel}
-              className={cx('inline-flex items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+              className={cx('inline-flex items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
               Cancel
@@ -378,7 +381,7 @@ function EditableContactField({ type, label, icon: Icon, currentValue, onSaved }
         </>
       ) : (
         <>
-          <p className="mb-1.5 text-xs text-[#667085]">Enter the 6-digit code sent to {value.trim()}.</p>
+          <p className="mb-1.5 text-xs text-[#666666]">Enter the 6-digit code sent to {value.trim()}.</p>
           <input
             value={otp}
             onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -389,14 +392,14 @@ function EditableContactField({ type, label, icon: Icon, currentValue, onSaved }
             className={cx(INPUT_CLS, 'tracking-widest')}
             autoFocus
           />
-          {hint ? <p className="mt-1.5 text-xs text-[#667085]">{hint}</p> : null}
+          {hint ? <p className="mt-1.5 text-xs text-[#666666]">{hint}</p> : null}
           {error ? <p role="alert" className="mt-1.5 text-xs font-semibold text-red-600">{error}</p> : null}
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={verify}
               disabled={verifying}
-              className={cx('inline-flex items-center gap-1.5 rounded-lg bg-[#15803D] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#166534] disabled:opacity-60', FOCUS_RING)}
+              className={cx('inline-flex items-center gap-1.5 rounded-lg bg-[#F3BF23] px-3 py-1.5 text-xs font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:opacity-60', FOCUS_RING)}
             >
               {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
               {verifying ? 'Verifying…' : 'Verify & Save'}
@@ -404,14 +407,14 @@ function EditableContactField({ type, label, icon: Icon, currentValue, onSaved }
             <button
               type="button"
               onClick={() => { setStep('input'); setError(''); }}
-              className={cx('inline-flex items-center rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+              className={cx('inline-flex items-center rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
             >
               Back
             </button>
             <button
               type="button"
               onClick={cancel}
-              className={cx('inline-flex items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+              className={cx('inline-flex items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
               Cancel
@@ -458,7 +461,7 @@ function PersonalInformationTab({ profile, onProfileUpdated }) {
       updateShopOwnerSession(updated);
       onProfileUpdated(updated);
     } catch (err) {
-      setError(err?.message || 'Could not upload your photo.');
+      notifyError(err?.message || 'Could not upload your photo.');
     } finally {
       setUploading(false);
     }
@@ -472,8 +475,8 @@ function PersonalInformationTab({ profile, onProfileUpdated }) {
         <div className="mb-6 flex items-center gap-4">
           <AvatarWithUpload avatarUrl={profile?.avatarUrl} name={name} uploading={uploading} onPick={pickAvatar} />
           <div>
-            <p className="text-sm font-bold text-[#101828]">Profile photo</p>
-            <p className="text-xs text-[#667085]">PNG or JPG, up to 1 MB.</p>
+            <p className="text-sm font-bold text-[#111111]">Profile photo</p>
+            <p className="text-xs text-[#666666]">PNG or JPG, up to 1 MB.</p>
             {error ? <p className="mt-1 text-xs font-semibold text-red-600">{error}</p> : null}
           </div>
         </div>
@@ -524,7 +527,6 @@ function AddressSection({ profile, onSaved }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -538,21 +540,19 @@ function AddressSection({ profile, onSaved }) {
       addrState: profile?.addrState || '',
       addrPincode: profile?.addrPincode || '',
     });
-    setError('');
     setEditing(true);
   };
-  const cancel = () => { setEditing(false); setError(''); };
+  const cancel = () => { setEditing(false); };
 
   const save = async () => {
     setSaving(true);
-    setError('');
     try {
       const updated = await updateMyProfile(form);
       updateShopOwnerSession(updated);
       onSaved(updated);
       setEditing(false);
     } catch (err) {
-      setError(err.body?.message || err.message || 'Could not save your address.');
+      notifyError(err.body?.message || err.message || 'Could not save your address.');
     } finally {
       setSaving(false);
     }
@@ -581,8 +581,8 @@ function AddressSection({ profile, onSaved }) {
     >
       {!editing ? (
         summary ? (
-          <div className="flex items-start gap-2.5 rounded-xl border border-[#EAECF0] bg-[#F9FAFB] px-3.5 py-3 text-sm font-medium text-[#101828]">
-            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#667085]" aria-hidden="true" />
+          <div className="flex items-start gap-2.5 rounded-xl border border-[#ECECEC] bg-[#F8F8F8] px-3.5 py-3 text-sm font-medium text-[#111111]">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#666666]" aria-hidden="true" />
             <span>{summary}</span>
           </div>
         ) : (
@@ -626,14 +626,12 @@ function AddressSection({ profile, onSaved }) {
             </div>
           </div>
 
-          {error ? <p role="alert" className="mt-3 text-xs font-semibold text-red-600">{error}</p> : null}
-
           <div className="mt-4 flex gap-2">
             <button
               type="button"
               onClick={save}
               disabled={saving}
-              className={cx('inline-flex items-center gap-1.5 rounded-lg bg-[#15803D] px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-[#166534] disabled:opacity-60', FOCUS_RING)}
+              className={cx('inline-flex items-center gap-1.5 rounded-lg bg-[#F3BF23] px-3.5 py-2 text-xs font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:opacity-60', FOCUS_RING)}
             >
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
               {saving ? 'Saving…' : 'Save'}
@@ -641,7 +639,7 @@ function AddressSection({ profile, onSaved }) {
             <button
               type="button"
               onClick={cancel}
-              className={cx('inline-flex items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-3.5 py-2 text-xs font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+              className={cx('inline-flex items-center gap-1 rounded-lg border border-[#D0D5DD] bg-white px-3.5 py-2 text-xs font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
             >
               <X className="h-3.5 w-3.5" aria-hidden="true" />
               Cancel
@@ -659,12 +657,12 @@ function AddressSection({ profile, onSaved }) {
 
 function KycUploadCard({ label, hint, url, uploading, onFile }) {
   return (
-    <div className="flex min-h-[150px] flex-col items-center rounded-xl border border-dashed border-[#D0D5DD] bg-[#F9FAFB] p-3">
+    <div className="flex min-h-[150px] flex-col items-center rounded-xl border border-dashed border-[#D0D5DD] bg-[#F8F8F8] p-3">
       <div className="mb-1 flex w-full items-center justify-between">
-        <span className="text-xs font-semibold text-[#101828]">{label}</span>
+        <span className="text-xs font-semibold text-[#111111]">{label}</span>
         {url && <a href={url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold text-[#15803D] hover:underline">Open</a>}
       </div>
-      <span className="mb-2 w-full text-[11px] text-[#667085]">{hint}</span>
+      <span className="mb-2 w-full text-[11px] text-[#666666]">{hint}</span>
       <div className="flex flex-1 w-full items-center justify-center">
         {url ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -673,7 +671,7 @@ function KycUploadCard({ label, hint, url, uploading, onFile }) {
           <span className="text-xs text-[#98A2B3]">{uploading ? 'Uploading…' : 'No file'}</span>
         )}
       </div>
-      <label className={cx('mt-2 w-full cursor-pointer rounded-lg bg-[#15803D] py-1.5 text-center text-xs font-semibold text-white transition hover:bg-[#166534]', uploading && 'opacity-60')}>
+      <label className={cx('mt-2 w-full cursor-pointer rounded-lg bg-[#F3BF23] text-[#1E1E1E] hover:bg-[#E5B11A] py-1.5 text-center text-xs font-semibold transition', uploading && 'opacity-60')}>
         {url ? `Replace ${label}` : `Upload ${label}`}
         <input type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg" className="hidden" onChange={(e) => onFile(e.target.files?.[0] || null)} disabled={uploading} />
       </label>
@@ -688,8 +686,6 @@ function KycDocumentTab() {
   const [urls, setUrls] = useState({ aadharFrontUrl: '', aadharBackUrl: '', panUrl: '' });
   const [uploading, setUploading] = useState({});
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [saved, setSaved] = useState(false);
 
   const load = useCallback(() => {
     setLoadError('');
@@ -713,13 +709,11 @@ function KycDocumentTab() {
   const handleUpload = async (field, type, file) => {
     if (!file) return;
     setUploading((u) => ({ ...u, [field]: true }));
-    setError('');
-    setSaved(false);
     try {
       const url = await uploadMyKycFile(file, type);
       setUrls((u) => ({ ...u, [field]: url }));
     } catch (err) {
-      setError(err.message || 'Upload failed.');
+      notifyError(err, 'Upload failed.');
     } finally {
       setUploading((u) => ({ ...u, [field]: false }));
     }
@@ -727,14 +721,12 @@ function KycDocumentTab() {
 
   const submit = async () => {
     setSaving(true);
-    setError('');
-    setSaved(false);
     try {
       const updated = await saveMyKyc(urls);
       setKyc(updated);
-      setSaved(true);
+      notifySuccess('Documents submitted for review.');
     } catch (err) {
-      setError(err.body?.message || err.message || 'Could not submit your documents.');
+      notifyError(err.body?.message || err.message || 'Could not submit your documents.');
     } finally {
       setSaving(false);
     }
@@ -746,7 +738,7 @@ function KycDocumentTab() {
   if (loading) {
     return (
       <SectionCard title="KYC Document" subtitle="Aadhar and PAN verification for your account">
-        <div className="flex items-center gap-2 text-sm text-[#667085]"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading…</div>
+        <div className="flex items-center gap-2 text-sm text-[#666666]"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading…</div>
       </SectionCard>
     );
   }
@@ -759,7 +751,7 @@ function KycDocumentTab() {
         badge ? (
           <span className={cx('inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold', badge.tone)}>{badge.label}</span>
         ) : (
-          <span className="inline-flex items-center rounded-full bg-[#F2F4F7] px-2.5 py-1 text-xs font-bold text-[#98A2B3]">Not submitted</span>
+          <span className="inline-flex items-center rounded-full bg-[#F3F3F3] px-2.5 py-1 text-xs font-bold text-[#98A2B3]">Not submitted</span>
         )
       }
     >
@@ -801,24 +793,11 @@ function KycDocumentTab() {
         />
       </div>
 
-      {error ? (
-        <div role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>{error}</span>
-        </div>
-      ) : null}
-      {saved ? (
-        <div role="status" className="mt-4 flex items-center gap-2 rounded-xl border border-[#DCFCE7] bg-[#F0FDF4] px-3.5 py-2.5 text-sm text-[#15803D]">
-          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-          Documents submitted for review.
-        </div>
-      ) : null}
-
       <button
         type="button"
         onClick={submit}
         disabled={saving || !hasAnyUpload}
-        className={cx('mt-5 inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING)}
+        className={cx('mt-5 inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING)}
       >
         {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
         {saving ? 'Submitting…' : 'Submit for Review'}
@@ -873,7 +852,7 @@ function SubscriptionTab({ ownerId }) {
   if (loading) {
     return (
       <SectionCard title="Subscription" subtitle="View your plan & upgrade">
-        <div className="flex items-center gap-2 text-sm text-[#667085]"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading…</div>
+        <div className="flex items-center gap-2 text-sm text-[#666666]"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading…</div>
       </SectionCard>
     );
   }
@@ -887,22 +866,22 @@ function SubscriptionTab({ ownerId }) {
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-4 rounded-2xl border border-[#EAECF0] bg-gradient-to-r from-[#F0FDF4] to-white p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-[#15803D]">Current plan</p>
-          <p className="mt-1 text-xl font-bold text-[#101828]">{planLabel}</p>
+          <p className="mt-1 text-xl font-bold text-[#111111]">{planLabel}</p>
           {sub ? (
-            <p className="mt-1 text-sm text-[#667085]">
+            <p className="mt-1 text-sm text-[#666666]">
               {daysRemaining > 0 ? `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining` : 'No active window'}
               {sub.inactiveDate ? ` · renews/expires ${formatDate(sub.inactiveDate)}` : ''}
             </p>
           ) : (
-            <p className="mt-1 text-sm text-[#667085]">No subscription record found for this account yet.</p>
+            <p className="mt-1 text-sm text-[#666666]">No subscription record found for this account yet.</p>
           )}
         </div>
         <Link
           href="/shop-home/settings/subscription"
-          className={cx('inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534]', FOCUS_RING)}
+          className={cx('inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A]', FOCUS_RING)}
         >
           View Plans &amp; Pricing
         </Link>
@@ -947,7 +926,7 @@ function QrCodeTab({ mainLocation }) {
   return (
     <SectionCard title="My QR Code" subtitle="Share your shop instantly">
       <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
-        <div className="flex h-64 w-64 shrink-0 items-center justify-center rounded-2xl border border-[#EAECF0] bg-white p-4">
+        <div className="flex h-64 w-64 shrink-0 items-center justify-center rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-4">
           {dataUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={dataUrl} alt={`QR code linking to ${mainLocation?.name || 'your shop'} on Google Maps`} className="h-full w-full" />
@@ -956,8 +935,8 @@ function QrCodeTab({ mainLocation }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-[#101828]">{mainLocation?.name || 'Your shop'}</p>
-          <p className="mt-1 flex items-start gap-1.5 text-sm text-[#667085]">
+          <p className="text-sm font-bold text-[#111111]">{mainLocation?.name || 'Your shop'}</p>
+          <p className="mt-1 flex items-start gap-1.5 text-sm text-[#666666]">
             <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             Scanning this code opens your shop&apos;s location on Google Maps — print it at the counter or share it
             with customers so they can find you or drop a pickup pin.
@@ -967,7 +946,7 @@ function QrCodeTab({ mainLocation }) {
               <a
                 href={dataUrl}
                 download={`ggfix-shop-qr-${(mainLocation?.name || 'shop').toLowerCase().replace(/\s+/g, '-')}.png`}
-                className={cx('inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534]', FOCUS_RING)}
+                className={cx('inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A]', FOCUS_RING)}
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Download QR
@@ -976,7 +955,7 @@ function QrCodeTab({ mainLocation }) {
             <button
               type="button"
               onClick={copyLink}
-              className={cx('inline-flex items-center gap-1.5 rounded-xl border border-[#D0D5DD] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+              className={cx('inline-flex items-center gap-1.5 rounded-xl border border-[#D0D5DD] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
             >
               {copied ? <CheckCircle2 className="h-4 w-4 text-[#15803D]" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
               {copied ? 'Link copied' : 'Copy link'}
@@ -1002,8 +981,6 @@ function PickupServiceTab({ ownerId, locations, onSaved }) {
     pickupDistanceKm: selected?.pickupDistanceKm ?? '',
   });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     setForm({
@@ -1012,16 +989,13 @@ function PickupServiceTab({ ownerId, locations, onSaved }) {
       pickupToTime: selected?.pickupToTime || '',
       pickupDistanceKm: selected?.pickupDistanceKm ?? '',
     });
-    setSaved(false);
-    setError('');
   }, [selected?.id]);
 
-  const setField = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setSaved(false); };
+  const setField = (k, v) => { setForm((f) => ({ ...f, [k]: v })); };
 
   const save = async () => {
     if (!selected) return;
     setSaving(true);
-    setError('');
     try {
       await updateShopLocation(ownerId, selected.id, {
         pickupEnabled: form.pickupEnabled,
@@ -1029,10 +1003,10 @@ function PickupServiceTab({ ownerId, locations, onSaved }) {
         pickupToTime: form.pickupToTime,
         pickupDistanceKm: form.pickupDistanceKm === '' ? null : Number(form.pickupDistanceKm),
       });
-      setSaved(true);
+      notifySuccess('Pickup settings saved.');
       await onSaved();
     } catch (err) {
-      setError(err.body?.message || err.message || 'Could not save pickup settings.');
+      notifyError(err.body?.message || err.message || 'Could not save pickup settings.');
     } finally {
       setSaving(false);
     }
@@ -1041,7 +1015,7 @@ function PickupServiceTab({ ownerId, locations, onSaved }) {
   if (locations.length === 0) {
     return (
       <SectionCard title="Pickup Service" subtitle="Turn pickup on/off, slot timings & zones">
-        <p className="text-sm text-[#667085]">Add a business location first — pickup settings live on each location.</p>
+        <p className="text-sm text-[#666666]">Add a business location first — pickup settings live on each location.</p>
       </SectionCard>
     );
   }
@@ -1055,7 +1029,7 @@ function PickupServiceTab({ ownerId, locations, onSaved }) {
           type="button"
           onClick={save}
           disabled={saving}
-          className={cx('inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING)}
+          className={cx('inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING)}
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
           {saving ? 'Saving…' : 'Save Changes'}
@@ -1073,10 +1047,10 @@ function PickupServiceTab({ ownerId, locations, onSaved }) {
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between rounded-2xl border border-[#EAECF0] bg-[#F9FAFB] px-4 py-3.5">
+      <div className="flex items-center justify-between rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] px-4 py-3.5">
         <div>
-          <p className="text-sm font-bold text-[#101828]">Pickup Service</p>
-          <p className="text-xs text-[#667085]">Let nearby customers request a device pickup from this location.</p>
+          <p className="text-sm font-bold text-[#111111]">Pickup Service</p>
+          <p className="text-xs text-[#666666]">Let nearby customers request a device pickup from this location.</p>
         </div>
         <button
           type="button"
@@ -1085,7 +1059,7 @@ function PickupServiceTab({ ownerId, locations, onSaved }) {
           onClick={() => setField('pickupEnabled', !form.pickupEnabled)}
           className={cx('relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition', form.pickupEnabled ? 'bg-[#15803D]' : 'bg-[#D0D5DD]', FOCUS_RING)}
         >
-          <span className={cx('inline-block h-5 w-5 transform rounded-full bg-white shadow transition', form.pickupEnabled ? 'translate-x-6' : 'translate-x-1')} />
+          <span className={cx('inline-block h-5 w-5 transform rounded-full bg-white transition', form.pickupEnabled ? 'translate-x-6' : 'translate-x-1')} />
         </button>
       </div>
 
@@ -1110,19 +1084,6 @@ function PickupServiceTab({ ownerId, locations, onSaved }) {
           />
         </div>
       </div>
-
-      {error ? (
-        <div role="alert" className="mt-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>{error}</span>
-        </div>
-      ) : null}
-      {saved ? (
-        <div role="status" className="mt-4 flex items-center gap-2 rounded-xl border border-[#DCFCE7] bg-[#F0FDF4] px-3.5 py-2.5 text-sm text-[#15803D]">
-          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-          Pickup settings saved.
-        </div>
-      ) : null}
     </SectionCard>
   );
 }
@@ -1156,7 +1117,7 @@ function MyOrdersTab() {
       }
     >
       {loading ? (
-        <div className="flex items-center gap-2 py-6 text-sm text-[#667085]"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading…</div>
+        <div className="flex items-center gap-2 py-6 text-sm text-[#666666]"><Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading…</div>
       ) : error ? (
         <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
@@ -1165,23 +1126,23 @@ function MyOrdersTab() {
       ) : orders.length === 0 ? (
         <div className="flex flex-col items-center py-10 text-center">
           <ClipboardList className="h-6 w-6 text-[#98A2B3]" aria-hidden="true" />
-          <p className="mt-2 text-sm text-[#667085]">No orders yet.</p>
+          <p className="mt-2 text-sm text-[#666666]">No orders yet.</p>
         </div>
       ) : (
-        <div className="divide-y divide-[#EAECF0]">
+        <div className="divide-y divide-[#ECECEC]">
           {orders.map((order) => (
             <div key={order.id} className="flex items-center gap-3 py-3.5">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4]">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8]">
                 <Smartphone className="h-5 w-5 text-[#15803D]" aria-hidden="true" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-[#101828]">{order.issueSummary || 'Service booking'}</p>
-                <p className="truncate text-xs text-[#667085]">{order.customerName || 'Customer'} · #{order.bookingNumber}</p>
+                <p className="truncate text-sm font-bold text-[#111111]">{order.issueSummary || 'Service booking'}</p>
+                <p className="truncate text-xs text-[#666666]">{order.customerName || 'Customer'} · #{order.bookingNumber}</p>
               </div>
-              <div className="hidden shrink-0 text-right text-xs text-[#667085] sm:block">
+              <div className="hidden shrink-0 text-right text-xs text-[#666666] sm:block">
                 {order.createdAt ? new Date(order.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : ''}
               </div>
-              <span className={cx('shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide', STATUS_BADGE[order.statusLabel] || 'bg-[#F0FDF4] text-[#667085]')}>
+              <span className={cx('shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide', STATUS_BADGE[order.statusLabel] || 'bg-[#F8F8F8] text-[#666666]')}>
                 {order.statusLabel}
               </span>
             </div>
@@ -1193,36 +1154,108 @@ function MyOrdersTab() {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Shop login: own shop only                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What a SHOP login (signed in with the shop's own mobile) sees instead of the
+ * owner's Personal Information. Read from the shop's public record
+ * (GET /auth/shops/{shopId}/public, shopId from the session's JWT) — never
+ * GET /auth/me, which is the owner's private profile.
+ */
+function ShopInformationTab({ shop }) {
+  const address = [shop?.address, shop?.district, shop?.state, shop?.pincode].filter(Boolean).join(', ');
+  return (
+    <SectionCard title="Shop Information" subtitle="Details of the shop you are signed in to. The business owner manages these.">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <ReadOnlyField label="Shop Name" icon={Store} value={shop?.name} />
+        <ReadOnlyField label="Shop Mobile" icon={Phone} value={formatMobile(shop?.mobile)} />
+        <div className="sm:col-span-2">
+          <ReadOnlyField label="Shop Address" icon={MapPin} value={address} />
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
+/** Pickup hours for a SHOP login — view only; changing them is an owner action. */
+function ShopPickupTab({ shop }) {
+  const hours =
+    shop?.pickupFromTime && shop?.pickupToTime ? `${String(shop.pickupFromTime).slice(0, 5)} – ${String(shop.pickupToTime).slice(0, 5)}` : '';
+  return (
+    <SectionCard title="Pickup Service" subtitle="Doorstep pickup for this shop. Ask the business owner to change these settings.">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <ReadOnlyField label="Pickup" icon={Truck} value={hours ? 'Enabled' : 'Not enabled'} />
+        <ReadOnlyField label="Pickup Hours" icon={Truck} value={hours} />
+      </div>
+    </SectionCard>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /* Page                                                                        */
 /* -------------------------------------------------------------------------- */
 
 export default function AccountSettingsPage() {
   const [activeTab, setActiveTab] = useState('personal');
   const [profile, setProfile] = useState(null);
+  const [shop, setShop] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  // Who is signed in decides the data source. OWNER: GET /auth/me — the
+  // owner's own identity, independent of whichever shop is active. SHOP: only
+  // that shop's public record; the owner's profile is never fetched.
+  const [session, setSession] = useState(undefined);
+  useEffect(() => setSession(readShopOwner()), []);
+  const owner = isOwnerSession(session);
 
   const load = useCallback(() => {
     setLoadError('');
+    if (session === undefined) return Promise.resolve();
+    if (!owner) {
+      if (!session?.shopId) {
+        setLoadError('Could not identify your shop. Please sign in again.');
+        return Promise.resolve();
+      }
+      return getShopPublic(session.shopId).then((data) => {
+        if (data) setShop(data);
+        else setLoadError('Could not load your shop details.');
+      });
+    }
     return fetchMyProfile()
       .then((data) => setProfile(data))
       .catch((err) => setLoadError(err.message || 'Could not load your account.'));
-  }, []);
+  }, [session, owner]);
 
   useEffect(() => {
+    if (session === undefined) return;
     setLoading(true);
     load().finally(() => setLoading(false));
-  }, [load]);
+  }, [load, session]);
+
+  // Owner-only tabs (KYC = the owner's identity documents, Subscription = the
+  // owner's plan) don't exist for a shop login — not just hidden, never rendered.
+  const tabs = useMemo(
+    () =>
+      owner
+        ? TABS
+        : TABS.filter((t) => !OWNER_ONLY_TABS.includes(t.key)).map((t) => (t.key === 'personal' ? { ...t, label: 'Shop Information', icon: Store } : t)),
+    [owner],
+  );
+  useEffect(() => {
+    if (!tabs.some((t) => t.key === activeTab)) setActiveTab('personal');
+  }, [tabs, activeTab]);
 
   const locations = profile?.locations || [];
   const ownerId = profile?.id;
+  const shopForQr = shop ? { name: shop.name, street: shop.address, district: shop.district, state: shop.state, pincode: shop.pincode } : null;
 
   return (
     <div className="space-y-6">
       <PageHeader title="Account Settings" subtitle="Manage your personal, subscription and shop preferences" />
 
-      <div className="flex gap-1 overflow-x-auto border-b border-[#EAECF0]">
-        {TABS.map((tab) => {
+      <div className="flex gap-1 overflow-x-auto border-b border-[#ECECEC]">
+        {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.key;
           return (
@@ -1232,7 +1265,7 @@ export default function AccountSettingsPage() {
               onClick={() => setActiveTab(tab.key)}
               className={cx(
                 'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3.5 py-2.5 text-sm font-semibold transition',
-                active ? 'border-[#15803D] text-[#15803D]' : 'border-transparent text-[#667085] hover:text-[#101828]',
+                active ? 'border-[#15803D] text-[#15803D]' : 'border-transparent text-[#666666] hover:text-[#111111]',
               )}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
@@ -1249,15 +1282,25 @@ export default function AccountSettingsPage() {
         </div>
       ) : null}
 
-      {loading ? (
-        <div className="h-64 animate-pulse rounded-3xl border border-[#EAECF0] bg-[#F9FAFB]" />
+      {loading || session === undefined ? (
+        <div className="h-64 animate-pulse rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]" />
       ) : (
         <>
-          {activeTab === 'personal' ? <PersonalInformationTab profile={profile} onProfileUpdated={setProfile} /> : null}
-          {activeTab === 'kyc' ? <KycDocumentTab /> : null}
-          {activeTab === 'subscription' ? <SubscriptionTab ownerId={ownerId} /> : null}
-          {activeTab === 'qr' ? <QrCodeTab mainLocation={locations[0]} /> : null}
-          {activeTab === 'pickup' ? <PickupServiceTab ownerId={ownerId} locations={locations} onSaved={load} /> : null}
+          {owner ? (
+            <>
+              {activeTab === 'personal' ? <PersonalInformationTab profile={profile} onProfileUpdated={setProfile} /> : null}
+              {activeTab === 'kyc' ? <KycDocumentTab /> : null}
+              {activeTab === 'subscription' ? <SubscriptionTab ownerId={ownerId} /> : null}
+              {activeTab === 'qr' ? <QrCodeTab mainLocation={locations[0]} /> : null}
+              {activeTab === 'pickup' ? <PickupServiceTab ownerId={ownerId} locations={locations} onSaved={load} /> : null}
+            </>
+          ) : (
+            <>
+              {activeTab === 'personal' ? <ShopInformationTab shop={shop} /> : null}
+              {activeTab === 'qr' ? <QrCodeTab mainLocation={shopForQr} /> : null}
+              {activeTab === 'pickup' ? <ShopPickupTab shop={shop} /> : null}
+            </>
+          )}
           {activeTab === 'orders' ? <MyOrdersTab /> : null}
         </>
       )}

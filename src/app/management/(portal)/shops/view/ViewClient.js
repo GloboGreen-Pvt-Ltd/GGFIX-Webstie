@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { authApi, subscriptionApi } from '@/lib/api';
 import BusinessLocationsManager from '@/components/BusinessLocationsManager';
 import SafeImage from '@/components/SafeImage';
+import { notifyError } from '@/lib/toast';
 
 function initialsOf(name) {
   if (!name) return '?';
@@ -69,7 +70,7 @@ export default function ShopOwnerViewPage() {
       const updated = await authApi.patch(`/auth/shop-owners/${id}/kyc-status`, { status, rejectReason });
       setData(updated);
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to update KYC');
+      notifyError(e.body?.message || e.message || 'Failed to update KYC');
     } finally {
       setKycBusy(false);
     }
@@ -384,10 +385,8 @@ function VerifyEmailModal({ email, onClose, onVerified }) {
   const [otp, setOtp] = useState('');
   const [devOtp, setDevOtp] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
 
   const sendOtp = async () => {
-    setError('');
     setBusy(true);
     try {
       const res = await authApi.post('/auth/email-verify/send', { email });
@@ -395,20 +394,19 @@ function VerifyEmailModal({ email, onClose, onVerified }) {
       if (res?.devOtp) setDevOtp(res.devOtp);
       setStep('CONFIRM');
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to send OTP');
+      notifyError(e.body?.message || e.message || 'Failed to send OTP');
     } finally {
       setBusy(false);
     }
   };
 
   const confirmOtp = async () => {
-    setError('');
     setBusy(true);
     try {
       await authApi.post('/auth/email-verify/confirm', { email, otp });
       onVerified();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Invalid OTP');
+      notifyError(e.body?.message || e.message || 'Invalid OTP');
     } finally {
       setBusy(false);
     }
@@ -450,8 +448,6 @@ function VerifyEmailModal({ email, onClose, onVerified }) {
             </div>
           </>
         )}
-
-        {error && <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2 text-sm text-red-500">{error}</div>}
 
         <button onClick={onClose} className="w-full text-xs text-admin-muted hover:text-slate-800">Cancel</button>
       </div>

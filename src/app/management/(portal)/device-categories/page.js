@@ -1,21 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadCategoryImage } from '@/lib/modelMedia';
-import { required, validateForm } from '@/lib/formValidation';
-import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 export default function MasterDeviceCategoriesPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, because
-  // the modal closes on save — and a replacement deletes the old file from the
-  // bucket, which is worth saying in words rather than leaving to be inferred.
-  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null);
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -23,8 +18,6 @@ export default function MasterDeviceCategoriesPage() {
   const [imageFile, setImageFile] = useState(null);
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const fieldRefs = useRef({});
 
   const load = async () => {
     setLoading(true);
@@ -64,18 +57,8 @@ export default function MasterDeviceCategoriesPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { errors, firstErrorField, isValid } = validateForm(
-      { name: required('Category name is required.') },
-      { name },
-    );
-    if (!isValid) {
-      setFieldErrors(errors);
-      focusField(fieldRefs, firstErrorField);
-      return;
-    }
-    setFieldErrors({});
+    if (!name.trim()) return;
     setSubmitting(true);
-    setNotice('');
     try {
       // Backend auto-derives `code` from name when not supplied.
       const body = {
@@ -94,12 +77,13 @@ export default function MasterDeviceCategoriesPage() {
       }
       if (imageFile && categoryId) {
         const uploaded = await uploadCategoryImage(categoryId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Category image'));
+        const notice = imageReplacementNotice(uploaded, 'Category image');
+        if (notice) notifySuccess(notice);
       }
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -111,7 +95,7 @@ export default function MasterDeviceCategoriesPage() {
       await masterApi.delete(`/master/device-categories/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -150,11 +134,6 @@ export default function MasterDeviceCategoriesPage() {
         Top-level categories — Mobile, Laptop, Tablet, etc. (GET /api/master/categories).
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
       ) : (
@@ -174,21 +153,16 @@ export default function MasterDeviceCategoriesPage() {
               {modal.type === 'create' ? 'New category' : 'Edit category'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div ref={registerField(fieldRefs, 'name')}>
+              <div>
                 <label className="block text-sm text-admin-muted mb-1">Name</label>
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (fieldErrors.name) setFieldErrors((prev) => ({ ...prev, name: undefined }));
-                  }}
-                  aria-invalid={Boolean(fieldErrors.name)}
+                  onChange={(e) => setName(e.target.value)}
                   className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                   placeholder="e.g. Mobile, Laptop, Tablet"
                   required
                 />
-                {fieldErrors.name ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.name}</p> : null}
               </div>
               <S3ImageUpload
                 value={imageUrl}

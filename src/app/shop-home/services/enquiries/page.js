@@ -1,404 +1,314 @@
 'use client';
 
 /**
- * /shop-home/services/enquiries — customer message threads.
+ * /shop-home/services/enquiries — Enquiry: the customer <-> shop chat, the web
+ * counterpart of the Partner app's ShopChatInboxScreen + ShopChatThreadScreen,
+ * over the same marketplace-service endpoints (lib/shopChat.js). Laid out like
+ * the app's chat screen: contact header with "Last seen …" + call, an
+ * "Encrypted via ggfix · Customer chat" pill, day pills, white incoming /
+ * green outgoing bubbles with ✓ ticks, and a composer with attach, emoji,
+ * camera and a mic / send button.
  *
- * Reads GET {MARKETPLACE_BASE}/shop/chats via fetchShopChats() (src/lib/shopDashboard.js).
- * Read this carefully before extending it: every existing consumer of this
- * endpoint in the whole codebase (openEnquiries() and the dashboard's
- * "Enquiries" badge) only ever reads ONE field — `unreadCount`. No code
- * anywhere confirms this endpoint carries a customer name, device, message
- * text, or a status field, and `/shop/chats` is the same marketplace-service
- * base used by the Buy/Sell chat flows described in siteContent.js — it may
- * be generic marketplace chat, not repair-specific enquiries at all.
+ * The inbox polls every 7s and pings presence; an open thread polls every 5s,
+ * marks itself read and sends a debounced typing ping. ?thread=<id> opens that
+ * conversation (the notification bell links here).
  *
- * So this page reads every display field defensively (falls back to a
- * plain dash rather than assuming a field name exists) and derives its
- * ONLY real status signal — New vs. Read — from `unreadCount`, instead of
- * the New/Contacted/In Progress/Converted/Closed vocabulary the original
- * design brief asked for, which this data has no field to support. "Update
- * Status" is not offered — there is no write endpoint for it. "Convert to
- * Booking" is a real link to Book Service; it does not pre-fill the form,
- * since book-service/page.js has no query-param prefill support today.
+ * Attachments (file / camera photo / voice note) upload through the shop's
+ * media upload (uploadShopLocationMedia) and are sent as
+ * { attachmentUrl, attachmentType: IMAGE | DOCUMENT | AUDIO }.
+ *
+ * "Encrypted": the backend has no message encryption — only the HTTPS
+ * connection is. The pill says exactly that on hover.
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
-import { CheckCircle2, ChevronDown, Clock, Info, MessageSquare, MessageSquarePlus, Phone, PlusCircle, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowLeft,
+  Camera,
+  Check,
+  CheckCheck,
+  FileText,
+  Loader2,
+  MessageCircle,
+  Mic,
+  Paperclip,
+  Phone,
+  Search,
+  SendHorizontal,
+  ShieldCheck,
+  Smile,
+  Square,
+  X,
+} from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
-import Icon3D from '@/components/shop-dashboard/Icon3D';
-import FilterChips from '@/components/shop-dashboard/FilterChips';
 import ErrorBanner from '@/components/shop-dashboard/ErrorBanner';
-import { SkeletonRows, SkeletonStatCards } from '@/components/shop-dashboard/SkeletonBlocks';
-import { fetchShopChats } from '@/lib/shopDashboard';
-import SearchField, { FOCUS_RING } from '@/components/shop-dashboard/SearchField';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
+import { resolveMediaUrl } from '@/lib/deviceImage';
+import { uploadShopLocationMedia } from '@/lib/shopLocations';
+import { notifyError } from '@/lib/toast';
+import {
+  getShopChat,
+  getShopChatMessages,
+  listShopChats,
+  markShopChatRead,
+  pingShopPresence,
+  pingShopTyping,
+  sendShopChatMessage,
+} from '@/lib/shopChat';
 
-const FILTERS = ['All', 'New', 'Read'];
+const INBOX_POLL_MS = 7000;
+const THREAD_POLL_MS = 5000;
+const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#09AD2A] focus-visible:ring-offset-2';
+const CARD = 'rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8]';
+const OUT_BUBBLE = 'bg-[#09AD2A] text-white';
+const EMOJIS = ['😀', '😊', '😂', '😍', '👍', '🙏', '👌', '🙂', '😉', '😅', '🤝', '👏', '✅', '❤️', '🔧', '📱', '💻', '⌚', '🎧', '📦', '🚚', '⏰', '💰', '❓'];
 
-function pick(obj, keys) {
-  for (const k of keys) {
-    if (obj && obj[k] != null && obj[k] !== '') return obj[k];
-  }
-  return '';
+function clockTime(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-/**
- * EnquiriesIllustration — small decorative graphic for the hero's right side
- * (an "ENQUIRIES" clipboard, chat bubbles, a phone and a support headset),
- * matching a reference design. Hand-drawn inline SVG with layered
- * gradients/filter-based drop shadows for a soft-3D feel, purely decorative —
- * no data — same technique as the other redesigned Partner Dashboard pages'
- * hero illustrations.
- */
-function EnquiriesIllustration() {
-  return (
-    <svg viewBox="0 0 300 190" className="h-full w-full" aria-hidden="true">
-      <defs>
-        <linearGradient id="eqClip" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#EAF9EF" />
-        </linearGradient>
-        <linearGradient id="eqPhone" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#4ADE80" />
-          <stop offset="1" stopColor="#0A934D" />
-        </linearGradient>
-        <linearGradient id="eqHeadset" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#E2E8F0" />
-          <stop offset="1" stopColor="#94A3B8" />
-        </linearGradient>
-        <filter id="eqShadow" x="-40%" y="-40%" width="180%" height="180%">
-          <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#0C6636" floodOpacity="0.2" />
-        </filter>
-      </defs>
-
-      <ellipse cx="170" cy="178" rx="120" ry="9" fill="#0C6636" opacity="0.08" />
-
-      <g fill="#BFE8FF" opacity="0.55">
-        <ellipse cx="56" cy="28" rx="18" ry="10" />
-        <ellipse cx="40" cy="22" rx="12" ry="8" />
-        <ellipse cx="270" cy="36" rx="14" ry="8" />
-      </g>
-      <g>
-        <rect x="118" y="160" width="8" height="14" fill="#94A3B8" />
-        <path d="M108 160 q10 -34 18 -0" fill="#4ADE80" opacity="0.85" />
-        <rect x="242" y="164" width="8" height="14" fill="#94A3B8" />
-        <path d="M232 164 q10 -30 18 0" fill="#22C55E" opacity="0.85" />
-      </g>
-
-      {/* headset, right */}
-      <g filter="url(#eqShadow)">
-        <path d="M244 108 a26 26 0 0 1 52 0" fill="none" stroke="url(#eqHeadset)" strokeWidth="7" strokeLinecap="round" />
-        <rect x="238" y="104" width="12" height="20" rx="5" fill="url(#eqHeadset)" />
-        <rect x="290" y="104" width="12" height="20" rx="5" fill="url(#eqHeadset)" />
-      </g>
-
-      {/* speech bubble, left */}
-      <g filter="url(#eqShadow)">
-        <path d="M118 112 h44 a8 8 0 0 1 8 8 v22 a8 8 0 0 1 -8 8 h-30 l-10 10 v-10 h-4 a8 8 0 0 1 -8 -8 v-22 a8 8 0 0 1 8 -8 z" fill="#4ADE80" />
-        <circle cx="132" cy="132" r="3" fill="white" />
-        <circle cx="142" cy="132" r="3" fill="white" />
-        <circle cx="152" cy="132" r="3" fill="white" />
-      </g>
-
-      {/* main ENQUIRIES clipboard */}
-      <g filter="url(#eqShadow)">
-        <rect x="148" y="30" width="80" height="118" rx="10" fill="url(#eqClip)" stroke="#DCFCE7" strokeWidth="2" />
-        <rect x="172" y="22" width="32" height="16" rx="6" fill="#0A934D" />
-        <rect x="158" y="52" width="60" height="15" rx="4" fill="#FFFFFF" stroke="#DFF8EB" strokeWidth="1.5" />
-        <text x="188" y="63" textAnchor="middle" fontSize="8" fontWeight="800" fill="#0C6636">ENQUIRIES</text>
-        <rect x="158" y="78" width="46" height="4" rx="2" fill="#BBF7D0" />
-        <rect x="158" y="88" width="52" height="4" rx="2" fill="#DCFCE7" />
-        <rect x="158" y="98" width="38" height="4" rx="2" fill="#DCFCE7" />
-        <rect x="158" y="112" width="44" height="4" rx="2" fill="#DCFCE7" />
-        <rect x="158" y="122" width="30" height="4" rx="2" fill="#DCFCE7" />
-
-        {/* small chat bubble accent */}
-        <circle cx="204" cy="126" r="16" fill="#38BDF8" />
-        <circle cx="198" cy="126" r="2" fill="white" />
-        <circle cx="204" cy="126" r="2" fill="white" />
-        <circle cx="210" cy="126" r="2" fill="white" />
-      </g>
-
-      {/* phone, right */}
-      <g filter="url(#eqShadow)">
-        <rect x="248" y="128" width="34" height="54" rx="8" fill="url(#eqPhone)" />
-        <rect x="252" y="134" width="26" height="38" rx="2" fill="#EAF5FF" />
-        <circle cx="265" cy="176" r="1.8" fill="white" opacity="0.85" />
-      </g>
-
-      <circle cx="126" cy="46" r="3.5" fill="#86EFAC" />
-      <circle cx="270" cy="150" r="3" fill="#86EFAC" />
-    </svg>
-  );
+function shortTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return clockTime(iso);
+  const yesterday = new Date();
+  yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  if ((now - d) / 86400000 < 7) return d.toLocaleDateString([], { weekday: 'short' });
+  return d.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
-/** Small decorative empty-state graphic — a chat bubble with a soft mint circle behind it, matching a reference design. Purely decorative. */
-function EnquiriesEmptyIllustration() {
-  return (
-    <svg viewBox="0 0 160 140" className="h-28 w-28" aria-hidden="true">
-      <defs>
-        <linearGradient id="eqEmptyBubble" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#4ADE80" />
-          <stop offset="1" stopColor="#0A934D" />
-        </linearGradient>
-      </defs>
-      <circle cx="80" cy="70" r="54" fill="#DFF8EB" opacity="0.6" />
-      <ellipse cx="80" cy="118" rx="34" ry="7" fill="#0C6636" opacity="0.1" />
-      <circle cx="34" cy="40" r="4" fill="#86EFAC" />
-      <circle cx="128" cy="96" r="3.5" fill="#86EFAC" />
-      <path
-        d="M44 48 h60 a10 10 0 0 1 10 10 v26 a10 10 0 0 1 -10 10 h-38 l-14 14 v-14 h-8 a10 10 0 0 1 -10 -10 v-26 a10 10 0 0 1 10 -10 z"
-        fill="url(#eqEmptyBubble)"
-      />
-      <circle cx="64" cy="72" r="4" fill="white" />
-      <circle cx="80" cy="72" r="4" fill="white" />
-      <circle cx="96" cy="72" r="4" fill="white" />
-    </svg>
-  );
+function dayLabel(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'Today';
+  const y = new Date();
+  y.setDate(now.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-// Page-local pastel KPI-card styling — not the shared StatCard (used by ~10
-// other pages, unaffected): matches a reference design's pastel-gradient +
-// glossy circular icon chip + large translucent background-glyph treatment,
-// same approach as the redesigned Delivery/Pickups/Requote/Bookings pages.
-const ENQUIRY_STAT_STYLES = {
-  green: {
-    card: 'bg-gradient-to-br from-[#F3FBF7] to-[#E4F8EC]',
-    chip: 'bg-gradient-to-br from-[#22C55E] to-[#0A934D]',
-    value: 'text-[#10213D]',
-    label: 'text-[#066B39]',
-    wave: 'text-[#BBF7D0]',
-    glow: 'bg-[#86EFAC]',
-  },
-  orange: {
-    card: 'bg-gradient-to-br from-[#FFF7ED] to-[#FDE7CB]',
-    chip: 'bg-gradient-to-br from-[#FB923C] to-[#FF7A1A]',
-    value: 'text-[#10213D]',
-    label: 'text-[#9A5B27]',
-    wave: 'text-[#FDBA74]',
-    glow: 'bg-[#FDBA74]',
-  },
-  blue: {
-    card: 'bg-gradient-to-br from-[#EFF9FF] to-[#D9F0FE]',
-    chip: 'bg-gradient-to-br from-[#38BDF8] to-[#1DA8E8]',
-    value: 'text-[#10213D]',
-    label: 'text-[#1D6FA0]',
-    wave: 'text-[#93D6F7]',
-    glow: 'bg-[#93D6F7]',
-  },
-  purple: {
-    card: 'bg-gradient-to-br from-[#F5F3FF] to-[#E8E1FC]',
-    chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8B5CF6]',
-    value: 'text-[#10213D]',
-    label: 'text-[#6D5A9E]',
-    wave: 'text-[#C4B5FD]',
-    glow: 'bg-[#C4B5FD]',
-  },
+/** "Online" · "Last seen just now" · "Last seen 18 min ago" · "Last seen 3 hr ago" · "Last seen 2 Oct" */
+function lastSeen(online, iso) {
+  if (online) return 'Online';
+  if (!iso) return '';
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return 'Last seen just now';
+  if (mins < 60) return `Last seen ${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `Last seen ${hrs} hr ago`;
+  return `Last seen ${new Date(t).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`;
+}
+
+const initials = (name) => {
+  const w = String(name || 'C').trim().split(/\s+/);
+  return ((w[0]?.[0] || 'C') + (w[1]?.[0] || '')).toUpperCase();
 };
+const phoneLabel = (p) => (p ? `+${String(p).replace(/^\+/, '')}` : '');
+const fmtDuration = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-function EnquiryStatCard({ icon: Icon, bgIcon: BgIcon, label, value, tone }) {
-  const s = ENQUIRY_STAT_STYLES[tone] || ENQUIRY_STAT_STYLES.green;
+function Avatar({ url, name, online, size = 'h-11 w-11' }) {
+  const [broken, setBroken] = useState(false);
+  const src = resolveMediaUrl(url);
+  useEffect(() => {
+    setBroken(false);
+  }, [src]);
   return (
-    <div
-      className={cx(
-        'relative flex h-[178px] flex-col overflow-hidden rounded-[22px] border border-[#E4ECE8] p-5 shadow-[0_12px_30px_rgba(20,80,55,0.07),0_2px_8px_rgba(20,80,55,0.03)]',
-        s.card,
+    <span className={cx('relative shrink-0', size)}>
+      {src && !broken ? (
+        // eslint-disable-next-line @next/next/no-img-element -- avatar URLs are arbitrary media URLs.
+        <img src={src} alt="" onError={() => setBroken(true)} className="h-full w-full rounded-full object-cover" />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center rounded-full bg-[#E7F7EA] text-[15px] font-bold text-[#0B6B3A]">{initials(name)}</span>
       )}
-    >
-      <span className="pointer-events-none absolute inset-x-0 top-0 h-1/2 rounded-t-[22px] bg-gradient-to-b from-white/55 to-transparent" aria-hidden="true" />
-      <BgIcon className={cx('pointer-events-none absolute -bottom-7 -right-7 h-32 w-32 rotate-[-10deg] opacity-[0.28]', s.wave)} aria-hidden="true" />
-      <span className={cx('pointer-events-none absolute -bottom-8 -right-8 h-24 w-24 rounded-full blur-2xl opacity-40', s.glow)} aria-hidden="true" />
+      {online ? <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-[#09AD2A]" aria-label="online" /> : null}
+    </span>
+  );
+}
 
-      <span className="relative flex h-14 w-14 shrink-0 items-center justify-center">
-        <span className={cx('absolute inset-0 -m-1.5 rounded-full blur-md opacity-50', s.glow)} aria-hidden="true" />
-        <span
-          className={cx(
-            'relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white shadow-[0_8px_18px_rgba(0,0,0,0.12),inset_0_1.5px_0_rgba(255,255,255,0.5),inset_0_-4px_8px_rgba(0,0,0,0.12)]',
-            s.chip,
-          )}
-        >
-          <Icon className="h-6 w-6 drop-shadow-[0_1px_1px_rgba(0,0,0,0.15)]" aria-hidden="true" />
-        </span>
+function EmptyState({ icon: Icon, title, text }) {
+  return (
+    <div className="flex flex-col items-center px-8 py-14 text-center">
+      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-[#111111]/60">
+        <Icon className="h-7 w-7" aria-hidden="true" />
       </span>
-
-      <p className={cx('relative mt-4 text-[30px] font-extrabold leading-none tracking-tight sm:text-[32px]', s.value)}>{value}</p>
-      <p className={cx('relative mt-1.5 text-sm font-semibold', s.label)}>{label}</p>
+      <p className="mt-3 text-[15px] font-bold text-[#111111]">{title}</p>
+      <p className="mt-1 max-w-sm text-[13px] leading-relaxed text-[#666666]">{text}</p>
     </div>
   );
 }
 
 export default function EnquiriesPage() {
-  const [chats, setChats] = useState([]);
+  return (
+    <div className="w-full space-y-5">
+      <PageHeader title="Enquiry" subtitle="Chat with customers who message your shop from the GGFIX app." />
+      <Messages />
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Inbox + conversation                                                        */
+/* -------------------------------------------------------------------------- */
+
+function Messages() {
+  const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filter, setFilter] = useState('All');
   const [query, setQuery] = useState('');
-  const [reloadKey, setReloadKey] = useState(0);
+  const [activeId, setActiveId] = useState(null);
+
+  const load = useCallback(async () => {
+    pingShopPresence().catch(() => {});
+    try {
+      const data = await listShopChats();
+      setThreads(data);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Could not load messages.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    setError('');
-    fetchShopChats()
-      .then((list) => {
-        if (alive) setChats(list);
-      })
-      .catch((err) => {
-        if (alive) setError(err.message || 'Could not load enquiries.');
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [reloadKey]);
+    const t = new URLSearchParams(window.location.search).get('thread');
+    if (t) setActiveId(t);
+    load();
+    const id = setInterval(load, INBOX_POLL_MS);
+    return () => clearInterval(id);
+  }, [load]);
 
-  const rows = useMemo(
-    () =>
-      chats.map((c) => ({
-        raw: c,
-        id: pick(c, ['id', 'chatId', 'threadId']) || Math.random(),
-        name: pick(c, ['customerName', 'name', 'userName', 'buyerName']) || 'Customer',
-        phone: pick(c, ['customerMobile', 'phone', 'mobile', 'customerPhone']),
-        device: pick(c, ['deviceName', 'productName', 'itemName', 'subject']),
-        message: pick(c, ['lastMessage', 'message', 'preview', 'problem']),
-        date: pick(c, ['updatedAt', 'lastMessageAt', 'createdAt', 'timestamp']),
-        unread: Number(c.unreadCount || 0),
-      })),
-    [chats],
-  );
+  const totalUnread = threads.reduce((n, t) => n + (t.unreadCount || 0), 0);
 
-  const counts = useMemo(() => {
-    const newCount = rows.filter((r) => r.unread > 0).length;
-    return { All: rows.length, New: newCount, Read: rows.length - newCount };
-  }, [rows]);
+  function openThread(id) {
+    setActiveId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('tab');
+    if (id) url.searchParams.set('thread', id);
+    else url.searchParams.delete('thread');
+    window.history.replaceState(null, '', url);
+    if (id) setThreads((prev) => prev.map((t) => (String(t.id) === String(id) ? { ...t, unreadCount: 0 } : t)));
+  }
 
   const filtered = useMemo(() => {
-    let list = rows;
-    if (filter === 'New') list = list.filter((r) => r.unread > 0);
-    else if (filter === 'Read') list = list.filter((r) => r.unread === 0);
     const q = query.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) ||
-        r.phone.toLowerCase().includes(q) ||
-        r.device.toLowerCase().includes(q) ||
-        r.message.toLowerCase().includes(q),
+    if (!q) return threads;
+    const digits = q.replace(/\D/g, '');
+    return threads.filter(
+      (t) =>
+        String(t.counterpartName || '').toLowerCase().includes(q) ||
+        (digits && String(t.counterpartPhone || '').replace(/\D/g, '').includes(digits)) ||
+        String(t.lastMessagePreview || '').toLowerCase().includes(q),
     );
-  }, [rows, filter, query]);
+  }, [threads, query]);
 
-  const stats = [
-    { label: 'Total Enquiries', value: rows.length, icon: MessageSquare, bgIcon: MessageSquare, tone: 'green' },
-    { label: 'New', value: counts.New, icon: MessageSquarePlus, bgIcon: MessageSquarePlus, tone: 'orange' },
-    { label: 'In Progress', value: '—', icon: MessageSquare, bgIcon: Clock, tone: 'blue' },
-    { label: 'Converted', value: '—', icon: MessageSquare, bgIcon: CheckCircle2, tone: 'purple' },
-  ];
+  const current = threads.find((t) => String(t.id) === String(activeId)) || null;
 
   return (
-    <div className="flex flex-col gap-6">
-      {/* Hero — soft mint gradient banner with layered abstract waves + a
-          decorative "ENQUIRIES" clipboard/chat-bubble/headset illustration on
-          the far right, matching the same premium design system as the other
-          redesigned Partner Dashboard pages. Title/subtitle/Refresh are the
-          exact same content/handler this page always had. */}
-      <div className="relative min-h-[200px] overflow-hidden rounded-3xl border border-[#E4ECE8] bg-gradient-to-br from-[#F3FBF7] via-white to-[#EAF5FF] p-6 shadow-[0_12px_32px_rgba(20,80,55,0.07),0_3px_10px_rgba(20,80,55,0.04)] sm:p-8">
-        <span className="pointer-events-none absolute -right-14 -top-14 h-52 w-52 rounded-full bg-[#86EFAC]/25 blur-3xl" aria-hidden="true" />
-        <span className="pointer-events-none absolute -bottom-16 right-32 h-40 w-40 rounded-full bg-[#93C5FD]/20 blur-3xl" aria-hidden="true" />
-        <span className="pointer-events-none absolute -left-10 top-10 h-36 w-36 rounded-full bg-[#BFE8FF]/15 blur-3xl" aria-hidden="true" />
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-24 w-full text-[#DFF8EB]/55"
-          viewBox="0 0 500 100"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,50 C120,110 280,0 500,60 L500,100 L0,100 Z" />
-        </svg>
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-16 w-full text-[#BFE8FF]/35"
-          viewBox="0 0 500 70"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,35 C150,65 320,10 500,40 L500,70 L0,70 Z" />
-        </svg>
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-10 w-full text-white/70"
-          viewBox="0 0 500 45"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,22 C170,45 300,5 500,25 L500,45 L0,45 Z" />
-        </svg>
-
-        <div className="relative flex flex-wrap items-start justify-between gap-4 md:pr-[280px]">
-          <div className="min-w-0">
-            <h1 className="text-[32px] font-extrabold tracking-tight text-[#10213D] sm:text-[38px]">Enquiries</h1>
-            <p className="mt-1.5 text-[15px] text-[#667085] sm:text-base">Manage customer queries and convert them into service bookings.</p>
-            <p className="mt-2 flex items-start gap-1.5 text-xs text-[#98A2B3]">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-              Sourced from your shop&apos;s message threads. &ldquo;In Progress&rdquo; and &ldquo;Converted&rdquo; aren&apos;t tracked by this backend yet, so they show as &ldquo;—&rdquo;.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setReloadKey((k) => k + 1)}
-            className={cx(
-              'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[#E4ECE8] bg-white px-4 py-2.5 text-sm font-semibold text-[#10213D] shadow-sm transition hover:border-[#079447] hover:text-[#079447]',
-              FOCUS_RING,
-            )}
-          >
-            <RefreshCw className={cx('h-4 w-4 text-[#079447]', loading && 'animate-spin')} aria-hidden="true" />
-            Refresh
-          </button>
+    <div className="flex h-[calc(100dvh-17rem)] min-h-[520px] gap-5">
+      {/* Inbox */}
+      <section className={cx(CARD, 'min-w-0 flex-col overflow-hidden lg:flex lg:w-[380px] lg:shrink-0', activeId ? 'hidden' : 'flex w-full')}>
+        <div className="border-b border-[#ECECEC] p-4">
+          <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[#111111]">
+            <MessageCircle className="h-4 w-4 text-[#111111]/70" aria-hidden="true" />
+            {loading ? 'Loading…' : `${threads.length} ${threads.length === 1 ? 'chat' : 'chats'}${totalUnread ? ` · ${totalUnread} unread` : ''}`}
+          </p>
+          <label className="mt-3 flex h-11 items-center gap-2.5 rounded-full border border-[#ECECEC] bg-white px-4 focus-within:border-[#09AD2A]">
+            <Search className="h-4 w-4 shrink-0 text-[#111111]/60" aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search by name, mobile or message"
+              aria-label="Search by name, mobile or message"
+              autoComplete="off"
+              className="min-w-0 flex-1 bg-transparent text-sm text-[#111111] outline-none placeholder:text-[#98A2B3]"
+            />
+          </label>
         </div>
 
-        <div className="pointer-events-none absolute bottom-0 right-2 hidden h-[160px] w-[240px] md:block lg:right-4 lg:h-[190px] lg:w-[290px]">
-          <EnquiriesIllustration />
-        </div>
-      </div>
-
-      {error ? <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
-
-      {loading ? (
-        <SkeletonStatCards count={4} />
-      ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {stats.map((s) => (
-            <EnquiryStatCard key={s.label} icon={s.icon} bgIcon={s.bgIcon} label={s.label} value={s.value} tone={s.tone} />
-          ))}
-        </div>
-      )}
-
-      <section className="overflow-hidden rounded-[22px] border border-[#E4ECE8] bg-gradient-to-b from-white to-[#FBFEFC]/96 shadow-[0_12px_30px_rgba(20,80,55,0.07),0_2px_8px_rgba(20,80,55,0.03)]">
-        <div className="flex flex-col gap-3.5 border-b border-[#EEF3F0] px-5 py-5 sm:px-6">
-          <FilterChips options={FILTERS} value={filter} onChange={setFilter} counts={counts} />
-          <SearchField value={query} onChange={setQuery} placeholder="Search by name, phone, email, or enquiry source" />
-        </div>
-
-        {loading ? (
-          <SkeletonRows rows={4} />
-        ) : filtered.length === 0 ? (
-          rows.length === 0 ? (
-            <div className="flex flex-col items-center px-4 py-14 text-center sm:px-5">
-              <EnquiriesEmptyIllustration />
-              <p className="mt-3 text-base font-bold text-[#10213D]">No enquiries yet</p>
-              <p className="mt-1 max-w-sm text-sm text-[#667085]">Customer enquiries will appear here when new messages or requests are received.</p>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="space-y-1 p-3">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="flex animate-pulse items-center gap-3 rounded-xl p-2">
+                  <span className="h-11 w-11 rounded-full bg-white" />
+                  <span className="flex-1 space-y-2">
+                    <span className="block h-3 w-1/2 rounded bg-white" />
+                    <span className="block h-3 w-3/4 rounded bg-white" />
+                  </span>
+                </div>
+              ))}
             </div>
+          ) : error && !threads.length ? (
+            <div className="p-4">
+              <ErrorBanner message={error} onRetry={load} />
+            </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={MessageCircle}
+              title={query ? 'No matches' : 'No customer messages yet'}
+              text={query ? 'Try a different name, number or keyword.' : 'When a customer messages your shop, the conversation will appear here.'}
+            />
           ) : (
-            <div className="flex flex-col items-center px-4 py-14 text-center sm:px-5">
-              <Icon3D icon={MessageSquare} tone="gray" size="lg" />
-              <p className="mt-3 text-sm font-bold text-[#10213D]">No enquiries match this filter</p>
-              <p className="mt-1 text-sm text-[#667085]">Try a different filter or search term.</p>
-            </div>
-          )
+            <ul className="divide-y divide-[#ECECEC]">
+              {filtered.map((t) => {
+                const unread = t.unreadCount || 0;
+                const typing = Boolean(t.counterpartTyping);
+                const selected = String(t.id) === String(activeId);
+                return (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => openThread(t.id)}
+                      aria-current={selected ? 'true' : undefined}
+                      className={cx('flex w-full items-center gap-3 px-4 py-3 text-left transition', selected ? 'bg-white' : 'hover:bg-white/60')}
+                    >
+                      <Avatar url={t.counterpartAvatarUrl} name={t.counterpartName} online={t.counterpartOnline} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate text-[14.5px] font-semibold text-[#111111]">{t.counterpartName || 'Customer'}</span>
+                          <span className={cx('shrink-0 text-[11px] font-medium', unread ? 'text-[#09AD2A]' : 'text-[#98A2B3]')}>{shortTime(t.lastMessageAt)}</span>
+                        </span>
+                        <span className="mt-0.5 flex items-center gap-2">
+                          <span className={cx('min-w-0 flex-1 truncate text-[13px]', typing ? 'italic text-[#09AD2A]' : unread ? 'font-semibold text-[#111111]' : 'text-[#666666]')}>
+                            {typing ? 'typing…' : t.lastMessagePreview || 'Tap to start the conversation'}
+                          </span>
+                          {unread ? (
+                            <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-[#09AD2A] px-1.5 text-[10.5px] font-bold text-white">
+                              {unread > 99 ? '99+' : unread}
+                            </span>
+                          ) : null}
+                        </span>
+                        {t.counterpartPhone ? <span className="mt-0.5 block truncate text-[11.5px] text-[#98A2B3]">{phoneLabel(t.counterpartPhone)}</span> : null}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      {/* Conversation */}
+      <section className={cx(CARD, 'min-w-0 flex-1 flex-col overflow-hidden', activeId ? 'flex' : 'hidden lg:flex')}>
+        {activeId ? (
+          <ChatThread key={activeId} threadId={activeId} summary={current} onBack={() => openThread(null)} onSent={load} />
         ) : (
-          <div className="divide-y divide-[#EEF3F0]">
-            {filtered.map((r) => (
-              <EnquiryRow key={r.id} row={r} />
-            ))}
+          <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
+            <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-[#111111]/50">
+              <MessageCircle className="h-7 w-7" aria-hidden="true" />
+            </span>
+            <p className="mt-3 text-[14px] font-medium text-[#666666]">{threads.length ? 'Select a conversation to read it here.' : 'Conversations will open here.'}</p>
           </div>
         )}
       </section>
@@ -406,77 +316,356 @@ export default function EnquiriesPage() {
   );
 }
 
-function EnquiryRow({ row }) {
-  const [open, setOpen] = useState(false);
+/* -------------------------------------------------------------------------- */
+/* Thread                                                                      */
+/* -------------------------------------------------------------------------- */
+
+function ChatThread({ threadId, summary, onBack, onSent }) {
+  const [head, setHead] = useState(summary || null);
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const endRef = useRef(null);
+  const inputRef = useRef(null);
+  const fileRef = useRef(null);
+  const cameraRef = useRef(null);
+  const typingRef = useRef({ on: false, timer: null });
+  const countRef = useRef(0);
+  const recRef = useRef({ recorder: null, chunks: [], stream: null, timer: null, cancelled: false });
+
+  const refresh = useCallback(async () => {
+    try {
+      const [h, msgs] = await Promise.all([getShopChat(threadId).catch(() => null), getShopChatMessages(threadId)]);
+      if (h) setHead(h);
+      setMessages(msgs);
+      setError('');
+    } catch (err) {
+      setError(err.message || 'Could not load this conversation.');
+    } finally {
+      setLoading(false);
+    }
+  }, [threadId]);
+
+  useEffect(() => {
+    refresh();
+    markShopChatRead(threadId).catch(() => {});
+    const id = setInterval(() => {
+      refresh();
+      markShopChatRead(threadId).catch(() => {});
+    }, THREAD_POLL_MS);
+    const typing = typingRef.current;
+    const rec = recRef.current;
+    return () => {
+      clearInterval(id);
+      clearTimeout(typing.timer);
+      if (typing.on) pingShopTyping(threadId, false).catch(() => {});
+      // stop any voice recording still running when the thread closes
+      rec.cancelled = true;
+      clearInterval(rec.timer);
+      if (rec.recorder && rec.recorder.state !== 'inactive') rec.recorder.stop();
+      rec.stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, [threadId, refresh]);
+
+  // Stick to the bottom when new messages arrive.
+  useEffect(() => {
+    if (messages.length !== countRef.current) {
+      endRef.current?.scrollIntoView({ block: 'end', behavior: countRef.current ? 'smooth' : 'auto' });
+      countRef.current = messages.length;
+    }
+  }, [messages]);
+
+  function onType(value) {
+    setText(value);
+    const t = typingRef.current;
+    if (!t.on && value) {
+      t.on = true;
+      pingShopTyping(threadId, true).catch(() => {});
+    }
+    clearTimeout(t.timer);
+    t.timer = setTimeout(() => {
+      if (t.on) {
+        t.on = false;
+        pingShopTyping(threadId, false).catch(() => {});
+      }
+    }, 2500);
+  }
+
+  async function deliver(payload) {
+    setSending(true);
+    try {
+      const sent = await sendShopChatMessage(threadId, payload);
+      if (sent?.id) setMessages((prev) => [...prev, sent]);
+      else refresh();
+      onSent?.();
+      return true;
+    } catch (err) {
+      notifyError(err, 'Message not sent. Try again.');
+      return false;
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function send(e) {
+    e?.preventDefault();
+    const body = text.trim();
+    if (!body || sending) return;
+    if (await deliver({ body })) setText('');
+  }
+
+  async function sendFile(file, type) {
+    if (!file || sending) return;
+    setSending(true);
+    try {
+      const isPdf = file.type === 'application/pdf';
+      const url = await uploadShopLocationMedia(file, 'chat-attachments', { document: isPdf });
+      if (!url) throw new Error('Upload failed — no file URL was returned.');
+      const attachmentType = type || (file.type.startsWith('image/') ? 'IMAGE' : file.type.startsWith('audio/') ? 'AUDIO' : 'DOCUMENT');
+      setSending(false);
+      await deliver({ body: text.trim() || undefined, attachmentUrl: url, attachmentType });
+      setText('');
+    } catch (err) {
+      notifyError(err, 'Could not send the attachment.');
+      setSending(false);
+    }
+  }
+
+  async function startRecording() {
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder === 'undefined') {
+      notifyError('Voice notes are not supported in this browser.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new window.MediaRecorder(stream);
+      const rec = recRef.current;
+      Object.assign(rec, { recorder, stream, chunks: [], cancelled: false });
+      recorder.ondataavailable = (ev) => ev.data?.size && rec.chunks.push(ev.data);
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        clearInterval(rec.timer);
+        setRecording(false);
+        if (rec.cancelled || !rec.chunks.length) return;
+        const blob = new Blob(rec.chunks, { type: recorder.mimeType || 'audio/webm' });
+        const ext = (recorder.mimeType || 'audio/webm').includes('mp4') ? 'm4a' : 'webm';
+        sendFile(new File([blob], `voice-note.${ext}`, { type: blob.type }), 'AUDIO');
+      };
+      recorder.start();
+      setRecordSecs(0);
+      setRecording(true);
+      rec.timer = setInterval(() => setRecordSecs((s) => s + 1), 1000);
+    } catch {
+      notifyError('Microphone access was denied or is unavailable.');
+    }
+  }
+
+  function stopRecording(cancel = false) {
+    const rec = recRef.current;
+    rec.cancelled = cancel;
+    if (rec.recorder && rec.recorder.state !== 'inactive') rec.recorder.stop();
+  }
+
+  function addEmoji(emoji) {
+    onType(`${text}${emoji}`);
+    setEmojiOpen(false);
+    inputRef.current?.focus();
+  }
+
+  const name = head?.counterpartName || 'Customer';
+  const status = head?.counterpartTyping ? 'typing…' : lastSeen(head?.counterpartOnline, head?.counterpartLastSeenAt);
+  const hasText = Boolean(text.trim());
+  const iconBtn = cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#666666] transition hover:bg-[#F3F3F3] hover:text-[#111111] disabled:opacity-40', FOCUS_RING);
 
   return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className={cx(
-          'group flex w-full items-center gap-3.5 px-4 py-5 text-left transition duration-200 ease-out hover:translate-x-0.5 hover:bg-gradient-to-r hover:from-[#E7F9EF]/65 hover:to-white sm:px-5',
-          FOCUS_RING,
-        )}
-      >
-        <span className="relative flex h-12 w-12 shrink-0 items-center justify-center">
-          <span className="absolute inset-0 -m-1 rounded-full bg-[#86EFAC] opacity-40 blur-md" aria-hidden="true" />
-          <Icon3D icon={MessageSquare} tone="green" size="lg" className="relative shadow-[0_5px_14px_rgba(8,145,75,0.16),inset_0_1.5px_0_rgba(255,255,255,0.5)]" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-base font-bold text-[#10213D]">{row.name}</p>
-          <p className="truncate text-[13px] text-[#667085]">{row.message || row.device || 'No preview available'}</p>
-        </div>
-        <span
-          className={cx(
-            'hidden shrink-0 items-center rounded-full px-3.5 py-2 text-[0.68rem] font-bold uppercase tracking-wide sm:inline-flex',
-            row.unread > 0
-              ? 'bg-[#FEF3D6] text-[#B7791F] shadow-[0_2px_10px_rgba(183,121,31,0.14)]'
-              : 'bg-[#DFF8EB] text-[#066B39] shadow-[0_2px_10px_rgba(6,107,57,0.1)]',
-          )}
+    <>
+      {/* Contact header */}
+      <div className="flex items-center gap-3 border-b border-[#ECECEC] bg-white px-4 py-3">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to chats"
+          className={cx('inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#111111] transition hover:bg-[#ECECEC] lg:hidden', FOCUS_RING)}
         >
-          {row.unread > 0 ? 'New' : 'Read'}
-        </span>
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E4ECE8] bg-white text-[#10213D] shadow-sm transition group-hover:shadow-[0_2px_10px_rgba(6,122,61,0.14)]">
-          <ChevronDown className={cx('h-4 w-4 transition-transform', open && 'rotate-180')} aria-hidden="true" />
-        </span>
-      </button>
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <Avatar url={head?.counterpartAvatarUrl} name={name} online={head?.counterpartOnline} size="h-12 w-12" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[17px] font-bold text-[#111111]">{name}</p>
+          <p className={cx('truncate text-[13px]', head?.counterpartTyping ? 'italic text-[#09AD2A]' : 'text-[#666666]')}>{status || phoneLabel(head?.counterpartPhone) || ' '}</p>
+        </div>
+        {head?.counterpartPhone ? (
+          <a
+            href={`tel:${String(head.counterpartPhone).replace(/[^\d+]/g, '')}`}
+            aria-label={`Call ${name}`}
+            title={phoneLabel(head.counterpartPhone)}
+            className={cx('flex h-11 w-11 items-center justify-center rounded-full bg-[#E7F7EA] text-[#09AD2A] transition hover:bg-[#DCF3E1]', FOCUS_RING)}
+          >
+            <Phone className="h-5 w-5" aria-hidden="true" />
+          </a>
+        ) : null}
+      </div>
 
-      {open ? (
-        <div className="space-y-3 border-t border-dashed border-[#EAECF0] bg-[#F3FBF7] px-4 py-4 sm:px-5">
+      {/* Messages */}
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[#F3F3F3] px-3 py-4 sm:px-6">
+        <p className="mb-3 text-center">
           <span
+            title="Messages travel over an encrypted HTTPS connection. They are not end-to-end encrypted."
+            className="inline-flex cursor-help items-center gap-1.5 rounded-full border border-[#ECECEC] bg-white px-3.5 py-1.5 text-[12.5px] text-[#666666]"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-[#09AD2A]" aria-hidden="true" />
+            Encrypted via ggfix · Customer chat
+          </span>
+        </p>
+        {loading ? (
+          <div className="flex justify-center pt-10">
+            <Loader2 className="h-6 w-6 animate-spin text-[#09AD2A]" aria-hidden="true" />
+          </div>
+        ) : error && !messages.length ? (
+          <ErrorBanner message={error} onRetry={refresh} />
+        ) : messages.length === 0 ? (
+          <p className="pt-10 text-center text-[13px] text-[#98A2B3]">No messages yet — say hello.</p>
+        ) : (
+          <div className="space-y-2">
+            {messages.map((m, i) => {
+              const prev = messages[i - 1];
+              const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
+              return (
+                <div key={m.id || i}>
+                  {newDay && m.createdAt ? (
+                    <p className="my-4 text-center">
+                      <span className="rounded-full border border-[#ECECEC] bg-white px-3.5 py-1 text-[12px] font-semibold text-[#666666]">{dayLabel(m.createdAt)}</span>
+                    </p>
+                  ) : null}
+                  <Bubble m={m} />
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <div ref={endRef} />
+      </div>
+
+      {/* Composer */}
+      <form onSubmit={send} className="relative border-t border-[#ECECEC] bg-white px-3 py-3 sm:px-4">
+        {emojiOpen ? (
+          <div className="absolute bottom-full left-3 z-20 mb-2 grid w-[264px] grid-cols-8 gap-1 rounded-2xl border border-[#ECECEC] bg-white p-2 shadow-[0_10px_30px_rgba(17,17,17,0.12)]">
+            {EMOJIS.map((em) => (
+              <button key={em} type="button" onClick={() => addEmoji(em)} className="flex h-8 w-8 items-center justify-center rounded-lg text-[18px] hover:bg-[#F3F3F3]">
+                {em}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => { sendFile(e.target.files?.[0]); e.target.value = ''; }} />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { sendFile(e.target.files?.[0], 'IMAGE'); e.target.value = ''; }} />
+
+        <div className="flex items-center gap-2">
+          {recording ? (
+            <div className="flex h-[52px] min-w-0 flex-1 items-center gap-3 rounded-full border border-[#F84141]/30 bg-[#FEF3F2] px-4">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#F84141]" aria-hidden="true" />
+              <span className="flex-1 text-[14px] font-semibold text-[#111111]">Recording… {fmtDuration(recordSecs)}</span>
+              <button type="button" onClick={() => stopRecording(true)} aria-label="Cancel voice note" className={iconBtn}>
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex h-[52px] min-w-0 flex-1 items-center gap-1 rounded-full border border-[#ECECEC] bg-white pl-2 pr-2 focus-within:border-[#09AD2A]">
+              <button type="button" onClick={() => fileRef.current?.click()} disabled={sending} aria-label="Attach a file" title="Attach photo or PDF" className={iconBtn}>
+                <Paperclip className="h-5 w-5" aria-hidden="true" />
+              </button>
+              <input
+                ref={inputRef}
+                value={text}
+                onChange={(e) => onType(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) send(e);
+                }}
+                placeholder="Type a message..."
+                aria-label="Type a message"
+                className="min-w-0 flex-1 bg-transparent px-1 text-[15px] text-[#111111] outline-none placeholder:text-[#98A2B3]"
+              />
+              <button type="button" onClick={() => setEmojiOpen((v) => !v)} aria-label="Emoji" aria-expanded={emojiOpen} className={iconBtn}>
+                <Smile className="h-5 w-5" aria-hidden="true" />
+              </button>
+              <button type="button" onClick={() => cameraRef.current?.click()} disabled={sending} aria-label="Take a photo" title="Camera" className={iconBtn}>
+                <Camera className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+
+          {/* Send when there's text; otherwise mic (start / stop a voice note) */}
+          <button
+            type={hasText ? 'submit' : 'button'}
+            onClick={hasText ? undefined : () => (recording ? stopRecording(false) : startRecording())}
+            disabled={sending}
+            aria-label={hasText ? 'Send' : recording ? 'Stop and send voice note' : 'Record a voice note'}
             className={cx(
-              'inline-flex items-center rounded-full px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-wide sm:hidden',
-              row.unread > 0 ? 'bg-[#FEF3D6] text-[#B7791F]' : 'bg-[#DFF8EB] text-[#066B39]',
+              'flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-[#F3BF23] text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-50',
+              FOCUS_RING,
             )}
           >
-            {row.unread > 0 ? 'New' : 'Read'}
-          </span>
-          {row.device ? <p className="text-sm text-[#344054]">Device: {row.device}</p> : null}
-          {row.message ? <p className="text-sm text-[#344054]">{row.message}</p> : null}
-          {row.date ? <p className="text-xs text-[#667085]">{new Date(row.date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p> : null}
-
-          <div className="flex flex-wrap gap-2 pt-1">
-            {row.phone ? (
-              <a
-                href={`tel:${row.phone}`}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#DDE5E1] bg-white px-3.5 py-2 text-xs font-bold text-[#10213D] transition hover:border-[#079447] hover:bg-[#F3FBF7] hover:text-[#079447]"
-              >
-                <Phone className="h-3.5 w-3.5" aria-hidden="true" />
-                Call Customer
-              </a>
-            ) : null}
-            <Link
-              href="/shop-home/services/book-service"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-[#16B45F] to-[#087A3E] px-3.5 py-2 text-xs font-bold text-white shadow-[0_4px_12px_rgba(8,122,62,0.28)] transition hover:brightness-105"
-            >
-              <PlusCircle className="h-3.5 w-3.5" aria-hidden="true" />
-              Convert to Booking
-            </Link>
-          </div>
+            {sending ? (
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+            ) : hasText ? (
+              <SendHorizontal className="h-5 w-5" aria-hidden="true" />
+            ) : recording ? (
+              <Square className="h-4 w-4 fill-current" aria-hidden="true" />
+            ) : (
+              <Mic className="h-5 w-5" aria-hidden="true" />
+            )}
+          </button>
         </div>
-      ) : null}
+      </form>
+    </>
+  );
+}
+
+function Bubble({ m }) {
+  const sender = String(m.sender || '').toUpperCase();
+  if (sender === 'SYSTEM') {
+    return <p className="my-2 text-center text-[12px] italic text-[#666666]">{m.body}</p>;
+  }
+  const mine = sender === 'SHOP';
+  const url = resolveMediaUrl(m.attachmentUrl) || m.attachmentUrl;
+  const type = String(m.attachmentType || '').toUpperCase();
+  const Tick = m.read ? CheckCheck : Check;
+  return (
+    <div className={cx('flex', mine ? 'justify-end' : 'justify-start')}>
+      <div
+        className={cx(
+          'max-w-[82%] rounded-[22px] px-4 py-2.5 text-[15px] sm:max-w-[60%]',
+          mine ? cx(OUT_BUBBLE, 'rounded-br-md') : 'rounded-bl-md border border-[#ECECEC] bg-white text-[#111111]',
+        )}
+      >
+        {url && type === 'IMAGE' ? (
+          <a href={url} target="_blank" rel="noreferrer" className="mb-1.5 block overflow-hidden rounded-xl">
+            {/* eslint-disable-next-line @next/next/no-img-element -- chat attachments are arbitrary media URLs. */}
+            <img src={url} alt="Attachment" className="max-h-72 w-full object-cover" />
+          </a>
+        ) : null}
+        {url && type === 'AUDIO' ? (
+          // eslint-disable-next-line jsx-a11y/media-has-caption -- voice note, no captions available.
+          <audio controls src={url} className="mb-1 max-w-full" />
+        ) : null}
+        {url && type !== 'IMAGE' && type !== 'AUDIO' ? (
+          <a href={url} target="_blank" rel="noreferrer" className={cx('mb-1 flex items-center gap-1.5 font-semibold underline', mine ? 'text-white' : 'text-[#09AD2A]')}>
+            <FileText className="h-4 w-4" aria-hidden="true" />
+            Attachment
+          </a>
+        ) : null}
+        {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p> : null}
+        <p className={cx('mt-1 flex items-center justify-end gap-1 text-[12px]', mine ? 'text-white/85' : 'text-[#666666]')}>
+          {m.createdAt ? clockTime(m.createdAt) : ''}
+          {mine ? <Tick className="h-3.5 w-3.5" aria-label={m.read ? 'Read' : 'Sent'} /> : null}
+        </p>
+      </div>
     </div>
   );
 }

@@ -83,6 +83,7 @@ import {
 import { lookupPlaceName, readGeo, subscribe as subscribeGeo, writeGeo } from '@/components/site/geo';
 import { DEVICE_CATEGORIES, sortDeviceCategories } from '@/lib/siteContent';
 import DEVICE_COLORS from '@/lib/deviceColors.json';
+import { notifyError } from '@/lib/toast';
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
@@ -1308,7 +1309,6 @@ function ReportStep({
     return { front: saved.front || null, back: saved.back || null };
   });
   const [uploading, setUploading] = useState({ front: false, back: false });
-  const [photoError, setPhotoError] = useState('');
 
   // Persist uploaded photo URLs so the review/confirm step (several steps later)
   // can attach them to the booking.
@@ -1344,13 +1344,12 @@ function ReportStep({
   const storage = cleanList(model && model.ramStorage);
 
   const pick = async (key, file) => {
-    setPhotoError('');
     setUploading((u) => ({ ...u, [key]: true }));
     try {
       const url = await uploadDevicePhoto(file, key);
       setPhotos((p) => ({ ...p, [key]: url }));
     } catch {
-      setPhotoError("That photo didn't upload. Please try again.");
+      notifyError("That photo didn't upload. Please try again.");
     } finally {
       setUploading((u) => ({ ...u, [key]: false }));
     }
@@ -1440,7 +1439,6 @@ function ReportStep({
             />
           ))}
         </div>
-        {photoError ? <p className="mt-3 text-sm font-medium text-red-600">{photoError}</p> : null}
         <p className="mt-3 text-xs text-brand-muted">
           Your photos are uploaded securely and only shared with the shop you choose.
         </p>
@@ -2227,7 +2225,6 @@ function AddressStep({ addressHref, backHref }) {
   const [selected, setSelected] = useState('');
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [formErr, setFormErr] = useState('');
   const [form, setForm] = useState({
     label: 'Home',
     fullName: '',
@@ -2260,9 +2257,8 @@ function AddressStep({ addressHref, backHref }) {
 
   const onSave = async (e) => {
     e.preventDefault();
-    setFormErr('');
     if (!form.fullName.trim() || form.mobile.replace(/\D/g, '').length < 10 || !form.addressLine.trim()) {
-      setFormErr('Please fill your name, a 10-digit mobile and the address.');
+      notifyError('Please fill your name, a 10-digit mobile and the address.');
       return;
     }
     setSaving(true);
@@ -2280,7 +2276,7 @@ function AddressStep({ addressHref, backHref }) {
       setSelected((created && created.id) || (rows[0] && rows[0].id) || '');
     } catch (err) {
       setSaving(false);
-      setFormErr(err.message || "Couldn't save the address. Please try again.");
+      notifyError(err, "Couldn't save the address. Please try again.");
     }
   };
 
@@ -2397,7 +2393,6 @@ function AddressStep({ addressHref, backHref }) {
                   />
                 ))}
               </div>
-              {formErr ? <p className="mt-3 text-sm font-medium text-red-600">{formErr}</p> : null}
               <div className="mt-4 flex gap-3">
                 <Button type="submit" variant="primary" size="md" disabled={saving}>
                   {saving ? 'Saving…' : 'Save address'}
@@ -2646,7 +2641,6 @@ function ReviewStep({
   const [photos, setPhotos] = useState({});
   const [status, setStatus] = useState('loading');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(null); // booking response on success
 
   useEffect(() => {
@@ -2672,7 +2666,6 @@ function ReviewStep({
   const serviceMode = via === 'enquiry' ? 'ENQUIRY' : via === 'walkin' ? 'WALK_IN' : 'PICKUP';
 
   const confirm = async () => {
-    setError('');
     setSaving(true);
     try {
       const payload = {
@@ -2701,7 +2694,7 @@ function ReviewStep({
       const created = await createRepairBooking(payload);
       setConfirmed(created || {});
     } catch (err) {
-      setError(
+      notifyError(
         err.status === 403
           ? 'Your session has expired. Please log in again to confirm.'
           : err.message || "We couldn't confirm your booking. Please try again.",
@@ -2882,8 +2875,6 @@ function ReviewStep({
               You approve the estimate before any work starts — nothing is charged now.
             </p>
           </div>
-
-          {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
 
           <div className="flex flex-col items-center gap-2 pt-2 text-center">
             <Button onClick={confirm} variant="primary" size="lg" icon="ArrowRight" disabled={saving}>

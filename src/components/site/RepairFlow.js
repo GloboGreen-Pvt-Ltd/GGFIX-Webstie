@@ -67,6 +67,9 @@ import {
 } from 'lucide-react';
 
 import { MEDIA_UPLOAD_URL, SHOP_BASE, masterApi } from '@/lib/api';
+import { colorHexFromData, colorNames, resolveVariantImage, storagesForColor } from '@/lib/colorImages';
+import { badgeOf, frames360Of, galleryOf, ratingOf, taglineOf } from '@/lib/productDetails';
+import RepairDeviceSections from '@/components/site/RepairDeviceSections';
 import { Button, cx } from '@/components/site/ui';
 import LoginModal from '@/components/site/LoginModal';
 import { isLoggedIn, readCustomer } from '@/lib/customerAuth';
@@ -83,6 +86,7 @@ import {
 import { lookupPlaceName, readGeo, subscribe as subscribeGeo, writeGeo } from '@/components/site/geo';
 import { DEVICE_CATEGORIES, sortDeviceCategories } from '@/lib/siteContent';
 import DEVICE_COLORS from '@/lib/deviceColors.json';
+import { notifyError } from '@/lib/toast';
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                     */
@@ -223,7 +227,7 @@ function SearchBox({ value, onChange, placeholder }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-xl border border-brand-line bg-white py-2.5 pl-9 pr-9 text-sm text-brand-ink placeholder:text-brand-subtle focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+        className="w-full rounded-xl border border-brand-line bg-white py-2.5 pl-9 pr-9 text-base text-brand-ink sm:text-sm placeholder:text-brand-subtle focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
       />
       {value ? (
         <button
@@ -478,7 +482,9 @@ export default function RepairFlow() {
           this panel starts straight at the step heading. */}
 
       {/* Heading + (from step 2) the search box on the same row. */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      {/* On the device page the product name is the heading (SummaryStep), so
+          the generic "Your device" title is not repeated above it. */}
+      <div className={cx('flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between', step === 'summary' && 'hidden')}>
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
             {headings[step]}
@@ -544,9 +550,14 @@ export default function RepairFlow() {
           <SummaryStep
             key={modelId}
             categoryName={categoryName}
+            categoryCode={code}
+            brandId={brandId}
             brandName={brandName}
             modelName={modelName}
             model={selectedModel}
+            siblings={categoryModels}
+            seriesName={series.find((s) => s.id === selectedModel?.seriesId)?.name || ''}
+            deviceCategoryId={deviceCategoryId}
             image={resolveImg(selectedModel) || resolveImg(selectedBrand)}
             serviceHref={serviceHref}
           />
@@ -753,8 +764,11 @@ function BrandStep({ brands, categoryCode }) {
 /* Step: Product                                                               */
 /* -------------------------------------------------------------------------- */
 
-function ModelImage({ model }) {
+function ModelImage({ model, categoryCode }) {
   const [broken, setBroken] = useState(false);
+  // Most laptop models have no image in master data yet; the placeholder
+  // should at least be the right kind of device.
+  const Fallback = CATEGORY_FALLBACK_ICONS[String(categoryCode || '').toUpperCase()] || Smartphone;
   const img = resolveImg(model);
   if (img && !broken) {
     return (
@@ -768,7 +782,7 @@ function ModelImage({ model }) {
       />
     );
   }
-  return <Smartphone className="h-1/2 w-1/2 text-brand-400" aria-hidden="true" />;
+  return <Fallback className="h-1/2 w-1/2 text-brand-400" aria-hidden="true" />;
 }
 
 function ProductStep({
@@ -849,7 +863,7 @@ function ProductStep({
                 className="group flex flex-col items-center rounded-2xl border border-brand-line bg-white p-3 shadow-soft transition hover:border-brand-300 hover:bg-brand-50 hover:shadow-lift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5"
               >
                 <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl">
-                  <ModelImage model={m} />
+                  <ModelImage model={m} categoryCode={categoryCode} />
                 </div>
                 <span className="mt-2 line-clamp-2 min-h-[2.5rem] w-full text-center text-[11px] font-bold leading-tight text-brand-ink">
                   {m.name}
@@ -925,52 +939,8 @@ function cleanList(value) {
   return out;
 }
 
-/** A labelled row of SELECTABLE chips (single-select). Clicking the active chip
- *  again clears it, so `onSelect(null)` is a real outcome. */
-function VariantGroup({ title, items, swatch, selected, onSelect }) {
-  if (!items.length) return null;
-  return (
-    <div>
-      <p className="text-xs font-bold uppercase tracking-widest text-brand-600">{title}</p>
-      <ul role="list" className="mt-3 flex list-none flex-wrap justify-center gap-2.5 p-0">
-        {items.map((item) => {
-          const isSel = selected === item;
-          return (
-            <li key={item}>
-              <button
-                type="button"
-                aria-pressed={isSel}
-                onClick={() => onSelect(isSel ? null : item)}
-                className={cx(
-                  'inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold transition',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2',
-                  isSel
-                    ? 'border-brand-600 bg-brand-soft text-brand-700 ring-2 ring-inset ring-brand-600'
-                    : 'border-brand-line bg-white text-brand-ink hover:border-brand-300 hover:bg-brand-50',
-                )}
-              >
-                {swatch ? (
-                  // colorHex() resolves the base colour word ("Diamond Black" ->
-                  // black); unrecognised names get a neutral dot so it is never
-                  // empty or misleading.
-                  <span
-                    className="h-3.5 w-3.5 shrink-0 rounded-full ring-1 ring-inset ring-black/10"
-                    style={{ backgroundColor: colorHex(item) || '#cbd5e1' }}
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {item}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
 /* -------------------------------------------------------------------------- */
-/* Step: Repair Service                                                        */
+/* Step: Repair Service                                                      */
 /* -------------------------------------------------------------------------- */
 /* Mirrors the customer app's "Select Repair Service" screen: repair services
  * grouped under their repair category (Audio & Mic, Display & Touch, …),
@@ -1308,7 +1278,6 @@ function ReportStep({
     return { front: saved.front || null, back: saved.back || null };
   });
   const [uploading, setUploading] = useState({ front: false, back: false });
-  const [photoError, setPhotoError] = useState('');
 
   // Persist uploaded photo URLs so the review/confirm step (several steps later)
   // can attach them to the booking.
@@ -1344,13 +1313,12 @@ function ReportStep({
   const storage = cleanList(model && model.ramStorage);
 
   const pick = async (key, file) => {
-    setPhotoError('');
     setUploading((u) => ({ ...u, [key]: true }));
     try {
       const url = await uploadDevicePhoto(file, key);
       setPhotos((p) => ({ ...p, [key]: url }));
     } catch {
-      setPhotoError("That photo didn't upload. Please try again.");
+      notifyError("That photo didn't upload. Please try again.");
     } finally {
       setUploading((u) => ({ ...u, [key]: false }));
     }
@@ -1440,7 +1408,6 @@ function ReportStep({
             />
           ))}
         </div>
-        {photoError ? <p className="mt-3 text-sm font-medium text-red-600">{photoError}</p> : null}
         <p className="mt-3 text-xs text-brand-muted">
           Your photos are uploaded securely and only shared with the shop you choose.
         </p>
@@ -1788,7 +1755,7 @@ function ShopStep({ modelName, via, optionsHref }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search by shop name or area…"
-          className="w-full rounded-2xl border border-brand-line bg-white py-2.5 pl-9 pr-3 text-sm text-brand-ink placeholder:text-brand-subtle focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+          className="w-full rounded-2xl border border-brand-line bg-white py-2.5 pl-9 pr-3 text-base text-brand-ink sm:text-sm placeholder:text-brand-subtle focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
         />
       </div>
 
@@ -2053,7 +2020,7 @@ function ShopDetailStep({ shopId, shopsHref, addressHref }) {
 
         <div className="p-5 sm:p-6">
           <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
+            <div className="flex min-w-0 items-center gap-3">
               {!photo || imgBroken ? (
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-brand-soft text-xl font-extrabold text-brand-700">
                   {(shop.name || 'G').charAt(0).toUpperCase()}
@@ -2227,7 +2194,6 @@ function AddressStep({ addressHref, backHref }) {
   const [selected, setSelected] = useState('');
   const [adding, setAdding] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [formErr, setFormErr] = useState('');
   const [form, setForm] = useState({
     label: 'Home',
     fullName: '',
@@ -2260,9 +2226,8 @@ function AddressStep({ addressHref, backHref }) {
 
   const onSave = async (e) => {
     e.preventDefault();
-    setFormErr('');
     if (!form.fullName.trim() || form.mobile.replace(/\D/g, '').length < 10 || !form.addressLine.trim()) {
-      setFormErr('Please fill your name, a 10-digit mobile and the address.');
+      notifyError('Please fill your name, a 10-digit mobile and the address.');
       return;
     }
     setSaving(true);
@@ -2280,7 +2245,7 @@ function AddressStep({ addressHref, backHref }) {
       setSelected((created && created.id) || (rows[0] && rows[0].id) || '');
     } catch (err) {
       setSaving(false);
-      setFormErr(err.message || "Couldn't save the address. Please try again.");
+      notifyError(err, "Couldn't save the address. Please try again.");
     }
   };
 
@@ -2391,13 +2356,12 @@ function AddressStep({ addressHref, backHref }) {
                     placeholder={f.ph}
                     inputMode={f.k === 'mobile' || f.k === 'pincode' ? 'numeric' : 'text'}
                     className={cx(
-                      'rounded-xl border border-brand-line bg-white px-3 py-2.5 text-sm text-brand-ink placeholder:text-brand-subtle focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100',
+                      'rounded-xl border border-brand-line bg-white px-3 py-2.5 text-base text-brand-ink placeholder:text-brand-subtle focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 sm:text-sm',
                       f.span && 'sm:col-span-2',
                     )}
                   />
                 ))}
               </div>
-              {formErr ? <p className="mt-3 text-sm font-medium text-red-600">{formErr}</p> : null}
               <div className="mt-4 flex gap-3">
                 <Button type="submit" variant="primary" size="md" disabled={saving}>
                   {saving ? 'Saving…' : 'Save address'}
@@ -2646,7 +2610,6 @@ function ReviewStep({
   const [photos, setPhotos] = useState({});
   const [status, setStatus] = useState('loading');
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [confirmed, setConfirmed] = useState(null); // booking response on success
 
   useEffect(() => {
@@ -2672,7 +2635,6 @@ function ReviewStep({
   const serviceMode = via === 'enquiry' ? 'ENQUIRY' : via === 'walkin' ? 'WALK_IN' : 'PICKUP';
 
   const confirm = async () => {
-    setError('');
     setSaving(true);
     try {
       const payload = {
@@ -2701,7 +2663,7 @@ function ReviewStep({
       const created = await createRepairBooking(payload);
       setConfirmed(created || {});
     } catch (err) {
-      setError(
+      notifyError(
         err.status === 403
           ? 'Your session has expired. Please log in again to confirm.'
           : err.message || "We couldn't confirm your booking. Please try again.",
@@ -2883,8 +2845,6 @@ function ReviewStep({
             </p>
           </div>
 
-          {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
-
           <div className="flex flex-col items-center gap-2 pt-2 text-center">
             <Button onClick={confirm} variant="primary" size="lg" icon="ArrowRight" disabled={saving}>
               {saving ? 'Confirming…' : 'Confirm booking'}
@@ -2903,66 +2863,358 @@ function ReviewStep({
   );
 }
 
-function SummaryStep({ categoryName, brandName, modelName, model, image, serviceHref }) {
-  const [broken, setBroken] = useState(false);
-  const [color, setColor] = useState(null);
-  const [storagePick, setStoragePick] = useState(null);
-  const colors = cleanList(model && model.colors);
-  const storage = cleanList(model && model.ramStorage);
+/**
+ * Large product photo that cross-fades (~200ms) when `src` changes: the next
+ * photo is fetched first, then faded in over the old one while the old one fades
+ * out, so a colour switch never flashes white or shows a half-loaded image.
+ * object-contain keeps the whole device visible at its own aspect ratio.
+ */
+function CrossfadeImage({ src, alt, onError }) {
+  const [layers, setLayers] = useState(() => [{ src, visible: true }]);
 
+  useEffect(() => {
+    if (!src || layers[layers.length - 1]?.src === src) return undefined;
+    let cancelled = false;
+    const loader = new window.Image();
+    loader.onload = () => {
+      if (cancelled) return;
+      setLayers((prev) => [...prev.filter((l) => l.src !== src).slice(-1), { src, visible: false }]);
+      // Two frames: mount at opacity 0, then flip to 1 so the transition runs.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!cancelled) setLayers((prev) => prev.map((l) => ({ ...l, visible: l.src === src })));
+      }));
+    };
+    loader.onerror = () => { if (!cancelled) onError?.(src); };
+    loader.src = src;
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- layers is read only to skip a no-op.
+  }, [src]);
+
+  return layers.map((layer) => (
+    <img
+      key={layer.src}
+      src={layer.src}
+      alt={layer.src === src ? alt : ''}
+      aria-hidden={layer.src === src ? undefined : true}
+      decoding="async"
+      onError={() => onError?.(layer.src)}
+      onTransitionEnd={() => {
+        if (!layer.visible) setLayers((prev) => prev.filter((l) => l.src !== layer.src));
+      }}
+      className={cx(
+        'absolute inset-0 h-full w-full object-contain p-4 transition-opacity duration-200 ease-out motion-reduce:transition-none',
+        layer.visible ? 'opacity-100' : 'opacity-0',
+      )}
+    />
+  ));
+}
+
+/**
+ * The admin's colour palette (/master/colors: name + hexCode, kept in sync when a
+ * model's colours are saved) as Map<lower-case name, hex>. Fetched once per page
+ * visit and shared — these are the real finish colours ("Alpha" #000000,
+ * "Legend" #e3e3e3), unlike colorHex()'s guess from colour words.
+ */
+let paletteRequest;
+function usePaletteHex() {
+  const [palette, setPalette] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    paletteRequest ??= masterApi
+      .get('/master/colors')
+      .then(unwrap)
+      .then((rows) => new Map((Array.isArray(rows) ? rows : [])
+        .filter((r) => r?.name && /^#[0-9a-f]{3,8}$/i.test(String(r.hexCode || '')))
+        .map((r) => [String(r.name).trim().toLowerCase(), r.hexCode])))
+      .catch(() => {
+        paletteRequest = undefined; // let a later visit retry
+        return new Map();
+      });
+    paletteRequest.then((map) => alive && setPalette(map));
+    return () => { alive = false; };
+  }, []);
+  return palette;
+}
+
+function SummaryStep({ categoryName, categoryCode, brandId, brandName, modelName, model, siblings = [], seriesName, deviceCategoryId, image, serviceHref }) {
+  const router = useRouter();
+  // Gallery thumbnail the visitor clicked (null = follow the colour), and the
+  // 360° viewer toggle. Both only appear when the API sends the photos.
+  const [shot, setShot] = useState(null);
+  const [view360, setView360] = useState(false);
+  const palette = usePaletteHex();
+  const [brokenSrcs, setBrokenSrcs] = useState([]);
+  const colors = colorNames(model);
+  const storage = cleanList(model && model.ramStorage);
+  // A colour and a storage are always selected — the visitor's pick, else the
+  // first available. Derived on every render rather than seeded into state once:
+  // this step mounts before the model's data has loaded, so a one-time default
+  // would stay empty ("Colour –" with nothing selected) after it arrives.
+  const [colorPick, setColor] = useState(null);
+  const [storageChoice, setStoragePick] = useState(null);
+  const color = colors.includes(colorPick) ? colorPick : colors[0] || null;
+  const validStorage = storagesForColor(model, color, storage);
+  const storagePick = validStorage.includes(storageChoice) ? storageChoice : validStorage[0] || null;
+
+  // The storage choice is kept; if the new colour does not come in it, the
+  // derived storagePick above falls back to that colour's first option. A new
+  // colour also drops back from a clicked thumbnail to that colour's photo.
+  const selectColor = (c) => {
+    setColor(c);
+    setShot(null);
+  };
+
+  const gallery = galleryOf(model, color);
+  const frames = frames360Of(model);
+  const badge = badgeOf(model);
+  const tagline = taglineOf(model);
+  const rating = ratingOf(model);
+
+  // Photo for the current pick (src/lib/colorImages.js): a clicked thumbnail →
+  // colour + storage variant → colour photo → the model's own photo. A photo
+  // that fails to load drops to the next one instead of leaving a broken image.
+  const shown = [shot, resolveVariantImage(model, { color, storage: storagePick }), image]
+    .find((src) => src && !brokenSrcs.includes(src)) || null;
+  const markBroken = (src) => setBrokenSrcs((list) => (list.includes(src) ? list : [...list, src]));
+
+  const FallbackIcon = CATEGORY_FALLBACK_ICONS[String(categoryCode || '').toUpperCase()] || Smartphone;
+  const storageTitle = storage.some((s) => s.includes('+')) ? 'RAM & Storage' : 'Storage';
+  // Other models in the same series (e.g. the other iPad Air sizes), for the
+  // Apple-style model switcher. Real master-data rows only; hidden when alone.
+  const seriesModels = siblings.filter((m) => m?.id && m.seriesId && m.seriesId === model?.seriesId);
+
+  // Apple-style product page: details left (~45%), large photo right (~55%),
+  // photo first on phones; long-form sections follow (RepairDeviceSections).
+  // Selection is local (visual) — the shop quotes against the exact model, so
+  // Continue and Skip both lead to the repair-service step. No price, stock or
+  // delivery: this is the repair flow, and repair prices are quoted per shop.
   return (
-    <div className="mx-auto max-w-xl text-center">
-      {/* Device image + name, centred */}
-      <div className="flex flex-col items-center">
-        <div className="flex h-40 w-40 items-center justify-center overflow-hidden rounded-3xl bg-white sm:h-48 sm:w-48">
-          {image && !broken ? (
-            <img
-              src={image}
-              alt=""
-              className="h-full w-full object-contain p-2"
-              onError={() => setBroken(true)}
+    <>
+    <div className="mx-auto grid max-w-6xl items-center gap-8 pt-2 text-left md:grid-cols-[minmax(0,45fr)_minmax(0,55fr)] md:gap-12 lg:gap-16">
+      <div className="md:order-2">
+        <div className="relative mx-auto aspect-square w-full max-w-[600px] bg-white">
+          {view360 && frames.length ? (
+            <Viewer360 frames={frames} alt={`${modelName} 360° view`} />
+          ) : shown ? (
+            <CrossfadeImage
+              src={shown}
+              alt={color && shown !== image ? `${modelName} in ${color}` : modelName || ''}
+              onError={markBroken}
             />
           ) : (
-            <Smartphone className="h-16 w-16 text-brand-400" aria-hidden="true" />
+            <div className="flex h-full w-full items-center justify-center">
+              <FallbackIcon className="h-1/3 w-1/3 text-brand-300" aria-hidden="true" />
+            </div>
           )}
         </div>
-        <h3 className="mt-4 text-xl font-bold tracking-tight text-brand-ink sm:text-2xl">
-          {modelName}
-        </h3>
-        <p className="mt-1 text-sm text-brand-muted">
-          {[brandName, categoryName].filter(Boolean).join(' · ')}
-        </p>
+
+        {/* Thumbnails + 360° — only when the API sends more than one photo / 360 frames. */}
+        {gallery.length > 1 || frames.length ? (
+          <div className="mx-auto mt-4 flex max-w-[600px] items-center gap-3 overflow-x-auto px-1 pb-1 [scrollbar-width:none] md:justify-center [&::-webkit-scrollbar]:hidden">
+            {gallery.length > 1
+              ? gallery.map((g, i) => {
+                const active = !view360 && shown === g.url;
+                return (
+                  <button
+                    key={g.url}
+                    type="button"
+                    aria-pressed={active}
+                    aria-label={g.label || `Photo ${i + 1}`}
+                    onClick={() => { setView360(false); setShot(g.url); }}
+                    className={cx(
+                      'h-16 w-16 shrink-0 overflow-hidden rounded-xl border bg-white p-1.5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700',
+                      active ? 'border-brand-600 ring-1 ring-brand-600' : 'border-[#E5E7EB] hover:border-brand-300',
+                    )}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element -- remote master-data media, static export. */}
+                    <img src={g.url} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain" />
+                  </button>
+                );
+              })
+              : null}
+            {frames.length ? (
+              <button
+                type="button"
+                aria-pressed={view360}
+                onClick={() => setView360((v) => !v)}
+                className={cx(
+                  'h-16 shrink-0 rounded-xl border px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700',
+                  view360 ? 'border-brand-600 text-brand-700 ring-1 ring-brand-600' : 'border-[#E5E7EB] text-brand-ink hover:border-brand-300',
+                )}
+              >
+                360° view
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
-      {/* Selectable variants, centred. Selection is local (visual) — the shop
-          quotes against the exact model, and finishing the booking happens in the
-          app, so both actions below lead there. */}
-      {colors.length || storage.length ? (
-        <div className="mt-8 space-y-6">
-          <VariantGroup title="Colour" items={colors} swatch selected={color} onSelect={setColor} />
-          <VariantGroup
-            title="Storage & RAM"
-            items={storage}
-            selected={storagePick}
-            onSelect={setStoragePick}
-          />
+      <div className="min-w-0 md:order-1">
+        {badge ? (
+          <p className="mb-2 text-sm font-semibold text-[#B45309]">{badge}</p>
+        ) : null}
+        <p className="text-sm text-brand-muted">{[brandName, categoryName].filter(Boolean).join(' · ')}</p>
+        <h2 className="mt-1 break-words text-3xl font-semibold tracking-tight text-[#111111] sm:text-4xl lg:text-5xl">{modelName}</h2>
+        {tagline ? <p className="mt-3 text-lg text-[#6B7280]">{tagline}</p> : null}
+        {rating ? (
+          <p className="mt-3 text-sm text-[#6B7280]">
+            <span className="font-semibold text-[#111111]">★ {rating.value}</span>
+            {rating.count ? ` (${rating.count.toLocaleString('en-IN')} ratings)` : null}
+          </p>
+        ) : null}
+
+        {seriesModels.length > 1 ? (
+          <div className="mt-8">
+            <label htmlFor="summary-model" className="text-sm font-semibold text-brand-ink">Model</label>
+            <select
+              id="summary-model"
+              value={model?.id || ''}
+              onChange={(e) => {
+                const next = seriesModels.find((m) => m.id === e.target.value);
+                if (next) router.push(stepHref({ category: categoryCode, brand: brandId, brandName, model: next.id, modelName: next.name }), { scroll: false });
+              }}
+              className="mt-2 block w-full rounded-xl border border-brand-line bg-white px-4 py-3 text-base text-brand-ink focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20"
+            >
+              {seriesModels.map((m) => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
+
+        {colors.length ? (
+          <div className="mt-8">
+            <p className="text-sm font-semibold text-brand-ink">
+              Colour <span className="font-normal text-brand-muted">– {color}</span>
+            </p>
+            <ul role="list" className="mt-3 flex list-none flex-wrap gap-3 p-0">
+              {colors.map((c) => {
+                const isSel = color === c;
+                return (
+                  <li key={c}>
+                    <button
+                      type="button"
+                      aria-pressed={isSel}
+                      aria-label={c}
+                      title={c}
+                      onClick={() => selectColor(c)}
+                      className={cx(
+                        'block h-7 w-7 rounded-full border border-black/15 transition',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2',
+                        isSel ? 'ring-2 ring-brand-600 ring-offset-[3px]' : 'hover:ring-1 hover:ring-brand-300 hover:ring-offset-2',
+                      )}
+                      // Model's own hex → admin palette → colour-word guess → neutral.
+                      style={{ backgroundColor: colorHexFromData(model, c) || palette?.get(c.trim().toLowerCase()) || colorHex(c) || '#cbd5e1' }}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+
+        {storage.length ? (
+          <div className="mt-8">
+            <p className="text-sm font-semibold text-brand-ink">{storageTitle}</p>
+            <ul role="list" className="mt-3 grid list-none grid-cols-2 gap-3 p-0 sm:grid-cols-3">
+              {storage.map((s) => {
+                const isSel = storagePick === s;
+                const isDisabled = !validStorage.includes(s);
+                return (
+                  <li key={s}>
+                    <button
+                      type="button"
+                      aria-pressed={isSel}
+                      disabled={isDisabled}
+                      onClick={() => setStoragePick(s)}
+                      className={cx(
+                        'w-full rounded-xl border px-4 py-3 text-sm font-semibold text-brand-ink transition',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2',
+                        'disabled:cursor-not-allowed disabled:opacity-40',
+                        isSel ? 'border-brand-600 ring-1 ring-inset ring-brand-600' : 'border-brand-line hover:border-brand-300',
+                      )}
+                    >
+                      {s}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="mt-10 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+          <Button href={serviceHref} variant="primary" size="lg" icon="ArrowRight" scroll={false}>
+            Continue
+          </Button>
+          <Link
+            href={serviceHref}
+            scroll={false}
+            className="self-center rounded text-sm font-semibold text-brand-muted underline underline-offset-2 transition hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 sm:self-auto"
+          >
+            Skip for now
+          </Link>
         </div>
-      ) : null}
-
-      {/* Continue advances to the repair-service step. Skip jumps past the
-          colour/storage choice to the same step — the picks are visual only. */}
-      <div className="mt-8 flex flex-col items-center gap-3">
-        <Button href={serviceHref} variant="primary" size="lg" icon="ArrowRight" scroll={false}>
-          Continue
-        </Button>
-        <Link
-          href={serviceHref}
-          scroll={false}
-          className="rounded text-sm font-semibold text-brand-muted underline underline-offset-2 transition hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
-        >
-          Skip for now
-        </Link>
       </div>
+    </div>
+
+    <div className="mx-auto max-w-6xl">
+      <RepairDeviceSections
+        model={model}
+        modelName={modelName}
+        brandName={brandName}
+        categoryName={categoryName}
+        categoryCode={categoryCode}
+        deviceCategoryId={deviceCategoryId}
+        seriesName={seriesName}
+        siblings={siblings}
+        colors={colors}
+        storage={storage}
+        serviceHref={serviceHref}
+        modelHref={(m) => stepHref({ category: categoryCode, brand: brandId, brandName, model: m.id, modelName: m.name })}
+        imageOf={resolveImg}
+      />
+    </div>
+    </>
+  );
+}
+
+/**
+ * Drag-to-rotate 360° view from an ordered frame list (≥ 8 frames, from the
+ * API's images360 — never faked from a single photo). Pointer drag on mouse
+ * and touch; the range input gives keyboard users the same control.
+ */
+function Viewer360({ frames, alt }) {
+  const [index, setIndex] = useState(0);
+  const drag = useRef(null);
+  const step = (dx) => {
+    const per = 12; // px of drag per frame
+    const moved = Math.trunc(dx / per);
+    if (!moved) return;
+    drag.current.x += moved * per;
+    setIndex((i) => (((i - moved) % frames.length) + frames.length) % frames.length);
+  };
+  return (
+    <div className="absolute inset-0 flex flex-col">
+      <div
+        className="relative min-h-0 flex-1 cursor-grab touch-none select-none active:cursor-grabbing"
+        onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); drag.current = { x: e.clientX }; }}
+        onPointerMove={(e) => { if (drag.current) step(e.clientX - drag.current.x); }}
+        onPointerUp={() => { drag.current = null; }}
+        onPointerCancel={() => { drag.current = null; }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- remote 360 frames, swapped per drag step. */}
+        <img src={frames[index]} alt={alt} draggable={false} className="h-full w-full object-contain p-4" />
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={frames.length - 1}
+        value={index}
+        onChange={(e) => setIndex(Number(e.target.value))}
+        aria-label="Rotate the 360° view"
+        className="mx-auto mb-2 w-2/3 accent-brand-600"
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import { mapPool } from '@/lib/concurrency';
 import DataTable from '@/components/DataTable';
+import { notifyError } from '@/lib/toast';
 
 // In a later step, you can swap this to a dedicated marketplaceApi exported from lib/api.
 const productsApi = {
@@ -126,7 +127,6 @@ export default function MarketplaceItemsPage() {
     e.preventDefault();
     if (!title.trim() || !brandId || !modelId) return;
     setSubmitting(true);
-    setError('');
     const body = {
       title: title.trim(),
       type,
@@ -145,7 +145,7 @@ export default function MarketplaceItemsPage() {
       closeModal();
       loadItems();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -157,7 +157,7 @@ export default function MarketplaceItemsPage() {
       await productsApi.delete(`/marketplace/products/${row.id}`);
       loadItems();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -201,9 +201,9 @@ export default function MarketplaceItemsPage() {
   const filteredModels = models;
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Marketplace Items</h1>
+    <div className="p-4 sm:p-6 md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Marketplace Items</h1>
         <button
           type="button"
           onClick={openCreate}
@@ -232,7 +232,7 @@ export default function MarketplaceItemsPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'New marketplace item' : 'Edit marketplace item'}
             </h2>

@@ -26,12 +26,14 @@ import {
   resolveIcon,
 } from '@/components/site/ui';
 import { BRAND, CTA, LEGAL_UPDATED, SUPPORT_CHANNELS } from '@/lib/siteContent';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'Privacy Policy',
   description:
-    'How GGFIX and GloboGreen collect, use, share and protect your information across the GGFIX customer app, the GGFIX shop app and the admin platform.',
-};
+    'How GGFIX and Globogreen collect, use, share and protect your information across the GGFIX customer app, the GGFIX shop app and this website.',
+  path: '/privacy',
+});
 
 /* -------------------------------------------------------------------------- */
 /* Page-local content                                                          */

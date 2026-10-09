@@ -65,10 +65,23 @@ export const FOOTER_NAV = [
     title: 'Customers',
     links: [
       { href: '/', label: 'For Customers' },
-      { href: '/#repair', label: 'Book a repair' },
-      { href: '/#sell', label: 'Sell your device' },
-      { href: '/#buy', label: 'Buy refurbished' },
+      { href: '/repair', label: 'Book a repair' },
+      { href: '/sell', label: 'Sell your device' },
+      { href: '/buy', label: 'Buy refurbished' },
       { href: '/nearby-shops', label: 'Shops near you' },
+    ],
+  },
+  /* The SEO landing pages (src/app/(site)/repair/[category]) — linked from
+     every page here so each one is reachable and crawlable. Slugs must match
+     REPAIR_CATEGORY_CONTENT in src/lib/repairSeoContent.js. */
+  {
+    title: 'Repair services',
+    links: [
+      { href: '/repair/mobile', label: 'Mobile phone repair' },
+      { href: '/repair/tablet', label: 'Tablet repair' },
+      { href: '/repair/laptop', label: 'Laptop repair' },
+      { href: '/repair/smartwatch', label: 'Smartwatch repair' },
+      { href: '/repair/audio', label: 'Earbuds & speaker repair' },
     ],
   },
   {
@@ -962,7 +975,7 @@ export const CTA = {
      SHOP_LOGIN accounts by src/lib/shopAuth.js. Kept distinct from
      `forShops` (the marketing page selling the idea of joining) since they
      are different destinations for different audiences. */
-  businessLogin: { label: 'Business Login', href: '/shopmanagement' },
+  businessLogin: { label: 'Business Login', href: '/sell-with-us/?login=1' },
 };
 
 /* -------------------------------------------------------------------------- */
@@ -1045,6 +1058,8 @@ export const sortDeviceCategories = (rows) => {
         (known ? known.imageUrl : '');
 
       return {
+        // Kept so callers can match rows that reference a category by id (e.g. Buy listings).
+        id: row.id ?? null,
         code,
         name: (typeof row.name === 'string' && row.name) || (known ? known.name : code),
         imageUrl,

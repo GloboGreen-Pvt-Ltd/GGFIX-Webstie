@@ -13,7 +13,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  CircleAlert,
   HardDrive,
   Laptop,
   Loader2,
@@ -32,6 +31,7 @@ import { cx } from '@/components/site/ui';
 import { Panel } from '@/components/site/account/ui';
 import { masterApi } from '@/lib/api';
 import { createDevice, updateDevice } from '@/lib/customerAccount';
+import { notifyError } from '@/lib/toast';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const asList = (value) => (Array.isArray(value) ? value : value?.content || value?.data || []);
@@ -207,7 +207,7 @@ function ZoomableModelImage({ item }) {
   };
 
   return (
-    <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-6 py-4">
+    <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden px-6 py-4 [@media(max-height:480px)]:py-1">
       <div
         className="flex h-full w-full touch-none select-none items-center justify-center overflow-hidden rounded-2xl"
         style={{ touchAction: 'none' }}
@@ -230,11 +230,11 @@ function ZoomableModelImage({ item }) {
           />
         ) : <Smartphone className="h-32 w-32 text-white/80" aria-hidden="true" />}
       </div>
-      <div className="absolute bottom-6 right-8 flex overflow-hidden rounded-xl border border-white/15 bg-slate-900/80 shadow-lg">
-        <button type="button" onClick={() => changeScale(scale - 0.25)} disabled={scale <= 1} className="p-2 text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35" aria-label="Zoom out"><ZoomOut className="h-4 w-4" /></button>
+      <div className="absolute bottom-6 right-8 flex overflow-hidden [@media(max-height:480px)]:bottom-2 [@media(max-height:480px)]:right-4 rounded-xl border border-white/15 bg-slate-900/80 shadow-lg">
+        <button type="button" onClick={() => changeScale(scale - 0.25)} disabled={scale <= 1} className="p-2 text-white transition hover:bg-white/10 [@media(pointer:coarse)]:p-2.5 disabled:cursor-not-allowed disabled:opacity-35" aria-label="Zoom out"><ZoomOut className="h-4 w-4" /></button>
         <span className="flex min-w-12 items-center justify-center border-x border-white/15 px-2 text-xs font-bold text-white">{Math.round(scale * 100)}%</span>
-        <button type="button" onClick={() => changeScale(scale + 0.25)} disabled={scale >= 3} className="p-2 text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35" aria-label="Zoom in"><ZoomIn className="h-4 w-4" /></button>
-        <button type="button" onClick={reset} disabled={scale <= 1} className="border-l border-white/15 p-2 text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35" aria-label="Reset image zoom"><RotateCcw className="h-4 w-4" /></button>
+        <button type="button" onClick={() => changeScale(scale + 0.25)} disabled={scale >= 3} className="p-2 text-white transition hover:bg-white/10 [@media(pointer:coarse)]:p-2.5 disabled:cursor-not-allowed disabled:opacity-35" aria-label="Zoom in"><ZoomIn className="h-4 w-4" /></button>
+        <button type="button" onClick={reset} disabled={scale <= 1} className="border-l border-white/15 p-2 text-white [@media(pointer:coarse)]:p-2.5 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35" aria-label="Reset image zoom"><RotateCcw className="h-4 w-4" /></button>
       </div>
     </div>
   );
@@ -258,11 +258,14 @@ function ModelPreviewModal({ model, index, total, onClose, onPrevious, onNext, o
   }, [onClose, onPrevious, onNext]);
 
   return (
-    <div className="fixed inset-0 z-[100] bg-slate-950/95 text-white" role="dialog" aria-modal="true" aria-label={`${model?.name || 'Model'} image preview`}>
+    <div className="fixed inset-0 z-[100] bg-slate-950 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] text-white" role="dialog" aria-modal="true" aria-label={`${model?.name || 'Model'} image preview`}>
       <div className="flex h-full min-h-0 flex-col" onClick={(event) => event.stopPropagation()}>
-        <header className="flex shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-7">
-          <p className="text-xs font-semibold text-white/65">Scroll to zoom · Double-click to zoom · Drag to pan</p>
-          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25" aria-label="Close image preview"><X className="h-5 w-5" /></button>
+        <header className="flex shrink-0 items-center justify-between gap-4 px-5 py-4 sm:px-7 [@media(max-height:480px)]:py-2">
+          <p className="min-w-0 text-xs font-semibold text-white/65">
+            <span className="[@media(pointer:coarse)]:hidden">Scroll to zoom · Double-click to zoom · Drag to pan</span>
+            <span className="hidden [@media(pointer:coarse)]:inline">Pinch to zoom · Double-tap to zoom · Drag to pan</span>
+          </p>
+          <button type="button" onClick={onClose} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25" aria-label="Close image preview"><X className="h-5 w-5" /></button>
         </header>
 
         <div className="relative flex min-h-0 flex-1">
@@ -271,10 +274,10 @@ function ModelPreviewModal({ model, index, total, onClose, onPrevious, onNext, o
           {index < total - 1 ? <button type="button" onClick={onNext} className="absolute right-3 top-1/2 z-10 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:right-6" aria-label="Next model image"><ChevronRight className="h-6 w-6" /></button> : null}
         </div>
 
-        <footer className="shrink-0 px-5 pb-5 pt-3 sm:px-7 sm:pb-7">
-          <p className="text-center text-base font-extrabold text-white">{model?.name}</p>
-          {total > 1 ? <p className="mt-1 text-center text-xs font-medium text-white/55">{index + 1} of {total}</p> : null}
-          <button type="button" onClick={onSelect} className="mx-auto mt-4 flex w-full max-w-md items-center justify-center rounded-2xl bg-brand-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-brand-700">
+        <footer className="shrink-0 px-5 pb-5 pt-3 sm:px-7 sm:pb-7 [@media(max-height:480px)]:pb-2 [@media(max-height:480px)]:pt-1">
+          <p className="break-words text-center text-base font-extrabold text-white [@media(max-height:480px)]:text-sm">{model?.name}</p>
+          {total > 1 ? <p className="mt-1 text-center text-xs font-medium text-white/55 [@media(max-height:480px)]:hidden">{index + 1} of {total}</p> : null}
+          <button type="button" onClick={onSelect} className="mx-auto mt-4 flex w-full max-w-md items-center justify-center rounded-2xl bg-brand-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-brand-700 [@media(max-height:480px)]:mt-2 [@media(max-height:480px)]:py-2.5">
             Select this product
           </button>
         </footer>
@@ -360,7 +363,6 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
   const noRamStorage = /WATCH|AUDIO|HEADPHONE|EARBUD/.test(categoryCode);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [colors, setColors] = useState([]);
   const [rams, setRams] = useState([]);
   const [storages, setStorages] = useState([]);
@@ -376,7 +378,6 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
     let cancelled = false;
     async function loadOptions() {
       setLoading(true);
-      setError('');
       try {
         const [model, allColors, allRams, allStorages] = await Promise.all([
           selection.modelId
@@ -416,7 +417,7 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
         ));
         setSpec(existingSpec || null);
       } catch (cause) {
-        if (!cancelled) setError(cause?.message || 'Could not load device options.');
+        if (!cancelled) notifyError(cause, 'Could not load device options.');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -433,15 +434,14 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
 
   const save = async () => {
     if (!color) {
-      setError('Choose a colour to continue.');
+      notifyError('Choose a colour to continue.');
       return;
     }
     if (!noRamStorage && !spec && (!ram || !storage)) {
-      setError('Choose the device memory and storage to continue.');
+      notifyError('Choose the device memory and storage to continue.');
       return;
     }
     setSaving(true);
-    setError('');
     const payload = {
       categoryId: onlyUuid(selection.categoryId || device?.categoryId),
       categoryCode: selection.categoryCode || device?.categoryCode || undefined,
@@ -462,7 +462,7 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
       else await createDevice(payload);
       onSaved();
     } catch (cause) {
-      setError(cause?.message || 'Could not save this device. Please try again.');
+      notifyError(cause, 'Could not save this device. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -570,12 +570,6 @@ function VariantEditor({ device, selection, onBack, onClose, onSaved }) {
         </div>
       </div>
 
-      {error ? (
-        <p className="mt-5 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-700">
-          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />{error}
-        </p>
-      ) : null}
-
       <div className="mt-7 flex flex-wrap items-center justify-between gap-3 border-t border-brand-line pt-5">
         {editing ? <span /> : (
           <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold text-brand-muted hover:bg-brand-soft hover:text-brand-ink">
@@ -644,7 +638,7 @@ export default function DeviceWizard({ device, onClose, onSaved }) {
       setBrands(list);
       setStep(1);
     } catch (cause) {
-      setError(cause?.message || 'Could not load brands for this category.');
+      notifyError(cause, 'Could not load brands for this category.');
     } finally {
       setLoading(false);
     }
@@ -661,7 +655,7 @@ export default function DeviceWizard({ device, onClose, onSaved }) {
       setModels(list.filter((item) => !item.categoryId || item.categoryId === next.categoryId));
       setStep(2);
     } catch (cause) {
-      setError(cause?.message || 'Could not load models for this brand.');
+      notifyError(cause, 'Could not load models for this brand.');
     } finally {
       setLoading(false);
     }

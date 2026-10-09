@@ -32,12 +32,14 @@ import {
   PLANS,
   PRICING_NOTE,
 } from '@/lib/siteContent';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Pricing',
+export const metadata = pageMetadata({
+  title: 'Repair Shop Software Pricing – Free Trial',
   description:
-    'GGFIX pricing for repair shops: a 15-day Free Trial granted automatically at registration, then the Basic plan at ₹3,000 per year for one shop and ₹2,500 per shop per year from your second shop onwards. Customers use the app free.',
-};
+    'GGFIX pricing for repair shops: a 15-day free trial, then ₹3,000 a year for one shop and ₹2,500 a year for each extra shop. Customers use the app free.',
+  path: '/pricing',
+});
 
 const freeTrial = PLANS.find((plan) => plan.key === 'free-trial');
 const basic = PLANS.find((plan) => plan.key === 'basic');

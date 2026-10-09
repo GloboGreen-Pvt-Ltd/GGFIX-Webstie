@@ -13,6 +13,7 @@ import {
   planModelImport,
   slugify,
 } from '@/lib/modelsExcel';
+import { notifyError } from '@/lib/toast';
 
 // master-data runs with -Xmx384m on a t3.micro; four writes in flight keeps a
 // thousand-row import moving without putting the service back into an OOM.
@@ -103,7 +104,6 @@ export default function ModelsImportModal({
   const [parsed, setParsed] = useState(null);
   const [plan, setPlan] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
   // Which slice of the plan the row list is showing: null = everything.
@@ -118,7 +118,6 @@ export default function ModelsImportModal({
     // The catalogue the plan matches against has to be everything, so fetch it here
     // rather than reusing the page's filtered list.
     setBusy(true);
-    setError('');
     return masterApi
       .get('/master/models')
       .then((models) => {
@@ -134,7 +133,7 @@ export default function ModelsImportModal({
         setPlan(next);
         setStep('review');
       })
-      .catch((e) => setError(e.body?.message || e.message || 'Could not read the current model list to compare against.'))
+      .catch((e) => notifyError(e.body?.message || e.message || 'Could not read the current model list to compare against.'))
       .finally(() => setBusy(false));
   };
 
@@ -142,11 +141,10 @@ export default function ModelsImportModal({
     if (!f) return;
     setFile(f);
     setBusy(true);
-    setError('');
     try {
       const p = await parseModelsFile(f);
       if (!p.rows.length) {
-        setError('That sheet has no data rows below the header.');
+        notifyError('That sheet has no data rows below the header.');
         setBusy(false);
         return;
       }
@@ -154,7 +152,7 @@ export default function ModelsImportModal({
       setBusy(false);
       await buildPlan(p, allowCreateSeries);
     } catch (e) {
-      setError(e.message || 'Could not read that file.');
+      notifyError(e.message || 'Could not read that file.');
       setBusy(false);
     }
   };
@@ -286,8 +284,8 @@ export default function ModelsImportModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-4xl flex flex-col max-h-[90vh] rounded-xl bg-admin-card border border-admin-border shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-admin-border shrink-0">
+      <div className="w-full max-w-4xl flex flex-col max-h-[90dvh] rounded-xl bg-admin-card border border-admin-border shadow-xl">
+        <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-6 border-b border-admin-border shrink-0">
           <h2 className="text-lg font-medium text-slate-900 flex items-center gap-2">
             <FileSpreadsheet size={18} className="text-emerald-600" />
             Import models from Excel
@@ -295,11 +293,7 @@ export default function ModelsImportModal({
           <button type="button" onClick={close} aria-label="Close" className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {error && (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-          )}
-
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 space-y-4">
           {/* ---------- Step 1: pick a file ---------- */}
           {step === 'pick' && (
             <>
@@ -334,7 +328,7 @@ export default function ModelsImportModal({
                     categories: categories.map((c) => c.name),
                     brands: brands.map((b) => b.name),
                     series: allSeries.map((x) => x.name),
-                  }).catch((e) => setError(e.message))}
+                  }).catch((e) => notifyError(e))}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-admin-accent hover:underline"
                 >
                   <Download size={14} />
@@ -348,13 +342,13 @@ export default function ModelsImportModal({
           {step === 'review' && plan && (
             <>
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-slate-700">
-                  <span className="font-medium text-slate-900">{file?.name}</span>
+                <p className="min-w-0 break-words text-sm text-slate-700">
+                  <span className="break-all font-medium text-slate-900">{file?.name}</span>
                   <span className="text-admin-muted"> · sheet “{parsed?.sheetName}” · {plan.items.length} data rows</span>
                 </p>
                 <button
                   type="button"
-                  onClick={() => { setStep('pick'); setPlan(null); setParsed(null); setFile(null); setError(''); }}
+                  onClick={() => { setStep('pick'); setPlan(null); setParsed(null); setFile(null); }}
                   className="text-xs font-medium text-admin-accent hover:underline"
                 >
                   Choose a different file
@@ -419,7 +413,7 @@ export default function ModelsImportModal({
               )}
 
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-slate-700">
+                <p className="min-w-0 break-words text-sm text-slate-700">
                   {rowFilter
                     ? <>Showing <span className="font-medium text-slate-900">{filteredRows.length}</span> {FILTER_LABELS[rowFilter]} of {plan.items.length} rows</>
                     : <>All <span className="font-medium text-slate-900">{plan.items.length}</span> rows</>}
@@ -432,7 +426,7 @@ export default function ModelsImportModal({
                 )}
               </div>
 
-              <div className="rounded-lg border border-admin-border overflow-hidden">
+              <div className="rounded-lg border border-admin-border overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-admin-dark text-xs uppercase text-admin-muted">
                     <tr>
@@ -506,7 +500,7 @@ export default function ModelsImportModal({
                 <Stat label="Failed" value={result.failures.length} tone={result.failures.length ? 'red' : 'slate'} />
               </div>
               {result.failures.length > 0 && (
-                <div className="rounded-lg border border-admin-border overflow-hidden">
+                <div className="rounded-lg border border-admin-border overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-admin-dark text-xs uppercase text-admin-muted">
                       <tr>
@@ -537,12 +531,12 @@ export default function ModelsImportModal({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-admin-border shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6 border-t border-admin-border shrink-0">
           <div>
             {step === 'done' && result?.failures.length > 0 && (
               <button
                 type="button"
-                onClick={() => exportErrorReport(result.failures).catch((e) => setError(e.message))}
+                onClick={() => exportErrorReport(result.failures).catch((e) => notifyError(e))}
                 className="inline-flex items-center gap-1.5 rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark"
               >
                 <Download size={16} />
@@ -550,7 +544,7 @@ export default function ModelsImportModal({
               </button>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
             {step === 'running' ? (
               <button
                 type="button"

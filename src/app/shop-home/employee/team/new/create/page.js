@@ -47,16 +47,16 @@ import { cx } from '@/components/site/ui';
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
 const INPUT_CLS =
-  'w-full rounded-xl border border-[#D0D5DD] bg-white px-3.5 py-2.5 text-sm text-[#101828] shadow-[inset_0_1px_2px_rgba(16,24,40,0.04)] placeholder:text-[#98A2B3] transition focus:border-[#15803D] focus:outline-none focus:ring-[3px] focus:ring-[#DCFCE7]';
+  'w-full rounded-xl border border-[#D0D5DD] bg-white px-3.5 py-2.5 text-sm text-[#111111] placeholder:text-[#98A2B3] transition focus:border-[#15803D] focus:outline-none focus:ring-[3px] focus:ring-[#ECECEC]';
 
 const ROLE_OPTIONS = ['Technician', 'Pickup Person'];
 
 function SectionCard({ icon: Icon, title, settings, children }) {
   return (
-    <section className="relative rounded-[22px] border border-[#E4ECE8] bg-white p-5 shadow-[0_8px_24px_rgba(20,80,55,0.05)]">
+    <section className="relative min-w-0 rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-4 sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <span className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EAF9EF] text-[#0A934D]">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#0A934D]">
             <Icon className="h-4.5 w-4.5" aria-hidden="true" />
           </span>
           <span className="text-sm font-extrabold text-[#10213D]">{title}</span>
@@ -66,7 +66,7 @@ function SectionCard({ icon: Icon, title, settings, children }) {
             type="button"
             disabled
             title="Section settings aren't available yet."
-            className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-[#F1F3F7] text-[#98A2B3]"
+            className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-[#F3F3F3] text-[#98A2B3]"
           >
             <Settings className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -95,7 +95,7 @@ function UploadBox({ label }) {
       type="button"
       disabled
       title="Document upload isn't available yet — waiting on a confirmed create-employee endpoint."
-      className="flex h-24 w-full cursor-not-allowed flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-[#BBF7D0] bg-[#F9FDFB] text-center"
+      className="flex h-24 w-full cursor-not-allowed flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-[#ECECEC] bg-[#F8F8F8] text-center"
     >
       <Upload className="h-5 w-5 text-[#0A934D]" aria-hidden="true" />
       <span className="text-xs font-bold text-[#0A934D]">{label}</span>
@@ -133,7 +133,7 @@ export default function CreateEmployeePage() {
           type="button"
           onClick={() => router.back()}
           aria-label="Back"
-          className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E4ECE8] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]', FOCUS_RING)}
+          className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]', FOCUS_RING)}
         >
           <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
         </button>
@@ -142,8 +142,8 @@ export default function CreateEmployeePage() {
 
       {/* Avatar photo picker — disabled: no confirmed create-employee
           endpoint to attach an uploaded photo to yet. */}
-      <div className="flex items-center gap-4 rounded-[22px] border border-[#E4ECE8] bg-white p-5 shadow-[0_8px_24px_rgba(20,80,55,0.05)]">
-        <span className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#F1F3F7] text-[#98A2B3]">
+      <div className="flex items-center gap-4 rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-4 sm:p-5">
+        <span className="relative flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#98A2B3]">
           <User className="h-7 w-7" aria-hidden="true" />
           <button
             type="button"
@@ -201,7 +201,7 @@ export default function CreateEmployeePage() {
           </Field>
         </div>
         <div className="mt-3.5 grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-[#F0FDF4] p-3">
+          <div className="min-w-0 rounded-xl bg-[#F8F8F8] p-3">
             <span className="flex items-center gap-1.5 text-xs font-bold text-[#0A934D]">
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               Check In
@@ -210,10 +210,10 @@ export default function CreateEmployeePage() {
               type="time"
               value={form.checkIn}
               onChange={set('checkIn')}
-              className="mt-1 w-full border-0 bg-transparent text-lg font-extrabold text-[#0A934D] focus:outline-none"
+              className="mt-1 w-full min-w-0 border-0 bg-transparent text-base font-extrabold sm:text-lg text-[#0A934D] focus:outline-none"
             />
           </div>
-          <div className="rounded-xl bg-[#FEF2F2] p-3">
+          <div className="min-w-0 rounded-xl bg-[#FEF2F2] p-3">
             <span className="flex items-center gap-1.5 text-xs font-bold text-[#DC2626]">
               <Clock className="h-3.5 w-3.5" aria-hidden="true" />
               Check Out
@@ -222,7 +222,7 @@ export default function CreateEmployeePage() {
               type="time"
               value={form.checkOut}
               onChange={set('checkOut')}
-              className="mt-1 w-full border-0 bg-transparent text-lg font-extrabold text-[#DC2626] focus:outline-none"
+              className="mt-1 w-full min-w-0 border-0 bg-transparent text-base font-extrabold sm:text-lg text-[#DC2626] focus:outline-none"
             />
           </div>
         </div>
@@ -311,7 +311,7 @@ export default function CreateEmployeePage() {
           Employee login enabled
         </label>
 
-        <p className="mt-2.5 flex items-start gap-1.5 rounded-lg bg-[#F0FDF4] p-2.5 text-xs text-[#0A934D]">
+        <p className="mt-2.5 flex items-start gap-1.5 rounded-lg bg-[#F8F8F8] p-2.5 text-xs text-[#0A934D]">
           <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           Employee signs in to the GGFIX Staff App with this mobile number + OTP.
         </p>
@@ -319,7 +319,7 @@ export default function CreateEmployeePage() {
 
       {/* Sticky footer — Cancel is real; Create Employee stays disabled
           until a confirmed create-employee endpoint exists. */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[#E4ECE8] bg-white/95 px-4 py-3 backdrop-blur-sm sm:px-6">
+      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-[#ECECEC] bg-white/95 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm sm:px-6">
         <div className="mx-auto flex w-full max-w-[1320px] gap-3">
           <button
             type="button"
@@ -335,7 +335,7 @@ export default function CreateEmployeePage() {
             type="button"
             disabled
             title="Creating employees isn't available yet — waiting on a confirmed create-employee endpoint."
-            className="flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-full bg-gradient-to-br from-[#16B45F] to-[#087A3E] px-4 py-2.5 text-sm font-bold text-white opacity-50 shadow-[0_4px_12px_rgba(8,122,62,0.2)]"
+            className="flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-full bg-[#F3BF23] px-4 py-2.5 text-sm font-bold text-[#1E1E1E] opacity-50 hover:bg-[#E5B11A]"
           >
             <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
             Create Employee

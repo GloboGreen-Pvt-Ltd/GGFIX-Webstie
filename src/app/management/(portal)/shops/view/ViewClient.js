@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { authApi, subscriptionApi } from '@/lib/api';
 import BusinessLocationsManager from '@/components/BusinessLocationsManager';
 import SafeImage from '@/components/SafeImage';
+import { notifyError } from '@/lib/toast';
 
 function initialsOf(name) {
   if (!name) return '?';
@@ -69,7 +70,7 @@ export default function ShopOwnerViewPage() {
       const updated = await authApi.patch(`/auth/shop-owners/${id}/kyc-status`, { status, rejectReason });
       setData(updated);
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to update KYC');
+      notifyError(e.body?.message || e.message || 'Failed to update KYC');
     } finally {
       setKycBusy(false);
     }
@@ -87,8 +88,8 @@ export default function ShopOwnerViewPage() {
   if (!data)   return <div className="p-6 text-admin-muted">Not found</div>;
 
   return (
-    <div className="p-6 md:p-8 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 md:p-8 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Shop Owner Details</h1>
           <p className="text-sm text-admin-muted">Review account information, documents, and business locations.</p>
@@ -100,19 +101,19 @@ export default function ShopOwnerViewPage() {
       </div>
 
       {/* Header card */}
-      <div className="rounded-xl bg-admin-card border border-admin-border p-5 flex items-center gap-5">
+      <div className="rounded-xl bg-admin-card border border-admin-border p-4 sm:p-5 flex items-center gap-4 sm:gap-5">
         <SafeImage
           src={data.avatarUrl}
           alt={data.name}
-          className="h-16 w-16 rounded-full object-cover"
+          className="h-16 w-16 shrink-0 rounded-full object-cover"
           fallback={
-            <div className="h-16 w-16 rounded-full bg-admin-accent/20 text-admin-accent text-xl font-bold flex items-center justify-center">
+            <div className="h-16 w-16 shrink-0 rounded-full bg-admin-accent/20 text-admin-accent text-xl font-bold flex items-center justify-center">
               {initialsOf(data.name)}
             </div>
           }
         />
-        <div className="flex-1">
-          <h2 className="text-xl font-semibold text-slate-900">{data.name || '—'}</h2>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-xl font-semibold text-slate-900 break-words">{data.name || '—'}</h2>
           <p className="text-sm text-admin-muted">View personal details, verification status, documents, and linked business locations.</p>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <Badge tone={data.emailVerified ? 'success' : 'warn'}>
@@ -169,7 +170,7 @@ export default function ShopOwnerViewPage() {
 
       {/* Subscription */}
       <div className="rounded-xl bg-admin-card border border-admin-border p-5">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div>
             <h3 className="text-base font-semibold text-slate-900">Subscription</h3>
             <p className="text-xs text-admin-muted">Current plan, status, and validity window.</p>
@@ -312,7 +313,7 @@ function SectionCard({ title, subtitle, children }) {
 }
 function DetailRow({ label, value }) {
   return (
-    <div className="grid grid-cols-[110px_1fr] gap-2 text-sm">
+    <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-2 text-sm">
       <span className="text-[11px] uppercase tracking-wider text-admin-muted">{label}</span>
       <span className="text-slate-800 break-all">{value ?? '—'}</span>
     </div>
@@ -384,10 +385,8 @@ function VerifyEmailModal({ email, onClose, onVerified }) {
   const [otp, setOtp] = useState('');
   const [devOtp, setDevOtp] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
 
   const sendOtp = async () => {
-    setError('');
     setBusy(true);
     try {
       const res = await authApi.post('/auth/email-verify/send', { email });
@@ -395,20 +394,19 @@ function VerifyEmailModal({ email, onClose, onVerified }) {
       if (res?.devOtp) setDevOtp(res.devOtp);
       setStep('CONFIRM');
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to send OTP');
+      notifyError(e.body?.message || e.message || 'Failed to send OTP');
     } finally {
       setBusy(false);
     }
   };
 
   const confirmOtp = async () => {
-    setError('');
     setBusy(true);
     try {
       await authApi.post('/auth/email-verify/confirm', { email, otp });
       onVerified();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Invalid OTP');
+      notifyError(e.body?.message || e.message || 'Invalid OTP');
     } finally {
       setBusy(false);
     }
@@ -416,10 +414,10 @@ function VerifyEmailModal({ email, onClose, onVerified }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-admin-card border border-admin-border rounded-xl p-6 max-w-md w-full space-y-4">
+      <div className="bg-admin-card border border-admin-border rounded-xl p-4 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto space-y-4">
         <div>
           <h3 className="text-lg font-semibold text-slate-900">Verify Email</h3>
-          <p className="text-xs text-admin-muted">A one-time code will be sent to <span className="text-slate-800">{email}</span>. The code is never stored — it expires in 10 minutes.</p>
+          <p className="text-xs text-admin-muted">A one-time code will be sent to <span className="text-slate-800 break-all">{email}</span>. The code is never stored — it expires in 10 minutes.</p>
         </div>
 
         {step === 'SEND' ? (
@@ -450,8 +448,6 @@ function VerifyEmailModal({ email, onClose, onVerified }) {
             </div>
           </>
         )}
-
-        {error && <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2 text-sm text-red-500">{error}</div>}
 
         <button onClick={onClose} className="w-full text-xs text-admin-muted hover:text-slate-800">Cancel</button>
       </div>

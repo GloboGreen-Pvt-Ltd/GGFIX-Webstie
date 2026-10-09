@@ -5,6 +5,7 @@ import { CreditCard, Crown, Gift, Zap, Check, Store } from 'lucide-react';
 import { subscriptionApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import PageHeader, { Button } from '@/components/PageHeader';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 const TABS = [
   { key: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
@@ -89,7 +90,7 @@ export default function SubscriptionsPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <PageHeader
         breadcrumb={['Admin', 'Subscriptions']}
         title="Subscription Management"
@@ -99,7 +100,7 @@ export default function SubscriptionsPage() {
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
 
-      <div className="mb-6 flex gap-2 border-b border-admin-border">
+      <div className="mb-6 flex gap-2 overflow-x-auto border-b border-admin-border">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.key;
@@ -108,7 +109,7 @@ export default function SubscriptionsPage() {
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium ${
+              className={`flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 text-sm font-medium ${
                 active ? 'text-admin-accent border-b-2 border-admin-accent' : 'text-admin-muted hover:text-slate-800'
               }`}
             >
@@ -155,7 +156,7 @@ function PlanCard({ plan, highlight }) {
   const Icon = plan.code === 'BASIC' ? Crown : Gift;
   return (
     <div
-      className={`flex flex-col rounded-xl border bg-admin-card p-6 shadow-sm ${
+      className={`flex flex-col rounded-xl border bg-admin-card p-4 sm:p-6 shadow-sm ${
         highlight ? 'border-admin-accent ring-1 ring-admin-accent/20' : 'border-admin-border'
       }`}
     >
@@ -239,8 +240,6 @@ function ActivateBasic({ onActivated }) {
   const [quote, setQuote] = useState(null);
   const [quoting, setQuoting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [err, setErr] = useState('');
-  const [ok, setOk] = useState('');
 
   // Live-preview total from the backend quote endpoint.
   useEffect(() => {
@@ -276,15 +275,13 @@ function ActivateBasic({ onActivated }) {
   const total = quote?.total ?? localTotal;
 
   const handleActivate = async () => {
-    setErr('');
-    setOk('');
     const n = Number(shopCount);
     if (!ownerUserId.trim()) {
-      setErr('Enter an owner user ID.');
+      notifyError('Enter an owner user ID.');
       return;
     }
     if (!n || n < 1) {
-      setErr('Shop count must be at least 1.');
+      notifyError('Shop count must be at least 1.');
       return;
     }
     setSubmitting(true);
@@ -293,18 +290,18 @@ function ActivateBasic({ onActivated }) {
         ownerUserId: ownerUserId.trim(),
         shopCount: n,
       });
-      setOk('Basic plan activated.');
+      notifySuccess('Basic plan activated.');
       setOwnerUserId('');
       onActivated?.();
     } catch (e) {
-      setErr(e.body?.message || e.message || 'Activation failed');
+      notifyError(e.body?.message || e.message || 'Activation failed');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="rounded-xl border border-admin-border bg-admin-card p-6 shadow-sm">
+    <div className="rounded-xl border border-admin-border bg-admin-card p-4 sm:p-6 shadow-sm">
       <div className="mb-4 flex items-center gap-2">
         <Zap className="h-5 w-5 text-admin-accent" />
         <h4 className="text-sm font-semibold text-slate-900">Activate Basic</h4>
@@ -352,9 +349,6 @@ function ActivateBasic({ onActivated }) {
           {submitting ? 'Activating…' : 'Activate'}
         </Button>
       </div>
-
-      {err && <p className="mt-3 text-sm text-red-600">{err}</p>}
-      {ok && <p className="mt-3 text-sm text-emerald-600">{ok}</p>}
     </div>
   );
 }

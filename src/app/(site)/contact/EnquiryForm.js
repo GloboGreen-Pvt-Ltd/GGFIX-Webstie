@@ -5,6 +5,7 @@ import { ArrowLeft, Info, Mail, MessageCircle, Send } from 'lucide-react';
 
 import { Button, cx } from '@/components/site/ui';
 import { BRAND } from '@/lib/siteContent';
+import { notifyError } from '@/lib/toast';
 
 /* -------------------------------------------------------------------------- */
 /* Config                                                                      */
@@ -177,6 +178,12 @@ export default function EnquiryForm() {
 
     const firstBroken = FIELD_ORDER.find((field) => nextErrors[field]);
     if (firstBroken) {
+      const errorCount = Object.keys(nextErrors).length;
+      notifyError(
+        errorCount === 1
+          ? 'One field needs fixing before we can build your message.'
+          : `${errorCount} fields need fixing before we can build your message.`,
+      );
       const el = formRef.current && formRef.current.querySelector(`#enquiry-${firstBroken}`);
       if (el && typeof el.focus === 'function') el.focus();
       return;
@@ -275,8 +282,6 @@ export default function EnquiryForm() {
   /* Form                                                                    */
   /* ---------------------------------------------------------------------- */
 
-  const errorCount = Object.keys(errors).length;
-
   return (
     <form
       ref={formRef}
@@ -284,16 +289,6 @@ export default function EnquiryForm() {
       onSubmit={handleSubmit}
       className="rounded-3xl border border-brand-line bg-white p-6 shadow-soft sm:p-8"
     >
-      <div aria-live="polite" className={errorCount ? 'mb-6' : 'sr-only'}>
-        {errorCount ? (
-          <p className="rounded-2xl border border-status-danger/30 bg-accent-50 px-4 py-3 text-sm font-medium text-brand-ink">
-            {errorCount === 1
-              ? 'One field needs fixing before we can build your message.'
-              : `${errorCount} fields need fixing before we can build your message.`}
-          </p>
-        ) : null}
-      </div>
-
       <div className="grid gap-5 sm:grid-cols-2">
         <Field id="enquiry-name" label="Your name" error={errors.name}>
           <input

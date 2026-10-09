@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { notifyError } from '@/lib/toast';
 
 export default function DirectorySupportContactsPage() {
   const [list, setList] = useState([]);
@@ -76,7 +77,7 @@ export default function DirectorySupportContactsPage() {
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -88,7 +89,7 @@ export default function DirectorySupportContactsPage() {
       await masterApi.delete(`/master/support-contacts/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -111,9 +112,9 @@ export default function DirectorySupportContactsPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Support Contacts</h1>
+    <div className="p-4 sm:p-6 md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Support Contacts</h1>
         <button
           type="button"
           onClick={openCreate}
@@ -140,7 +141,7 @@ export default function DirectorySupportContactsPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'New contact' : 'Edit contact'}
             </h2>

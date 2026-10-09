@@ -1,9 +1,15 @@
 import {
   ArrowUpRight,
+  Briefcase,
   Globe,
+  GraduationCap,
+  Handshake,
   HardHat,
+  Headset,
+  Layers,
   Mail,
   MessageCircle,
+  MessageSquareWarning,
   Phone,
   Smartphone,
   Store,
@@ -21,12 +27,14 @@ import {
 import { BRAND, CTA, PARTNER_BENEFITS, SUPPORT_TOPICS } from '@/lib/siteContent';
 
 import EnquiryForm from './EnquiryForm';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Contact',
+export const metadata = pageMetadata({
+  title: 'Contact Us – Repair Support & Shop Enquiries',
   description:
-    'Call, WhatsApp or email the GGFIX team at GloboGreen — or send an enquiry about starting the 15-day free trial for your repair shop. Support for repairs, pickups, refunds, returns and warranty.',
-};
+    'Call, WhatsApp or email the GGFIX team for help with repairs, pickups, orders, refunds and warranty, or ask about the 15-day free trial for your repair shop.',
+  path: '/contact',
+});
 
 /* -------------------------------------------------------------------------- */
 /* Page-local content                                                          */
@@ -110,6 +118,73 @@ const IN_THE_APP = {
   'return-cancel': 'Profile → My Orders → open the order and use Cancel before it is picked up, or message the shop from Chat.',
   warranty: 'Profile → My Orders → open the completed job and check the service receipt and invoice for its warranty terms.',
 };
+
+/* "Our team" desks. GGFIX has one support inbox today, so every desk mails it
+ * with a pre-filled subject that routes the message to the right person. */
+const mailWithSubject = (subject) => `${BRAND.emailHref}?subject=${encodeURIComponent(subject)}`;
+
+const TEAM_DESKS = [
+  {
+    icon: Headset,
+    title: 'Customer Inquiry',
+    description: 'For any question about a repair, pickup, price or an order you have placed.',
+    subject: 'Customer inquiry',
+  },
+  {
+    icon: MessageSquareWarning,
+    title: 'Feedback & Escalations',
+    description: 'Complaints, escalations or suggestions — tell us what went wrong or what we can do better.',
+    subject: 'Feedback / escalation',
+  },
+  {
+    icon: Layers,
+    title: 'Bulk Selling',
+    description: 'Selling several devices at once and want a single, customised quote? Write to us.',
+    subject: 'Bulk selling enquiry',
+  },
+  {
+    icon: Handshake,
+    title: 'GGFIX Partner Program',
+    description: 'Run a repair shop and want to join GGFIX? Ask about onboarding and the 15-day free trial.',
+    subject: 'Partner program — shop onboarding',
+  },
+  {
+    icon: Briefcase,
+    title: 'Business Inquiry',
+    description: 'Press, media, partnerships, exchange and buyback programs.',
+    subject: 'Business inquiry',
+  },
+  {
+    icon: GraduationCap,
+    title: 'Job Inquiry',
+    description: `Want to build ${BRAND.name} with us? Send your resume and the role you are interested in.`,
+    subject: 'Job inquiry',
+  },
+];
+
+const REACH_US = [
+  {
+    title: 'Repair & sell support',
+    lines: [
+      { label: 'Call', value: BRAND.phone, href: BRAND.phoneHref },
+      { label: 'Email', value: BRAND.email, href: mailWithSubject('Repair / sell query') },
+    ],
+  },
+  {
+    title: 'Buy, warranty & returns',
+    lines: [
+      { label: 'WhatsApp', value: BRAND.whatsapp, href: BRAND.whatsappHref, external: true },
+      { label: 'Email', value: BRAND.email, href: mailWithSubject('Buy / warranty / return query') },
+    ],
+  },
+  {
+    title: `${BRAND.company}`,
+    lines: [
+      { label: 'Company', value: `${BRAND.company} — the team behind ${BRAND.name}` },
+      { label: 'Website', value: BRAND.website, href: BRAND.websiteUrl, external: true },
+    ],
+  },
+];
 
 /* -------------------------------------------------------------------------- */
 /* Page                                                                        */
@@ -229,6 +304,88 @@ export default function ContactPage() {
               </Card>
             );
           })}
+        </div>
+      </Section>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Our team                                                          */}
+      {/* ---------------------------------------------------------------- */}
+      <Section tone="white">
+        <SectionHeading eyebrow="Our team" title="Write to the right desk" subtitle="Pick what your message is about — it reaches the person who can help." />
+
+        <ul className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {TEAM_DESKS.map((desk) => {
+            const Icon = desk.icon;
+            return (
+              <li key={desk.title}>
+                <a
+                  href={mailWithSubject(desk.subject)}
+                  className="group flex h-full gap-4 rounded-3xl border border-brand-line bg-brand-page p-5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:bg-white hover:shadow-lift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
+                >
+                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#22C55E] to-[#079455] text-white shadow-md transition group-hover:scale-105">
+                    <Icon className="h-7 w-7" aria-hidden="true" />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="text-base font-bold tracking-tight text-brand-ink">{desk.title}</span>
+                    <span className="mt-1 flex-1 text-sm leading-relaxed text-brand-muted">{desk.description}</span>
+                    <span className="mt-3 inline-flex items-center gap-1 break-all text-sm font-semibold text-brand-700">
+                      {BRAND.email}
+                      <ArrowUpRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    </span>
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </Section>
+
+      {/* ---------------------------------------------------------------- */}
+      {/* Need help? + Reach us                                             */}
+      {/* ---------------------------------------------------------------- */}
+      <Section tone="page">
+        <div className="mx-auto max-w-2xl rounded-3xl bg-gradient-to-br from-brand-600 to-brand-800 px-6 py-8 text-center text-white shadow-lift sm:px-10">
+          <h2 className="text-2xl font-extrabold tracking-tight sm:text-3xl">Need help?</h2>
+          <p className="mt-2 text-sm text-white/80">Get a quick response to your query on WhatsApp.</p>
+          <a
+            href={BRAND.whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-5 inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-base font-bold text-brand-700 transition hover:bg-brand-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700"
+          >
+            <MessageCircle className="h-5 w-5 text-[#25D366]" aria-hidden="true" />
+            WhatsApp
+            <span className="sr-only">(opens in a new tab)</span>
+          </a>
+        </div>
+
+        <h2 className="mt-14 text-center text-2xl font-extrabold tracking-tight text-brand-ink sm:text-3xl">Reach us</h2>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          {REACH_US.map((block) => (
+            <div key={block.title} className="rounded-3xl border border-brand-line bg-white p-6 shadow-soft">
+              <h3 className="text-base font-bold tracking-tight text-brand-ink">{block.title}</h3>
+              <dl className="mt-4 space-y-3">
+                {block.lines.map((line) => (
+                  <div key={line.label}>
+                    <dt className="text-xs font-semibold uppercase tracking-wider text-brand-muted">{line.label}</dt>
+                    <dd className="mt-0.5 break-words text-sm font-semibold">
+                      {line.href ? (
+                        <a
+                          href={line.href}
+                          {...(line.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                          className="text-brand-700 hover:underline"
+                        >
+                          {line.value}
+                        </a>
+                      ) : (
+                        <span className="text-brand-ink">{line.value}</span>
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
         </div>
       </Section>
 

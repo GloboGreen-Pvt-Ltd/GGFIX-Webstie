@@ -30,7 +30,7 @@ function IconAction({ title, onClick, tone, children }) {
       type="button"
       title={title}
       onClick={onClick}
-      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${tones[tone]}`}
+      className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors md:h-8 md:w-8 ${tones[tone]}`}
     >
       {children}
     </button>
@@ -84,8 +84,8 @@ export default function DataTable({
   return (
     <div className="rounded-xl border border-admin-border bg-admin-card shadow-sm">
       {searchable && (
-        <div className="p-4 border-b border-admin-border">
-          <div className="relative max-w-sm">
+        <div className="p-3 sm:p-4 border-b border-admin-border">
+          <div className="relative w-full sm:max-w-sm">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
@@ -103,7 +103,7 @@ export default function DataTable({
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="w-full min-w-[36rem] text-left text-sm">
               <thead className="bg-slate-50 border-b border-admin-border text-xs uppercase tracking-wide text-admin-muted">
                 <tr>
                   {showSerial && <th className="px-4 py-3 font-semibold w-16">S.No</th>}
@@ -126,7 +126,7 @@ export default function DataTable({
                     ))}
                     {hasActions && (
                       <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                           {onView && (
                             <IconAction tone="view" title="View" onClick={() => onView(row)}>
                               <Eye className="h-4 w-4" />

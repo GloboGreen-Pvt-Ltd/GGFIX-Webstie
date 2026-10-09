@@ -9,6 +9,7 @@ import {
   exportRepairServicesTemplateWorkbook,
   exportRepairServicesWorkbook,
 } from '@/lib/repairServicesExcel';
+import { notifyError } from '@/lib/toast';
 
 // Split a typed/pasted value into individual names on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -150,7 +151,7 @@ export default function MasterRepairServicesPage() {
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -162,7 +163,7 @@ export default function MasterRepairServicesPage() {
       await masterApi.delete(`/master/repair-services/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -195,11 +196,10 @@ export default function MasterRepairServicesPage() {
   const runExport = async (build) => {
     setExportMenu(false);
     setExporting(true);
-    setError('');
     try {
       await build();
     } catch (exportError) {
-      setError(exportError.message || 'Could not build the Excel file.');
+      notifyError(exportError.message || 'Could not build the Excel file.');
     } finally {
       setExporting(false);
     }
@@ -230,14 +230,14 @@ export default function MasterRepairServicesPage() {
   ], [categories, mainCats]);
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Repair Services</h1>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex flex-wrap items-center gap-3">
           <select
             value={filterCategory}
             onChange={(e) => { setFilterCategory(e.target.value); setFilterMain(''); }}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+            className="w-full sm:w-auto rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
           >
             <option value="">All categories</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
@@ -245,7 +245,7 @@ export default function MasterRepairServicesPage() {
           <select
             value={filterMain}
             onChange={(e) => setFilterMain(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+            className="w-full sm:w-auto rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
           >
             <option value="">All main categories</option>
             {mainCatsForFilter.map((m) => (<option key={m.id} value={m.id}>{m.name}</option>))}
@@ -259,7 +259,7 @@ export default function MasterRepairServicesPage() {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             Refresh
           </button>
-          <div className="relative" ref={exportMenuRef}>
+          <div className="xl:relative" ref={exportMenuRef}>
             <button
               type="button"
               onClick={() => setExportMenu((open) => !open)}
@@ -275,7 +275,7 @@ export default function MasterRepairServicesPage() {
             {exportMenu && (
               <div
                 role="menu"
-                className="absolute right-0 z-20 mt-1 w-72 overflow-hidden rounded-lg border border-admin-border bg-admin-card shadow-lg"
+                className="absolute right-0 z-20 mt-1 w-72 max-w-full xl:max-w-none overflow-hidden rounded-lg border border-admin-border bg-admin-card shadow-lg"
               >
                 <button
                   type="button"
@@ -354,7 +354,7 @@ export default function MasterRepairServicesPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-xl bg-admin-card border border-admin-border p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'Add issues' : 'Edit issue'}
             </h2>

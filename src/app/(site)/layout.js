@@ -1,40 +1,36 @@
 import SiteHeader from '@/components/site/SiteHeader';
 import SiteFooter from '@/components/site/SiteFooter';
 import { BRAND } from '@/lib/siteContent';
+import { DEFAULT_OG_IMAGE } from '@/lib/seo';
 
+// Each page sets its own title/description/canonical/Open Graph through
+// pageMetadata() (src/lib/seo.js); these are only the fallbacks.
 export const metadata = {
   title: {
-    default: 'GGFIX — Repair · Buy · Sell',
-    template: '%s · GGFIX',
+    default: 'Mobile Repair, Buy & Sell Devices Online | GGFIX',
+    template: '%s | GGFIX',
   },
   description:
-    'GGFIX is a platform for mobile repair shops and their customers. Book a repair, get doorstep pickup, sell your old phone to the highest-quoting shop nearby, or run your entire repair shop — bookings, technicians, staff attendance, inventory and invoices — from one app.',
+    'GGFIX offers mobile, tablet, laptop, smartwatch and audio device repair services. Book repairs, buy devices or sell your used gadgets easily.',
   applicationName: BRAND.name,
-  keywords: [
-    'mobile repair',
-    'phone repair app',
-    'doorstep phone pickup',
-    'sell old phone',
-    'repair shop software',
-    'repair shop management',
-    'GGFIX',
-    'GloboGreen',
-  ],
   authors: [{ name: BRAND.company, url: BRAND.websiteUrl }],
   openGraph: {
-    title: 'GGFIX — Repair · Buy · Sell',
+    title: 'Mobile Repair, Buy & Sell Devices Online | GGFIX',
     description:
-      'Book a repair, get doorstep pickup, sell your old phone to the highest-quoting shop nearby — or run your whole repair shop from one app.',
+      'GGFIX offers mobile, tablet, laptop, smartwatch and audio device repair services. Book repairs, buy devices or sell your used gadgets easily.',
     siteName: BRAND.name,
     type: 'website',
+    locale: 'en_IN',
+    images: [DEFAULT_OG_IMAGE],
   },
+  twitter: { card: 'summary_large_image', images: [DEFAULT_OG_IMAGE.url] },
 };
 
 export default function SiteLayout({ children }) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <SiteHeader />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 overflow-x-clip">{children}</main>
       <SiteFooter />
     </div>
   );

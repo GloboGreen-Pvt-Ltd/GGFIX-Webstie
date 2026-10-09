@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { MEDIA_UPLOAD_URL } from '@/lib/api';
+import { notifyError } from '@/lib/toast';
 
 /**
  * Image upload card. Matches the "Avatar / Upload Avatar" pattern.
@@ -45,7 +46,6 @@ export default function ImageUpload({
 }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
   const [progress, setProgress] = useState(0);
   const [source, setSource] = useState(''); // 's3' | 'base64' | ''
 
@@ -92,10 +92,9 @@ export default function ImageUpload({
   const upload = async (file) => {
     if (!file) return;
     if (file.size > maxMB * 1024 * 1024) {
-      setError(`Image is larger than ${maxMB}MB.`);
+      notifyError(`Image is larger than ${maxMB}MB.`);
       return;
     }
-    setError('');
     setUploading(true);
     setProgress(0);
     try {
@@ -116,7 +115,7 @@ export default function ImageUpload({
         if (!allowBase64Fallback) {
           // Callers that opt out would rather see the upload fail than end up
           // holding a data URI they cannot persist.
-          setError(
+          notifyError(
             `${failure.message}. Image hosting must be reachable — check /media/ping on master-data-service.`
           );
           return;
@@ -129,7 +128,7 @@ export default function ImageUpload({
       onChange?.(dataUrl);
       setSource('base64');
     } catch (e) {
-      setError(e.message || 'Upload failed');
+      notifyError(e, 'Upload failed');
     } finally {
       setUploading(false);
       setProgress(0);
@@ -210,12 +209,10 @@ export default function ImageUpload({
       ) : null}
 
       {source ? (
-        <p className="mt-2 text-[10px] text-admin-muted">
+        <p className="mt-2 break-all text-[10px] text-admin-muted">
           stored as: {source === 'base64' ? 'inline (data URI)' : source}
         </p>
       ) : null}
-
-      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
     </div>
   );
 }

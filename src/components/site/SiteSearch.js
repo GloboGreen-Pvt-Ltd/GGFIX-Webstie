@@ -119,8 +119,9 @@ function scoreRow(row, query) {
  * @param {string} [props.className]   Applied to the positioning wrapper.
  * @param {string} [props.placeholder] Overrides SEARCH_PLACEHOLDER.
  * @param {boolean} [props.autoFocus]  For the mobile menu, which opens onto it.
+ * @param {'md'|'lg'} [props.size]     'lg' is the tall pill used in the site header.
  */
-export default function SiteSearch({ className, placeholder, autoFocus = false }) {
+export default function SiteSearch({ className, placeholder, autoFocus = false, size = 'md' }) {
   const router = useRouter();
   const uid = useId();
 
@@ -315,6 +316,8 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
   const focusRing =
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2';
 
+  const large = size === 'lg';
+
   const resolvedPlaceholder =
     placeholder ||
     (typeof siteContent.SEARCH_PLACEHOLDER === 'string' && siteContent.SEARCH_PLACEHOLDER) ||
@@ -324,11 +327,15 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
     <div ref={wrapRef} className={cx('relative w-full min-w-0', className)} onBlur={handleBlur}>
       <div
         className={cx(
-          'flex items-center gap-1 rounded-2xl border border-brand-line bg-brand-page pl-4 pr-1.5 transition',
+          'flex items-center gap-1 border border-brand-line bg-brand-page transition',
+          large ? 'h-11 rounded-full pl-4 pr-1 sm:h-12 sm:pl-5' : 'rounded-2xl pl-4 pr-1.5',
           'focus-within:border-brand-600 focus-within:bg-white focus-within:shadow-soft',
         )}
       >
-        <Search className="h-4 w-4 shrink-0 text-brand-subtle" aria-hidden="true" />
+        <Search
+          className={cx('shrink-0 text-brand-subtle', large ? 'h-5 w-5' : 'h-4 w-4')}
+          aria-hidden="true"
+        />
 
         <input
           ref={inputRef}
@@ -361,7 +368,7 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
             if (isSearchable) setOpen(true);
           }}
           onKeyDown={handleKeyDown}
-          className="w-full min-w-0 bg-transparent py-2.5 pl-2.5 text-sm text-brand-ink outline-none placeholder:text-brand-subtle"
+          className="w-full min-w-0 bg-transparent py-2.5 pl-2.5 text-base text-brand-ink sm:text-sm outline-none placeholder:text-brand-subtle"
         />
 
         {query ? (
@@ -384,12 +391,13 @@ export default function SiteSearch({ className, placeholder, autoFocus = false }
           onClick={handleSearchButtonClick}
           aria-label="Search"
           className={cx(
-            'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-600 text-white transition',
+            'inline-flex shrink-0 items-center justify-center bg-brand-600 text-white transition',
             'hover:bg-brand-700',
+            large ? 'h-9 w-9 rounded-full sm:h-10 sm:w-10' : 'h-8 w-8 rounded-xl',
             focusRing,
           )}
         >
-          <Search className="h-4 w-4" aria-hidden="true" />
+          <Search className={large ? 'h-5 w-5' : 'h-4 w-4'} aria-hidden="true" />
         </button>
       </div>
 

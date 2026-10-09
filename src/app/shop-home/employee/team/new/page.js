@@ -38,7 +38,7 @@ export default function AddStaffPage() {
           type="button"
           onClick={() => router.back()}
           aria-label="Back"
-          className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E4ECE8] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]', FOCUS_RING)}
+          className={cx('flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]', FOCUS_RING)}
         >
           <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
         </button>
@@ -49,21 +49,21 @@ export default function AddStaffPage() {
         type="button"
         onClick={() => router.push('/shop-home/employee/team/new/create')}
         className={cx(
-          'flex flex-col items-center gap-2 rounded-[22px] border border-[#E4ECE8] bg-white p-7 text-center shadow-[0_8px_24px_rgba(20,80,55,0.06)] transition hover:border-[#079447] hover:shadow-[0_10px_28px_rgba(20,80,55,0.1)]',
+          'flex flex-col items-center gap-2 rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-7 text-center transition hover:border-[#079447]',
           FOCUS_RING,
         )}
       >
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#EAF9EF] text-[#0A934D]">
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#F3F3F3] text-[#0A934D]">
           <UserPlus className="h-6 w-6" aria-hidden="true" />
         </span>
         <span className="text-base font-extrabold text-[#10213D]">New Staff</span>
-        <span className="text-sm text-[#667085]">Add a new employee to your shop</span>
+        <span className="text-sm text-[#666666]">Add a new employee to your shop</span>
       </button>
 
       <div className="flex items-center gap-3">
-        <span className="h-px flex-1 bg-[#E4ECE8]" aria-hidden="true" />
+        <span className="h-px flex-1 bg-[#F3F3F3]" aria-hidden="true" />
         <span className="text-xs font-semibold text-[#98A2B3]">or find existing</span>
-        <span className="h-px flex-1 bg-[#E4ECE8]" aria-hidden="true" />
+        <span className="h-px flex-1 bg-[#F3F3F3]" aria-hidden="true" />
       </div>
 
       {/* Real, working input — but honestly inert: no confirmed
@@ -76,7 +76,7 @@ export default function AddStaffPage() {
           disabled
           title="Finding an existing employee isn't available yet — there's no confirmed search endpoint for this."
           placeholder="Search by name or phone number"
-          className="w-full cursor-not-allowed rounded-full border border-[#D0D5DD] bg-[#F9FAFB] py-3 pl-11 pr-4 text-sm text-[#98A2B3] placeholder:text-[#98A2B3]"
+          className="w-full cursor-not-allowed rounded-full border border-[#D0D5DD] bg-[#F8F8F8] py-3 pl-11 pr-4 text-sm text-[#98A2B3] placeholder:text-[#98A2B3]"
         />
       </div>
     </div>

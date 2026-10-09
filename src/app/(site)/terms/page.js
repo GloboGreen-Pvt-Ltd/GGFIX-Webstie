@@ -28,12 +28,14 @@ import {
   cx,
 } from '@/components/site/ui';
 import { BRAND, CTA, LEGAL_UPDATED } from '@/lib/siteContent';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
+export const metadata = pageMetadata({
   title: 'Terms & Conditions',
   description:
-    'The terms that govern use of the GGFIX customer app, the GGFIX shop app and the GGFIX platform operated by GloboGreen — accounts, repairs, quotations, pickup, subscriptions, KYC and liability.',
-};
+    'The terms for using GGFIX, operated by Globogreen: customer and shop accounts, repairs and quotations, doorstep pickup, subscriptions, KYC and liability.',
+  path: '/terms',
+});
 
 /* Sourced from siteContent so Terms and Privacy can never show different dates. */
 const LAST_UPDATED = `Last updated: ${LEGAL_UPDATED}`;

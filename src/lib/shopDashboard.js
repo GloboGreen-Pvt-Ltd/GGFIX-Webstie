@@ -72,6 +72,224 @@ export async function fetchTechnicians() {
   return Array.isArray(list) ? list : [];
 }
 
+/*
+ * One employee's own records (ticket-service TechnicianController — the calls
+ * the Partner app's Employee Details screen makes):
+ *   GET /technicians/{id}                         TechnicianResponse (incl. defaultCheckIn/Out, photoUrl, dateOfJoin)
+ *   GET /technicians/{id}/attendance?month&year   AttendanceSummaryResponse (presentDays, leaveDays, permissionCount, lateHours, dailyRecords)
+ *   GET /technicians/{id}/leaves?month&year       LeaveRequestResponse[]
+ *   GET /technicians/{id}/advances                SalaryAdvanceResponse[]
+ * month is 1–12.
+ */
+const techPath = (id) => `/technicians/${encodeURIComponent(id)}`;
+
+export async function fetchTechnician(id) {
+  return shopRequest(TICKET_BASE(), techPath(id));
+}
+
+export async function fetchTechnicianAttendance(id, month, year) {
+  return shopRequest(TICKET_BASE(), `${techPath(id)}/attendance?month=${month}&year=${year}`);
+}
+
+/** One day's attendance — GET /technicians/{id}/attendance/day?date=YYYY-MM-DD (AttendanceRecordResponse). */
+export async function fetchTechnicianAttendanceDay(id, date) {
+  return shopRequest(TICKET_BASE(), `${techPath(id)}/attendance/day?date=${encodeURIComponent(date)}`);
+}
+
+export async function fetchTechnicianLeaves(id, { month, year } = {}) {
+  const q = month && year ? `?month=${month}&year=${year}` : '';
+  const list = await shopRequest(TICKET_BASE(), `${techPath(id)}/leaves${q}`);
+  return Array.isArray(list) ? list : [];
+}
+
+export async function fetchTechnicianAdvances(id) {
+  const list = await shopRequest(TICKET_BASE(), `${techPath(id)}/advances`);
+  return Array.isArray(list) ? list : [];
+}
+
+/** GET /technicians/{id}/payslips?year — PayslipResponse[] (month, presentDays, netSalary, netWage…). */
+export async function fetchTechnicianPayslips(id, year) {
+  const list = await shopRequest(TICKET_BASE(), `${techPath(id)}/payslips?year=${year}`);
+  return Array.isArray(list) ? list : [];
+}
+
+/** POST /technicians/{id}/leaves — CreateLeaveRequest { leaveType, startDate, endDate, totalDays, reason }. */
+export async function createTechnicianLeave(id, body) {
+  return shopRequest(TICKET_BASE(), `${techPath(id)}/leaves`, { method: 'POST', body: JSON.stringify(body) });
+}
+
+/** GET /technicians/leaves?status= — every employee's leave requests (status optional: PENDING/APPROVED/REJECTED). */
+export async function fetchAllLeaves(status) {
+  const list = await shopRequest(TICKET_BASE(), `/technicians/leaves${status ? `?status=${encodeURIComponent(status)}` : ''}`);
+  return Array.isArray(list) ? list : [];
+}
+
+/** PATCH …/leaves/{leaveId}/approve | /reject with LeaveStatusUpdateRequest. */
+export async function decideLeave(technicianId, leaveId, approve, { remarks, rejectionReason } = {}) {
+  const action = approve ? 'approve' : 'reject';
+  return shopRequest(TICKET_BASE(), `${techPath(technicianId)}/leaves/${encodeURIComponent(leaveId)}/${action}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: approve ? 'APPROVED' : 'REJECTED', remarks: remarks || null, rejectionReason: rejectionReason || null }),
+  });
+}
+
+/** PATCH /technicians/{id} — UpdateTechnicianRequest (only the fields given change). */
+export async function updateTechnician(id, body) {
+  return shopRequest(TICKET_BASE(), techPath(id), { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+/** DELETE /technicians/{id}. */
+export async function deleteTechnician(id) {
+  return shopRequest(TICKET_BASE(), techPath(id), { method: 'DELETE' });
+}
+
+/**
+ * Assign a technician to a repair ticket — PATCH {TICKET_BASE}/tickets/{id}
+ * (ticket-service "Patch ticket (currently supports technician assignment
+ * and simple fields)"; body is a field map, keyed like TicketResponse's own
+ * assignedTechnicianId). The returned ticket is checked: if the backend
+ * didn't actually record this technician, this throws instead of letting
+ * the UI report a success that didn't happen.
+ */
+export async function assignTicketTechnician(ticketId, technicianId) {
+  const ticket = await shopRequest(TICKET_BASE(), `/tickets/${encodeURIComponent(ticketId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ assignedTechnicianId: technicianId }),
+  });
+  if (ticket && ticket.assignedTechnicianId && String(ticket.assignedTechnicianId) !== String(technicianId)) {
+    throw new Error('The ticket service did not record this technician. Please try again.');
+  }
+  if (ticket && !ticket.assignedTechnicianId) {
+    throw new Error('The ticket service returned no assigned technician — the assignment was not saved.');
+  }
+  return ticket;
+}
+
+/** One repair ticket — GET {TICKET_BASE}/tickets/{id} (TicketResponse). */
+export async function fetchTicket(ticketId) {
+  return shopRequest(TICKET_BASE(), `/tickets/${encodeURIComponent(ticketId)}`);
+}
+
+/** A ticket's Service History timeline — GET {TICKET_BASE}/tickets/{id}/events. */
+export async function fetchTicketEvents(ticketId) {
+  const rows = await shopRequest(TICKET_BASE(), `/tickets/${encodeURIComponent(ticketId)}/events`);
+  return Array.isArray(rows) ? rows : [];
+}
+
+/**
+ * Record a service-status step — POST {TICKET_BASE}/tickets/{id}/progress-events,
+ * the call the Partner app's Update Service Status sheet makes. actor=OWNER
+ * marks it as a deliberate shop-side action; the backend writes the timeline
+ * row and advances ticket.status to match (e.g. READY).
+ */
+export async function recordTicketStatus(ticketId, statusKey) {
+  return shopRequest(TICKET_BASE(), `/tickets/${encodeURIComponent(ticketId)}/progress-events`, {
+    method: 'POST',
+    body: JSON.stringify({ statusKey, actor: 'OWNER' }),
+  });
+}
+
+/** Full TicketRequest re-sent from a loaded ticket — PUT /tickets/{id} rewrites every field it carries. */
+function ticketRequestBody(ticket) {
+  return {
+    customerId: ticket.customerId,
+    customerName: ticket.customerName ?? null,
+    customerPhone: ticket.customerPhone ?? null,
+    brandId: ticket.brandId ?? null,
+    modelId: ticket.modelId ?? null,
+    ramOptionId: ticket.ramOptionId ?? null,
+    storageOptionId: ticket.storageOptionId ?? null,
+    color: ticket.color ?? null,
+    imei: ticket.imei ?? null,
+    issueDescription: ticket.issueDescription ?? null,
+    issueAudioUrl: ticket.issueAudioUrl ?? null,
+    estimatedPrice: ticket.estimatedPrice ?? null,
+    paymentType: ticket.paymentType ?? null,
+    paymentAmount: ticket.paymentAmount ?? null,
+    deviceDisplayName: ticket.deviceDisplayName ?? null,
+    deviceImageUrl: ticket.deviceImageUrl ?? null,
+    repairServicesSummary: ticket.repairServicesSummary ?? null,
+    priceItemsJson: ticket.priceItemsJson ?? null,
+    missingPartsJson: ticket.missingPartsJson ?? null,
+    devicePhotosJson: ticket.devicePhotosJson ?? null,
+    deviceSecurityType: ticket.deviceSecurityType || 'NONE',
+    deviceSecurityValue: ticket.deviceSecurityValue ?? null,
+    customerApproval: ticket.customerApproval ?? null,
+    estimatedReadyAt: ticket.estimatedReadyAt ?? null,
+    estimatedDeliveryAt: ticket.estimatedDeliveryAt ?? null,
+  };
+}
+
+/**
+ * Re-Schedule — save a new estimated ready / delivery time on the repair
+ * ticket: GET it fresh, then PUT {TICKET_BASE}/tickets/{id} with every other
+ * field unchanged. Dates are ISO strings (or null to clear); a date left
+ * undefined keeps its saved value. Status is not touched. Returns the
+ * updated TicketResponse.
+ */
+export async function updateTicketSchedule(ticketId, { estimatedReadyAt, estimatedDeliveryAt }) {
+  const ticket = await fetchTicket(ticketId);
+  if (!ticket?.id) throw new Error('Repair ticket not found.');
+  const body = ticketRequestBody(ticket);
+  if (estimatedReadyAt !== undefined) body.estimatedReadyAt = estimatedReadyAt;
+  if (estimatedDeliveryAt !== undefined) body.estimatedDeliveryAt = estimatedDeliveryAt;
+  return shopRequest(TICKET_BASE(), `/tickets/${encodeURIComponent(ticket.id)}`, { method: 'PUT', body: JSON.stringify(body) });
+}
+
+/**
+ * Save a re-estimate — the same two calls the Partner app's edit flow makes
+ * (ServiceBookingDevicesListScreen, editMode):
+ *   1. PUT {TICKET_BASE}/tickets/{id} with the full TicketRequest. PUT
+ *      rewrites every field it carries (device, lock, photos, payment...), so
+ *      everything is re-sent from the freshly loaded `ticket` and only the
+ *      price lines, estimate, services summary and approval change. The
+ *      backend emits RE_ESTIMATED_CONFIRMED and moves the ticket to QUOTED
+ *      when the price or line items changed.
+ *   2. PATCH {TICKET_BASE}/tickets/{id}/status?status=QUOTED — what the app
+ *      sends too, for statuses the backend's own move skips. Not fatal: the
+ *      re-estimate is already saved by then.
+ * `items` are { id, code, label, amount, warranty } — the priceItemsJson shape
+ * the app writes.
+ */
+export async function reEstimateTicket(ticket, { items, customerApproval }) {
+  const total = items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+  const body = {
+    customerId: ticket.customerId,
+    customerName: ticket.customerName ?? null,
+    customerPhone: ticket.customerPhone ?? null,
+    brandId: ticket.brandId ?? null,
+    modelId: ticket.modelId ?? null,
+    ramOptionId: ticket.ramOptionId ?? null,
+    storageOptionId: ticket.storageOptionId ?? null,
+    color: ticket.color ?? null,
+    imei: ticket.imei ?? null,
+    issueDescription: ticket.issueDescription ?? null,
+    issueAudioUrl: ticket.issueAudioUrl ?? null,
+    estimatedPrice: total,
+    paymentType: ticket.paymentType ?? null,
+    paymentAmount: ticket.paymentAmount ?? null,
+    deviceDisplayName: ticket.deviceDisplayName ?? null,
+    deviceImageUrl: ticket.deviceImageUrl ?? null,
+    repairServicesSummary: items.map((it) => it.label).filter(Boolean).join(', ') || null,
+    priceItemsJson: items.length ? JSON.stringify(items) : null,
+    missingPartsJson: ticket.missingPartsJson ?? null,
+    devicePhotosJson: ticket.devicePhotosJson ?? null,
+    deviceSecurityType: ticket.deviceSecurityType || 'NONE',
+    deviceSecurityValue: ticket.deviceSecurityValue ?? null,
+    customerApproval: customerApproval ?? null,
+    estimatedReadyAt: ticket.estimatedReadyAt ?? null,
+    estimatedDeliveryAt: ticket.estimatedDeliveryAt ?? null,
+  };
+  const id = encodeURIComponent(ticket.id);
+  const saved = await shopRequest(TICKET_BASE(), `/tickets/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+  try {
+    await shopRequest(TICKET_BASE(), `/tickets/${id}/status?status=QUOTED`, { method: 'PATCH' });
+  } catch {
+    // Re-estimate is saved; only the status move failed.
+  }
+  return saved;
+}
+
 /**
  * Pages through GET /tickets (Spring Page<TicketResponse>) collecting rows,
  * bounded by maxPages so a shop with an unusually large ticket history can't

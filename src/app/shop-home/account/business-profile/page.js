@@ -23,21 +23,24 @@ import BusinessLocationCard from '@/components/shop-dashboard/BusinessLocationCa
 import LocationFormModal from '@/components/shop-dashboard/LocationFormModal';
 import LocationDetailModal from '@/components/shop-dashboard/LocationDetailModal';
 import { fetchMyProfile } from '@/lib/shopProfile';
+import { readShopOwner } from '@/lib/shopAuth';
+import { isOwnerSession } from '@/lib/shopAccess';
+import { getShopPublic } from '@/lib/repairBooking';
 import { addShopLocation, deleteShopLocation, updateShopLocation } from '@/lib/shopLocations';
+import { notifyError } from '@/lib/toast';
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
 
-function ConfirmDeleteDialog({ location, busy, error, onCancel, onConfirm }) {
+function ConfirmDeleteDialog({ location, busy, onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#101828]/60 p-4">
-      <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-[0_20px_60px_rgba(16,24,40,0.25)]">
-        <h3 className="text-lg font-bold text-[#101828]">Delete this business location?</h3>
-        <p className="mt-2 text-sm text-[#667085]">
+      <div className="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white p-5 shadow-[0_20px_60px_rgba(16,24,40,0.25)] sm:p-6">
+        <h3 className="text-lg font-bold text-[#111111]">Delete this business location?</h3>
+        <p className="mt-2 break-words text-sm text-[#666666]">
           Permanently remove &ldquo;{location.name}&rdquo;. This cannot be undone.
         </p>
-        {error ? <p className="mt-3 text-sm font-medium text-red-600">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className={cx('rounded-xl border border-[#D0D5DD] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <button type="button" onClick={onCancel} className={cx('rounded-xl border border-[#D0D5DD] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}>
             Cancel
           </button>
           <button
@@ -63,33 +66,61 @@ export default function BusinessProfilePage() {
   const [viewingLoc, setViewingLoc] = useState(null);
   const [deletingLoc, setDeletingLoc] = useState(null);
   const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState('');
+
+  // OWNER: every location from GET /auth/me, with Add / Edit / Delete.
+  // SHOP login: only its own shop's public record (GET /auth/shops/{shopId}/public,
+  // shopId from the JWT session) — no owner profile, no other shops, view only.
+  const [session, setSession] = useState(undefined);
+  useEffect(() => setSession(readShopOwner()), []);
+  const owner = isOwnerSession(session);
+  const [ownShop, setOwnShop] = useState(null);
 
   const load = useCallback(() => {
     setLoadError('');
+    if (session === undefined) return Promise.resolve();
+    if (!owner) {
+      if (!session?.shopId) {
+        setLoadError('Could not identify your shop. Please sign in again.');
+        return Promise.resolve();
+      }
+      return getShopPublic(session.shopId).then((data) => {
+        if (data) setOwnShop({ ...data, id: data.id || session.shopId });
+        else setLoadError('Could not load your shop details.');
+      });
+    }
     return fetchMyProfile()
       .then((data) => setProfile(data))
       .catch((err) => setLoadError(err.message || 'Could not load your business profile.'));
-  }, []);
+  }, [session, owner]);
 
   useEffect(() => {
+    if (session === undefined) return;
     setLoading(true);
     load().finally(() => setLoading(false));
-  }, [load]);
+  }, [load, session]);
 
-  const locations = profile?.locations || [];
-  const ownerId = profile?.id;
+  const locations = owner ? profile?.locations || [] : ownShop ? [ownShop] : [];
+  const ownerId = owner ? profile?.id : null;
+
+  // ?add=1 (Switch Account → Add Shop) opens the add form once the owner is known.
+  useEffect(() => {
+    if (!ownerId) return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get('add') !== '1') return;
+    setFormState({ mode: 'add', initial: {} });
+    url.searchParams.delete('add');
+    window.history.replaceState(null, '', url);
+  }, [ownerId]);
 
   const handleDelete = async () => {
     if (!deletingLoc) return;
     setDeleting(true);
-    setDeleteError('');
     try {
       await deleteShopLocation(ownerId, deletingLoc.id);
       setDeletingLoc(null);
       await load();
     } catch (err) {
-      setDeleteError(err.body?.message || err.message || 'Delete failed.');
+      notifyError(err.body?.message || err.message || 'Delete failed.');
     } finally {
       setDeleting(false);
     }
@@ -106,18 +137,20 @@ export default function BusinessProfilePage() {
         title="Business Profile"
         subtitle="Your shop/business information"
         action={
+          !owner ? null : (
           <button
             type="button"
             onClick={() => setFormState({ mode: 'add', initial: {} })}
             disabled={!ownerId}
             className={cx(
-              'inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-60',
+              'inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60',
               FOCUS_RING,
             )}
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             Add Business Location
           </button>
+          )
         }
       />
 
@@ -128,28 +161,30 @@ export default function BusinessProfilePage() {
         </div>
       ) : null}
 
-      {loading ? (
+      {loading || session === undefined ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-[320px] animate-pulse rounded-3xl border border-[#EAECF0] bg-[#F9FAFB]" />
+            <div key={i} className="h-[320px] animate-pulse rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]" />
           ))}
         </div>
       ) : locations.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-[#EAECF0] bg-white py-16 text-center">
-          <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#F0FDF4] text-[#15803D]">
+        <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-[#ECECEC] bg-[#F8F8F8] py-16 text-center">
+          <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-[#F8F8F8] text-[#15803D]">
             <Store className="h-6 w-6" aria-hidden="true" />
           </span>
-          <p className="mt-3 text-sm font-semibold text-[#101828]">No business locations yet</p>
-          <p className="mt-1 max-w-xs text-xs text-[#667085]">Add your first shop location to start taking bookings and pickups from customers nearby.</p>
+          <p className="mt-3 text-sm font-semibold text-[#111111]">No business locations yet</p>
+          <p className="mt-1 max-w-xs text-xs text-[#666666]">Add your first shop location to start taking bookings and pickups from customers nearby.</p>
+          {owner ? (
           <button
             type="button"
             onClick={() => setFormState({ mode: 'add', initial: {} })}
             disabled={!ownerId}
-            className={cx('mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:opacity-60', FOCUS_RING)}
+            className={cx('mt-4 inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:opacity-60', FOCUS_RING)}
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             Add Business Location
           </button>
+          ) : null}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -159,14 +194,14 @@ export default function BusinessProfilePage() {
               location={loc}
               isMain={i === 0}
               onView={() => setViewingLoc(loc)}
-              onEdit={() => setFormState({ mode: 'edit', initial: loc })}
-              onDelete={() => { setDeleteError(''); setDeletingLoc(loc); }}
+              onEdit={owner ? () => setFormState({ mode: 'edit', initial: loc }) : undefined}
+              onDelete={owner ? () => setDeletingLoc(loc) : undefined}
             />
           ))}
         </div>
       )}
 
-      {formState ? (
+      {owner && formState ? (
         <LocationFormModal
           ownerId={ownerId}
           mode={formState.mode}
@@ -182,12 +217,11 @@ export default function BusinessProfilePage() {
 
       {viewingLoc ? <LocationDetailModal loc={viewingLoc} onClose={() => setViewingLoc(null)} /> : null}
 
-      {deletingLoc ? (
+      {owner && deletingLoc ? (
         <ConfirmDeleteDialog
           location={deletingLoc}
           busy={deleting}
-          error={deleteError}
-          onCancel={() => { setDeletingLoc(null); setDeleteError(''); }}
+          onCancel={() => setDeletingLoc(null)}
           onConfirm={handleDelete}
         />
       ) : null}

@@ -1,17 +1,19 @@
-import ShopLogin from '@/components/site/shoplogin';
+'use client';
 
 /**
- * Lives OUTSIDE the (site) route group on purpose — same reasoning as
- * src/app/shop-home/page.js and src/app/business/register/page.js: this page
- * has its own full-screen chrome (the premium centered login card), not the
- * marketing SiteHeader/SiteFooter. Nesting under (site) would wrap it in
- * both, doubling the header.
+ * /shopmanagement used to be a separate full-page Business Login. Business
+ * login now lives only in the Sell with GGFIX popup, so this address just
+ * forwards there (with the popup open) — old links and bookmarks keep working.
+ * A client redirect because the site is a static export (no server redirects).
  */
-export const metadata = {
-  title: 'Business Login — GGFIX',
-  description: 'Sign in to manage your GGFIX shop — bookings, inventory and orders in one place.',
-};
 
-export default function ShopManagementPage() {
-  return <ShopLogin />;
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function ShopManagementRedirect() {
+  const router = useRouter();
+  useEffect(() => {
+    router.replace('/sell-with-us/?login=1');
+  }, [router]);
+  return null;
 }

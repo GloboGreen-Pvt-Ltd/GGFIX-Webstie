@@ -3,9 +3,10 @@
 import { Suspense, useCallback, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertTriangle, Eye, EyeOff, Lock, Loader2, Mail, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, Lock, Loader2, Mail, ShieldCheck } from 'lucide-react';
 import { authApi } from '@/lib/api';
 import { setToken, setRole } from '@/lib/auth';
+import { notifyError } from '@/lib/toast';
 
 const BACKGROUND_URL = 'https://media.ggfix.in/admin/background-2.png';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -28,7 +29,6 @@ function LoginPageInner() {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // Synchronous guard against a double submit: the `submitting` STATE only
@@ -65,14 +65,13 @@ function LoginPageInner() {
       }
       if (hasError) return;
 
-      setFormError('');
       submittingRef.current = true;
       setSubmitting(true);
       try {
         const res = await authApi.post('/auth/login', { email: trimmedEmail, password });
         const token = res.accessToken || res.token;
         if (!token) {
-          setFormError('Invalid response: no token');
+          notifyError('Invalid response: no token');
           return;
         }
 
@@ -85,7 +84,7 @@ function LoginPageInner() {
         const loginType = res.loginType;
         const isStaff = loginType === 'SUPER_ADMIN' || loginType === 'MARKET_PERSON';
         if (loginType && !isStaff) {
-          setFormError(
+          notifyError(
             loginType === 'SHOP_OWNER' || loginType === 'SHOP_LOGIN'
               ? 'Shop accounts must sign in through the GGfix mobile app.'
               : 'Employee accounts must sign in through the employee app.',
@@ -115,7 +114,7 @@ function LoginPageInner() {
         } else {
           message = err.body?.message || err.message || 'Sign-in failed. Please try again.';
         }
-        setFormError(message);
+        notifyError(message);
       } finally {
         submittingRef.current = false;
         setSubmitting(false);
@@ -232,7 +231,7 @@ function LoginPageInner() {
                     onClick={() => setShowPassword((v) => !v)}
                     tabIndex={-1}
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-2 text-slate-400 hover:text-slate-600 focus:outline-none"
                   >
                     {showPassword ? <EyeOff className="h-[18px] w-[18px]" aria-hidden="true" /> : <Eye className="h-[18px] w-[18px]" aria-hidden="true" />}
                   </button>
@@ -243,17 +242,6 @@ function LoginPageInner() {
                   </p>
                 ) : null}
               </div>
-
-              {formError ? (
-                <div
-                  role="alert"
-                  aria-live="polite"
-                  className="flex items-start gap-2 rounded-[10px] border border-red-100 bg-red-50 px-3.5 py-2.5 text-sm text-red-700"
-                >
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                  <span>{formError}</span>
-                </div>
-              ) : null}
 
               <button
                 type="submit"

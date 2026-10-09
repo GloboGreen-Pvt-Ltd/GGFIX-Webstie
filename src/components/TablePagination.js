@@ -49,7 +49,7 @@ export default function TablePagination({
 
   return (
     <div className={className}>
-      <div className="flex items-center gap-2 text-sm text-admin-muted">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-admin-muted">
         <span>Rows per page</span>
         <select
           value={pageSize}
@@ -58,7 +58,7 @@ export default function TablePagination({
         >
           {pageSizes.map((s) => (<option key={s} value={s}>{s}</option>))}
         </select>
-        <span className="ml-1">
+        <span className="sm:ml-1">
           Showing {total ? start + 1 : 0} to {end} of {total} entries
         </span>
       </div>

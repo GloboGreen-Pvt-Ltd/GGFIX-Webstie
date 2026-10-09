@@ -107,25 +107,20 @@ export default function ProfitLossReportPage() {
           inside a single overflow-hidden rounded container, with the real
           Refresh/Download PDF/month-selector controls overlaid on top. */}
       <div
-        className="relative h-[105px] overflow-hidden rounded-[22px] shadow-[0_6px_20px_rgba(20,70,55,0.05)] sm:h-[116px] lg:h-[126px]"
-        style={{ background: '#F5FCF8', border: '1px solid rgba(15, 140, 90, 0.14)', isolation: 'isolate' }}
+        className="relative overflow-hidden rounded-[22px] p-6 sm:p-7"
+        style={{ background: '#F8F8F8', border: '1px solid #ECECEC', isolation: 'isolate' }}
       >
-        <Image
-          src="/profit-loss.png"
-          alt="Profit & Loss — Compare business income against expenses."
-          fill
-          sizes="100vw"
-          className="object-cover"
-          style={{ objectPosition: 'center', borderRadius: 'inherit' }}
-          priority
-        />
+        <div className="pr-0 md:pr-[420px]">
+          <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#111111] sm:text-[34px]">Profit &amp; Loss</h1>
+          <p className="mt-1 text-[14px] text-[#666666] sm:text-[15px]">Compare business income against expenses.</p>
+        </div>
 
         <div className="absolute right-3 top-3 z-[5] flex items-center gap-2">
           <button
             type="button"
             onClick={() => setReloadKey((k) => k + 1)}
             className={cx(
-              'inline-flex h-9 items-center gap-1.5 rounded-full border border-[#E4ECE8] bg-white/95 px-3 text-sm font-semibold text-[#10233F] shadow-sm backdrop-blur-sm transition hover:border-[#0BA65A] hover:text-[#0BA65A] sm:px-3.5',
+              'inline-flex h-9 items-center gap-1.5 rounded-full border border-[#ECECEC] bg-white/95 px-3 text-sm font-semibold text-[#10233F] backdrop-blur-sm transition hover:border-[#0BA65A] hover:text-[#0BA65A] sm:px-3.5',
               FOCUS_RING,
             )}
           >
@@ -137,14 +132,14 @@ export default function ProfitLossReportPage() {
             onClick={handleExport}
             disabled={loading || exporting}
             className={cx(
-              'inline-flex h-9 items-center gap-1.5 rounded-full bg-gradient-to-r from-[#22C55E] to-[#0BA65A] px-3 text-sm font-semibold text-white shadow-[0_4px_12px_rgba(11,166,90,0.28)] transition hover:from-[#16A34A] hover:to-[#087A46] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5',
+              'inline-flex h-9 items-center gap-1.5 rounded-full bg-[#F3BF23] px-3 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60 sm:px-3.5',
               FOCUS_RING,
             )}
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
             <span className="hidden sm:inline">Download PDF</span>
           </button>
-          <div className="inline-flex h-9 items-center gap-0.5 rounded-full bg-gradient-to-r from-[#22C55E] to-[#0BA65A] p-1 shadow-[0_4px_12px_rgba(11,166,90,0.28)]">
+          <div className="inline-flex h-9 items-center gap-0.5 rounded-full bg-gradient-to-r from-[#22C55E] to-[#0BA65A] p-1">
             <button
               type="button"
               onClick={goPrevMonth}

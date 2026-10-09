@@ -33,7 +33,7 @@ export default function PageHeader({ breadcrumb, title, subtitle, actions }) {
     <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0">
         {breadcrumb?.length > 0 && (
-          <nav className="mb-1 flex items-center gap-1 text-sm text-admin-muted">
+          <nav className="mb-1 flex flex-wrap items-center gap-1 text-sm text-admin-muted">
             {breadcrumb.map((crumb, i) => (
               <span key={i} className="flex items-center gap-1">
                 {i > 0 && <ChevronRight className="h-3.5 w-3.5" />}
@@ -42,10 +42,10 @@ export default function PageHeader({ breadcrumb, title, subtitle, actions }) {
             ))}
           </nav>
         )}
-        <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
+        <h1 className="break-words text-xl font-semibold text-slate-900 sm:text-2xl">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-admin-muted">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

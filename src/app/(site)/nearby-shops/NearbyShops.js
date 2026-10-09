@@ -36,6 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ExternalLink,
+  Image as ImageIcon,
   List,
   Map as MapIcon,
   MapPin,
@@ -49,6 +50,7 @@ import { Button, cx } from '@/components/site/ui';
 import { readGeo, subscribe } from '@/components/site/geo';
 import { NEARBY } from '@/lib/siteContent';
 import ShopMap from '@/components/site/nearby-shops/ShopMap';
+import LocationControl from '@/components/site/LocationControl';
 
 /* -------------------------------------------------------------------------- */
 /* Transport                                                                   */
@@ -305,7 +307,7 @@ function ShopGrid({ count, children }) {
       // "list, N items".
       role="list"
       className={cx(
-        'mx-auto mt-10 grid list-none gap-6 p-0',
+        'mx-auto mt-5 grid list-none gap-5 p-0',
         count <= 1 && 'max-w-sm',
         count === 2 && 'max-w-3xl sm:grid-cols-2',
         count === 3 && 'max-w-5xl sm:grid-cols-2 lg:grid-cols-3',
@@ -317,34 +319,54 @@ function ShopGrid({ count, children }) {
   );
 }
 
+/** Keyless Google Maps embed for one point — pan/zoom works inside the card. */
+function mapEmbedSrc(shop) {
+  const lat = Number(shop && shop.latitude);
+  const lng = Number(shop && shop.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return `https://maps.google.com/maps?q=${lat},${lng}&z=15&output=embed`;
+}
+
 /**
- * The photo header. Uses the shop's real image when the API provides one;
- * otherwise a branded gradient with the shop's initial — an obvious placeholder,
- * never a fake storefront photo.
+ * The card header. Defaults to an interactive mini map of the shop's real
+ * location; when the shop has uploaded a photo, a Map / Photo switch lets the
+ * user flip to it. With neither, a branded placeholder with the shop's initial.
  */
-function ShopPhoto({ shop, name }) {
+function ShopMedia({ shop, name }) {
   const [failed, setFailed] = useState(false);
-  const src = shopImage(shop);
+  const photo = shopImage(shop);
+  const hasPhoto = Boolean(photo) && !failed;
+  const mapSrc = mapEmbedSrc(shop);
+  const [view, setView] = useState(mapSrc ? 'map' : 'photo');
   const distance = formatDistance(shop && shop.distanceKm);
   const isOpen = shop && shop.isOpen;
+  const showMap = view === 'map' && mapSrc;
 
   return (
-    <div className="relative aspect-[16/10] w-full overflow-hidden bg-brand-soft">
-      {src && !failed ? (
+    <div className="relative aspect-[16/8] w-full shrink-0 overflow-hidden bg-brand-soft">
+      {showMap ? (
+        <iframe
+          src={mapSrc}
+          title={`Map showing ${name}`}
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+          className="h-full w-full border-0"
+        />
+      ) : hasPhoto ? (
         <img
-          src={src}
+          src={photo}
           alt={`${name} storefront`}
           loading="lazy"
           decoding="async"
           onError={() => setFailed(true)}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover transition duration-500 motion-safe:hover:scale-105"
         />
       ) : (
         <div
           className="flex h-full w-full items-center justify-center bg-gradient-to-br from-brand-100 to-brand-soft"
           aria-hidden="true"
         >
-          <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/70 text-2xl font-extrabold text-brand-700 shadow-soft">
+          <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/70 text-xl font-extrabold text-brand-700 shadow-soft">
             {shopInitial(name)}
           </span>
         </div>
@@ -355,7 +377,7 @@ function ShopPhoto({ shop, name }) {
       {typeof isOpen === 'boolean' ? (
         <span
           className={cx(
-            'absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold shadow-soft',
+            'pointer-events-none absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold shadow-soft',
             isOpen ? 'bg-brand-600 text-white' : 'bg-red-500 text-white',
           )}
         >
@@ -366,10 +388,39 @@ function ShopPhoto({ shop, name }) {
 
       {/* Distance, overlaid top-right. */}
       {distance ? (
-        <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-xs font-bold text-brand-ink shadow-soft backdrop-blur">
+        <span className="pointer-events-none absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-bold text-brand-ink shadow-soft">
           <Navigation className="h-3 w-3 text-brand-600" aria-hidden="true" />
           {distance}
         </span>
+      ) : null}
+
+      {/* Map / Photo switch — only when there is a choice to make. */}
+      {mapSrc && hasPhoto ? (
+        <div
+          role="group"
+          aria-label={`${name} view`}
+          className="absolute bottom-2.5 left-2.5 inline-flex rounded-full bg-white/95 p-0.5 shadow-soft"
+        >
+          {[
+            { key: 'map', label: 'Map', icon: MapIcon },
+            { key: 'photo', label: 'Photo', icon: ImageIcon },
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              aria-pressed={view === opt.key}
+              onClick={() => setView(opt.key)}
+              className={cx(
+                'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700',
+                view === opt.key ? 'bg-brand-600 text-white' : 'text-brand-muted hover:text-brand-ink',
+              )}
+            >
+              <opt.icon className="h-3 w-3" aria-hidden="true" />
+              {opt.label}
+            </button>
+          ))}
+        </div>
       ) : null}
     </div>
   );
@@ -382,7 +433,7 @@ function CardAction({ href, external, icon: Icon, children, srSuffix }) {
       href={href}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : null)}
       className={cx(
-        'flex flex-1 items-center justify-center gap-1.5 px-3 py-3 text-sm font-semibold text-brand-700',
+        'flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-[13px] font-semibold text-brand-700',
         'transition hover:bg-brand-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-700',
       )}
     >
@@ -404,17 +455,17 @@ function ShopCard({ shop }) {
     <li className="h-full">
       <article
         className={cx(
-          'flex h-full flex-col overflow-hidden rounded-3xl border border-brand-line bg-white shadow-soft',
+          'flex h-full flex-col overflow-hidden rounded-2xl border border-brand-line bg-white shadow-soft',
           'transition hover:border-brand-200 hover:shadow-lift motion-safe:hover:-translate-y-0.5',
         )}
       >
-        <ShopPhoto shop={shop} name={name} />
+        <ShopMedia shop={shop} name={name} />
 
-        <div className="flex flex-1 flex-col p-5">
+        <div className="flex flex-1 flex-col p-4">
           {/* Name + an external-link affordance (opens the shop on the map in a
               new tab), matching the reference store-locator card. */}
           <div className="flex items-start justify-between gap-2">
-            <h3 className="text-base font-bold leading-snug tracking-tight text-brand-ink">
+            <h3 className="min-w-0 text-[15px] font-bold leading-snug tracking-tight text-brand-ink">
               {/* break-words: shop names are user-entered and can be one long
                   unbroken string, which would otherwise scroll the page sideways. */}
               <span className="break-words">{name}</span>
@@ -436,21 +487,24 @@ function ShopCard({ shop }) {
           </div>
 
           {address ? (
-            <p className="mt-2 line-clamp-3 break-words text-sm leading-relaxed text-brand-muted">
+            <p className="mt-1 line-clamp-2 break-words text-[13px] leading-relaxed text-brand-muted">
               {address}
             </p>
           ) : null}
 
           {timings ? (
-            <p className="mt-2 text-sm text-brand-muted">
+            <p className="mt-1 text-[13px] text-brand-muted">
               Timings: <span className="font-semibold text-brand-ink">{timings}</span>
             </p>
           ) : null}
 
-          {/* mt-auto pins the action row to the bottom so cards of differing
+          {/* The flex-1 spacer pins the action row to the bottom so cards of differing
               body length still align their footers across the row. */}
           {phone || maps ? (
-            <div className="mt-5 -mx-5 -mb-5 flex items-stretch divide-x divide-brand-line border-t border-brand-line">
+            <div className="min-h-[12px] flex-1" aria-hidden="true" />
+          ) : null}
+          {phone || maps ? (
+            <div className="-mx-4 -mb-4 flex items-stretch divide-x divide-brand-line border-t border-brand-line">
               {phone ? (
                 <CardAction href={phone.href} icon={Phone} srSuffix={`— ${name}`}>
                   Call Store
@@ -490,7 +544,7 @@ function ShopSkeletons() {
       {[0, 1, 2].map((index) => (
         <li key={index}>
           <div className="overflow-hidden rounded-3xl border border-brand-line bg-white shadow-soft">
-            <div className="aspect-[16/10] w-full bg-brand-soft motion-safe:animate-pulse" />
+            <div className="aspect-[16/8] w-full bg-brand-soft motion-safe:animate-pulse" />
             <div className="p-5">
               <div className="h-5 w-2/3 rounded-full bg-brand-soft motion-safe:animate-pulse" />
               <div className="mt-3 h-4 w-full rounded-full bg-slate-100 motion-safe:animate-pulse" />
@@ -736,26 +790,28 @@ export default function NearbyShops({ className }) {
           </StatePanel>
         ) : (
           <>
-            <div className="text-center">
-              <h2 className="text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
-                {listHeading.title}
-              </h2>
-              <p className="mt-3 text-sm font-semibold text-brand-700">
-                {shops.length === 1 ? '1 shop' : `${shops.length} shops`}
-                {showingNearby ? ` within ${radiusKm} km` : ' on the platform'}
-              </p>
-            </div>
+            <div className="mx-auto flex max-w-3xl flex-col items-center justify-between gap-3 rounded-2xl border border-brand-line bg-white px-4 py-3 shadow-soft sm:flex-row">
+              <div className="text-center sm:text-left">
+                <h2 className="text-lg font-bold tracking-tight text-brand-ink">
+                  {listHeading.title}
+                </h2>
+                <p className="text-xs font-semibold text-brand-700">
+                  {shops.length === 1 ? '1 shop' : `${shops.length} shops`}
+                  {showingNearby ? ` within ${radiusKm} km` : ' on the platform'}
+                </p>
+              </div>
 
             {/* List / Map toggle. Map markers come from this SAME `shops` array
                 — no second request, and never from Google's own place search. */}
-            <div className="mt-6 flex justify-center">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <LocationControl />
               <div className="inline-flex rounded-full border border-brand-line bg-white p-1 shadow-soft">
                 <button
                   type="button"
                   onClick={() => setView('list')}
                   aria-pressed={view === 'list'}
                   className={cx(
-                    'inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition',
+                    'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition',
                     view === 'list' ? 'bg-brand-600 text-white' : 'text-brand-muted hover:text-brand-ink',
                   )}
                 >
@@ -767,7 +823,7 @@ export default function NearbyShops({ className }) {
                   onClick={() => setView('map')}
                   aria-pressed={view === 'map'}
                   className={cx(
-                    'inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition',
+                    'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition',
                     view === 'map' ? 'bg-brand-600 text-white' : 'text-brand-muted hover:text-brand-ink',
                   )}
                 >
@@ -776,9 +832,10 @@ export default function NearbyShops({ className }) {
                 </button>
               </div>
             </div>
+            </div>
 
             {view === 'map' ? (
-              <ShopMap shops={shops} geo={geo} className="mx-auto mt-6 max-w-6xl" />
+              <ShopMap shops={shops} geo={geo} className="mx-auto mt-5 max-w-6xl" />
             ) : (
               <ShopGrid count={shops.length}>
                 {shops.map((shop, index) => (
@@ -790,7 +847,7 @@ export default function NearbyShops({ className }) {
             {/* Escape hatch back to the full directory once a nearby search has
                 narrowed it — otherwise the only way out is clearing the location. */}
             {showingNearby ? (
-              <p className="mt-8 text-center">
+              <p className="mt-5 text-center">
                 <button
                   type="button"
                   onClick={() => setShowAllAnyway(true)}
@@ -808,7 +865,7 @@ export default function NearbyShops({ className }) {
 
             {/* Symmetric: having widened to "all shops", offer the way back. */}
             {!showingNearby && geo ? (
-              <p className="mt-8 text-center">
+              <p className="mt-5 text-center">
                 <button
                   type="button"
                   onClick={() => setShowAllAnyway(false)}

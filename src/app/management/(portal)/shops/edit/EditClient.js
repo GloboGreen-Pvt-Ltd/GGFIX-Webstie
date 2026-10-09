@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
 import BusinessLocationsManager from '@/components/BusinessLocationsManager';
 import SafeImage from '@/components/SafeImage';
+import { notifyError } from '@/lib/toast';
 
 const EMPTY_OWNER = {
   name: '', email: '', phone: '', secondaryMobile: '', password: '', otpCode: '',
@@ -94,15 +95,14 @@ export default function EditShopOwnerPage() {
     try {
       const url = await uploadFile(file, folder, opts);
       if (url) setField(field, url);
-    } catch (e) { setError(e.message || 'Upload failed'); }
+    } catch (e) { notifyError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [field]: false })); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     if (!owner.name.trim() || !owner.email.trim()) {
-      setError('Owner name and email are required');
+      notifyError('Owner name and email are required');
       return;
     }
     setSubmitting(true);
@@ -134,7 +134,7 @@ export default function EditShopOwnerPage() {
       await authApi.patch(`/auth/shop-owners/${id}`, payload);
       router.push(`/management/shops/view/?id=${id}`);
     } catch (e) {
-      setError(e.body?.message || e.message || 'Update failed');
+      notifyError(e.body?.message || e.message || 'Update failed');
     } finally {
       setSubmitting(false);
     }
@@ -150,8 +150,8 @@ export default function EditShopOwnerPage() {
   if (loading) return <div className="p-6 text-admin-muted">Loading…</div>;
 
   return (
-    <div className="space-y-4 pb-24">
-      <div className="flex items-center justify-between">
+    <div className="p-4 pb-24 sm:p-6 sm:pb-24 md:p-8 md:pb-24 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Edit Shop Owner</h1>
           <p className="text-sm text-admin-muted">Update the owner account profile and business locations.</p>
@@ -235,7 +235,7 @@ export default function EditShopOwnerPage() {
 
         {error && <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-2 text-sm text-red-500">{error}</div>}
 
-        <div className="flex items-center justify-end gap-3 sticky bottom-4 bg-admin-card border border-admin-border rounded-xl p-3">
+        <div className="flex flex-wrap items-center justify-end gap-3 sticky bottom-4 bg-admin-card border border-admin-border rounded-xl p-3">
           <Link href={`/management/shops/view/?id=${id}`} className="rounded-lg border border-admin-border px-4 py-2 text-sm text-slate-800 hover:bg-admin-dark">
             ← Cancel
           </Link>
@@ -285,7 +285,7 @@ function UploadCard({ label, hint, url, uploading, onFile, accept, buttonText })
   const isImg = url && (/\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(url) || url.startsWith('data:image'));
   return (
     <div className="rounded-lg border border-admin-border bg-admin-dark/40 p-3 flex flex-col">
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between gap-2 mb-1">
         <span className="text-xs font-semibold text-slate-800">{label}</span>
         {url && <a href={url} target="_blank" rel="noreferrer" className="text-[10px] text-sky-400 hover:underline">Open</a>}
       </div>
@@ -296,7 +296,7 @@ function UploadCard({ label, hint, url, uploading, onFile, accept, buttonText })
             <SafeImage
               src={url}
               alt={label}
-              className="max-h-20 object-contain"
+              className="max-h-20 max-w-full object-contain"
               placeholderClassName="text-[11px] text-admin-muted italic px-2 text-center"
               placeholderText="Image unavailable"
             />

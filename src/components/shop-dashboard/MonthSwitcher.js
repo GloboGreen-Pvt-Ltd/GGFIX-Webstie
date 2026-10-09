@@ -24,13 +24,13 @@ export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', '
 export default function MonthSwitcher({ viewDate, onPrev, onNext, label = 'This Month' }) {
   return (
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm font-bold text-[#101828]">{label}</p>
+      <p className="text-sm font-bold text-[#111111]">{label}</p>
       <div className="inline-flex items-center gap-0.5 rounded-full bg-[#15803D] p-1">
         <button
           type="button"
           onClick={onPrev}
           aria-label="Previous month"
-          className={cx('flex h-7 w-7 items-center justify-center rounded-full text-white transition hover:bg-white/15', FOCUS_RING)}
+          className={cx('flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/15 xl:h-7 xl:w-7', FOCUS_RING)}
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -41,7 +41,7 @@ export default function MonthSwitcher({ viewDate, onPrev, onNext, label = 'This 
           type="button"
           onClick={onNext}
           aria-label="Next month"
-          className={cx('flex h-7 w-7 items-center justify-center rounded-full text-white transition hover:bg-white/15', FOCUS_RING)}
+          className={cx('flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/15 xl:h-7 xl:w-7', FOCUS_RING)}
         >
           <ChevronRight className="h-4 w-4" aria-hidden="true" />
         </button>

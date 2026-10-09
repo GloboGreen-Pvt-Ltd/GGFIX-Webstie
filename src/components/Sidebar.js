@@ -13,7 +13,7 @@ import {
   FolderTree, Puzzle, LayoutGrid,
   ShoppingCart, ClipboardList, SlidersHorizontal, AlertTriangle, Settings2,
   ShoppingBag, Package,
-  ChevronRight, ChevronDown, ChevronLeft, LogOut,
+  ChevronRight, ChevronDown, ChevronLeft, LogOut, X,
 } from 'lucide-react';
 
 const nav = [
@@ -76,9 +76,12 @@ const nav = [
   },
 ];
 
-export default function Sidebar({ onLogout }) {
+export default function Sidebar({ onLogout, mobileOpen = false, onCloseMobile }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
+  const [railCollapsed, setCollapsed] = useState(false);
+  // Below md the sidebar is an off-canvas drawer (opened from the layout's
+  // menu button), always at full width — the icon rail is tablet/desktop only.
+  const collapsed = railCollapsed && !mobileOpen;
 
   // Accordion: only ONE group open at a time. Starts on the section that
   // contains the active route; opening another group closes the current one.
@@ -178,8 +181,14 @@ export default function Sidebar({ onLogout }) {
     }`;
 
   return (
+    <>
+    {mobileOpen && (
+      <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={onCloseMobile} aria-hidden="true" />
+    )}
     <aside
-      className={`${collapsed ? 'w-[68px]' : 'w-64'} shrink-0 bg-admin-panel border-r border-white/10 flex flex-col transition-[width] duration-200`}
+      className={`${collapsed ? 'md:w-[68px]' : 'md:w-64'} fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] shrink-0 bg-admin-panel border-r border-white/10 flex flex-col transition-transform duration-200 md:static md:z-auto md:max-w-none md:translate-x-0 md:transition-[width] ${
+        mobileOpen ? 'translate-x-0' : '-translate-x-full'
+      }`}
     >
       {/* Brand header */}
       <div className="relative flex items-center gap-3 px-4 h-16 border-b border-white/10">
@@ -196,10 +205,20 @@ export default function Sidebar({ onLogout }) {
           type="button"
           onClick={() => setCollapsed((c) => !c)}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-admin-panel border border-white/15 text-slate-300 hover:text-white hover:bg-white/10"
+          className="absolute -right-3 top-1/2 -translate-y-1/2 z-10 hidden md:flex h-6 w-6 items-center justify-center rounded-full bg-admin-panel border border-white/15 text-slate-300 hover:text-white hover:bg-white/10"
         >
           <ChevronLeft className={`h-4 w-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
         </button>
+        {onCloseMobile && (
+          <button
+            type="button"
+            onClick={onCloseMobile}
+            aria-label="Close menu"
+            className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-300 hover:bg-white/10 hover:text-white md:hidden"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 space-y-1">
@@ -335,5 +354,6 @@ export default function Sidebar({ onLogout }) {
         </div>
       )}
     </aside>
+    </>
   );
 }

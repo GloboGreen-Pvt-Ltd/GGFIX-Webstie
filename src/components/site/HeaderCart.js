@@ -29,7 +29,7 @@ import { getCart } from '@/lib/customerAccount';
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2';
 
-export default function HeaderCart({ className }) {
+export default function HeaderCart({ className, size = 'md' }) {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
@@ -69,7 +69,8 @@ export default function HeaderCart({ className }) {
       href="/account/cart"
       aria-label={count > 0 ? `Cart, ${count} item${count === 1 ? '' : 's'}` : 'Cart'}
       className={cx(
-        'relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand-line',
+        'relative inline-flex shrink-0 items-center justify-center border border-brand-line bg-white',
+        size === 'lg' ? 'h-11 w-11 rounded-full' : 'h-10 w-10 rounded-xl',
         'text-brand-ink transition hover:bg-brand-soften',
         FOCUS_RING,
         className,

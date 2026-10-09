@@ -34,7 +34,7 @@ const SUMMARY_CARDS = [
     helper: 'Employees scheduled today',
     icon: Users,
     watermark: Users,
-    tint: 'bg-gradient-to-br from-[#EAFBF3] to-[#DDF6E9]',
+    tint: 'bg-[#F3F3F3]',
     iconTone: 'bg-gradient-to-br from-[#18B96A] to-[#0BA65A]',
     valueColor: 'text-[#10233F]',
     watermarkColor: 'text-[#0BA65A]',
@@ -45,7 +45,7 @@ const SUMMARY_CARDS = [
     helper: 'Employees who checked in today',
     icon: LogIn,
     watermark: Users,
-    tint: 'bg-gradient-to-br from-[#EEF7FF] to-[#DFEFFE]',
+    tint: 'bg-[#F8F8F8]',
     iconTone: 'bg-gradient-to-br from-[#5EB6FA] to-[#2196F3]',
     valueColor: 'text-[#10233F]',
     watermarkColor: 'text-[#2196F3]',
@@ -56,7 +56,7 @@ const SUMMARY_CARDS = [
     helper: 'Employees who checked out today',
     icon: LogOut,
     watermark: Users,
-    tint: 'bg-gradient-to-br from-[#FFF7EC] to-[#FEEBD3]',
+    tint: 'bg-[#F8F8F8]',
     iconTone: 'bg-gradient-to-br from-[#FFB35C] to-[#FF9C1A]',
     valueColor: 'text-[#10233F]',
     watermarkColor: 'text-[#FF9C1A]',
@@ -67,7 +67,7 @@ const SUMMARY_CARDS = [
     helper: 'Employees yet to start their shift',
     icon: Clock,
     watermark: Users,
-    tint: 'bg-gradient-to-br from-[#F5F0FE] to-[#EBE1FD]',
+    tint: 'bg-[#F8F8F8]',
     iconTone: 'bg-gradient-to-br from-[#A78BFA] to-[#8A5CF5]',
     valueColor: 'text-[#10233F]',
     watermarkColor: 'text-[#8A5CF5]',
@@ -87,19 +87,10 @@ export default function ShiftManagementPage() {
           artwork as one finished scene, so no HTML title/subtitle is
           duplicated on top of it. Border/radius/shadow live on this one
           outer box only. */}
-      <div
-        className="relative h-[120px] overflow-hidden rounded-[22px] shadow-[0_8px_24px_rgba(20,70,55,0.06)] sm:h-[140px] lg:h-[150px]"
-        style={{ border: '1px solid rgba(15, 140, 90, 0.14)', background: '#F5FCF8', isolation: 'isolate' }}
-      >
-        <Image
-          src="/images/shift-management-banner.png"
-          alt="Shift Management — View employee schedules and daily working hours."
-          fill
-          sizes="100vw"
-          className="object-cover"
-          style={{ objectPosition: 'center', borderRadius: 'inherit' }}
-          priority
-        />
+      {/* Plain grey banner (the picture banner was removed on request). */}
+      <div className="rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-6 sm:p-7">
+        <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#111111] sm:text-[34px]">Shift Management</h1>
+        <p className="mt-1 text-[14px] text-[#666666] sm:text-[15px]">View employee schedules and daily working hours.</p>
       </div>
 
       {/* ---- Summary cards -------------------------------------------- */}
@@ -108,12 +99,12 @@ export default function ShiftManagementPage() {
           <div
             key={card.key}
             className={cx(
-              'relative flex h-[145px] flex-col overflow-hidden rounded-[20px] border border-[rgba(15,80,60,0.06)] p-5 shadow-[0_8px_24px_rgba(20,70,55,0.06)]',
+              'relative flex h-[145px] flex-col overflow-hidden rounded-[20px] border border-[#ECECEC] p-5',
               card.tint,
             )}
           >
             <card.watermark className={cx('pointer-events-none absolute -bottom-4 -right-4 h-24 w-24 opacity-20', card.watermarkColor)} aria-hidden="true" />
-            <span className={cx('relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_6px_14px_rgba(0,0,0,0.1)]', card.iconTone)}>
+            <span className={cx('relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white', card.iconTone)}>
               <card.icon className="h-5 w-5" aria-hidden="true" />
             </span>
             <p className={cx('relative mt-3 text-[15px] font-bold leading-tight', card.valueColor)}>{card.label}</p>
@@ -124,9 +115,9 @@ export default function ShiftManagementPage() {
       </div>
 
       {/* ---- Today panel ------------------------------------------------ */}
-      <section className="overflow-hidden rounded-[22px] border border-[rgba(15,80,60,0.06)] bg-white shadow-[0_10px_28px_rgba(20,70,55,0.06)]">
-        <div className="border-b border-[#EEF3F0] px-5 py-4 sm:px-6">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#18B96A] to-[#0BA65A] px-4 py-2 text-sm font-bold text-white shadow-[0_4px_12px_rgba(11,166,90,0.28)]">
+      <section className="overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8]">
+        <div className="border-b border-[#ECECEC] px-5 py-4 sm:px-6">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#18B96A] to-[#0BA65A] px-4 py-2 text-sm font-bold text-white">
             <CalendarDays className="h-4 w-4" aria-hidden="true" />
             Today
           </span>
@@ -137,7 +128,6 @@ export default function ShiftManagementPage() {
             <span className="pointer-events-none absolute inset-0 rounded-full bg-[#F3F0FE]" aria-hidden="true" />
             <Leaf className="pointer-events-none absolute -left-2 top-1 h-4 w-4 -rotate-45 text-[#0BA65A]/60" aria-hidden="true" />
             <Leaf className="pointer-events-none absolute -right-2 bottom-1 h-4 w-4 rotate-[135deg] text-[#0BA65A]/60" aria-hidden="true" />
-            <span className="pointer-events-none absolute -top-1 right-1 h-2 w-2 rounded-full bg-[#2196F3]/50" aria-hidden="true" />
             <Clock className="relative h-8 w-8 text-[#8A5CF5]" aria-hidden="true" />
           </div>
           <p className="mt-4 text-[17px] font-bold text-[#10233F]">Not available yet</p>

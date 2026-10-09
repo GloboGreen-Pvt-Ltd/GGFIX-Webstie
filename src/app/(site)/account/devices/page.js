@@ -4,10 +4,16 @@
  * Customer saved devices. Add and edit share the customer app's data path:
  * master-data supplies the category/brand/model hierarchy and user-service
  * owns the saved-device record, so both client surfaces stay in sync.
+ *
+ * Cards show the model's catalogue photo (GET /master/brands/{id}/models,
+ * matched by modelId; the category icon when there is none), the name without
+ * a repeated brand, colour / RAM-storage / IMEI chips and a Default ribbon.
+ * "Add a new device" is a dashed tile at the end of the grid.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  CheckCircle2,
   Hash,
   HardDrive,
   Headphones,
@@ -32,6 +38,9 @@ import {
   Chip,
   Panel,
 } from '@/components/site/account/ui';
+import { notifyError } from '@/lib/toast';
+import { masterApi } from '@/lib/api';
+import { resolveMediaUrl } from '@/lib/deviceImage';
 
 const CATEGORIES = [
   { code: 'ALL', label: 'All' },
@@ -66,47 +75,79 @@ const canonicalCode = (code) => {
   return CODE_ALIASES[normalized] || normalized || 'OTHER';
 };
 
+/** "Apple iPhone 11" — the brand only when the model name doesn't already start with it. */
 function deviceName(device) {
-  return [device.brandName, device.modelName].filter(Boolean).join(' ') || device.modelName || 'Saved device';
+  const brand = String(device.brandName || '').trim();
+  const model = String(device.modelName || '').trim();
+  if (!model) return brand || 'Saved device';
+  return brand && !model.toLowerCase().startsWith(brand.toLowerCase()) ? `${brand} ${model}` : model;
 }
 
-function DeviceCard({ device, onSetDefault, onEdit, onDelete, busy }) {
-  const Icon = CAT_ICON[canonicalCode(device.categoryCode)] || Smartphone;
+const CAT_LABEL = Object.fromEntries(CATEGORIES.filter((c) => c.code !== 'ALL').map((c) => [c.code, c.label.replace(/s$/, '')]));
+
+function SpecChip({ icon: Icon, children }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-brand-line bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-brand-ink">
+      {Icon ? <Icon className="h-3.5 w-3.5 text-brand-600" aria-hidden="true" /> : null}
+      {children}
+    </span>
+  );
+}
+
+function DevicePhoto({ url, icon: Icon }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <span className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-brand-50 to-brand-soft">
+      {url && !broken ? (
+        // eslint-disable-next-line @next/next/no-img-element -- master-data model photo.
+        <img src={url} alt="" onError={() => setBroken(true)} className="h-full w-full object-contain p-2" />
+      ) : (
+        <Icon className="h-9 w-9 text-brand-700" aria-hidden="true" />
+      )}
+    </span>
+  );
+}
+
+function DeviceCard({ device, image, onSetDefault, onEdit, onDelete, busy }) {
+  const code = canonicalCode(device.categoryCode);
+  const Icon = CAT_ICON[code] || Smartphone;
   const spec = [device.ramLabel, device.storageLabel].filter(Boolean).join(' / ');
 
   return (
-    <Panel className="p-4 sm:p-5" highlight={device.isDefault}>
-      <div className="flex items-start gap-3.5">
-        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-700">
-          <Icon className="h-5 w-5" aria-hidden="true" />
+    <Panel className="relative overflow-hidden p-4" highlight={device.isDefault}>
+      {device.isDefault ? (
+        <span className="absolute right-0 top-0 inline-flex items-center gap-1 rounded-bl-2xl bg-brand-600 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wide text-white">
+          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+          Default
         </span>
+      ) : null}
+      <div className="flex items-center gap-4">
+        <DevicePhoto url={image} icon={Icon} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-[0.95rem] font-bold text-brand-ink">{deviceName(device)}</p>
-            {device.isDefault ? (
-              <span className="inline-flex items-center rounded-full bg-brand-soft px-2 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-brand-700">Default</span>
-            ) : null}
+          <p className="text-[0.68rem] font-bold uppercase tracking-wider text-brand-600">{CAT_LABEL[code] || 'Device'}</p>
+          <p className="mt-0.5 truncate text-[1.02rem] font-extrabold text-brand-ink" title={deviceName(device)}>
+            {deviceName(device)}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {device.color ? <SpecChip>{device.color}</SpecChip> : null}
+            {spec ? <SpecChip icon={HardDrive}>{spec}</SpecChip> : null}
+            {device.imei ? <SpecChip icon={Hash}>{device.imei}</SpecChip> : null}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-brand-muted">
-            {device.color ? <span>{device.color}</span> : null}
-            {spec ? <span className="inline-flex items-center gap-1"><HardDrive className="h-3.5 w-3.5" aria-hidden="true" />{spec}</span> : null}
-            {device.imei ? <span className="inline-flex items-center gap-1"><Hash className="h-3.5 w-3.5" aria-hidden="true" />{device.imei}</span> : null}
-          </div>
-          {device.note ? <p className="mt-1.5 line-clamp-2 text-xs text-brand-muted">Note: {device.note}</p> : null}
+          {device.note ? <p className="mt-2 line-clamp-1 text-xs text-brand-muted">Note: {device.note}</p> : null}
         </div>
       </div>
 
-      <div className="mt-4 flex items-center gap-1 border-t border-brand-line pt-3 text-sm">
-        <button type="button" onClick={() => onEdit(device)} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-semibold text-sky-700 transition hover:bg-sky-50 disabled:opacity-50">
-          <Pencil className="h-4 w-4" aria-hidden="true" />Edit
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-brand-line pt-3">
+        <button type="button" onClick={() => onEdit(device)} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full border border-brand-line px-3 py-1.5 text-xs font-bold [@media(pointer:coarse)]:min-h-10 text-brand-ink transition hover:border-brand-600 hover:text-brand-700 disabled:opacity-50">
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />Edit
         </button>
         {!device.isDefault ? (
-          <button type="button" onClick={() => onSetDefault(device)} disabled={busy} className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-semibold text-amber-600 transition hover:bg-amber-50 disabled:opacity-50">
-            <Star className="h-4 w-4" aria-hidden="true" />Set default
+          <button type="button" onClick={() => onSetDefault(device)} disabled={busy} className="inline-flex items-center gap-1.5 rounded-full border border-brand-line px-3 py-1.5 text-xs font-bold [@media(pointer:coarse)]:min-h-10 text-amber-700 transition hover:border-amber-400 hover:bg-amber-50 disabled:opacity-50">
+            <Star className="h-3.5 w-3.5" aria-hidden="true" />Set default
           </button>
         ) : null}
-        <button type="button" onClick={() => onDelete(device)} disabled={busy} className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50">
-          <Trash2 className="h-4 w-4" aria-hidden="true" />Delete
+        <button type="button" onClick={() => onDelete(device)} disabled={busy} aria-label={`Delete ${deviceName(device)}`} title="Delete" className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-red-600 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10 transition hover:bg-red-50 disabled:opacity-50">
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
     </Panel>
@@ -136,6 +177,27 @@ export default function ManageDevicePage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Catalogue photo per saved device (one models call per brand).
+  const [photos, setPhotos] = useState({});
+  useEffect(() => {
+    const brandIds = [...new Set(devices.map((d) => d.brandId).filter(Boolean).map(String))];
+    if (!brandIds.length) return undefined;
+    let alive = true;
+    Promise.all(brandIds.map((id) => masterApi.get(`/master/brands/${encodeURIComponent(id)}/models`).catch(() => [])))
+      .then((lists) => {
+        if (!alive) return;
+        const map = {};
+        lists.flatMap((l) => (Array.isArray(l) ? l : l?.content || [])).forEach((m) => {
+          const url = resolveMediaUrl(m.imageUrl) || (m.imageBase64 ? `data:image/png;base64,${m.imageBase64}` : null);
+          if (m?.id && url) map[String(m.id).toLowerCase()] = url;
+        });
+        setPhotos(map);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [devices]);
+
   const counts = useMemo(() => {
     const map = { ALL: devices.length };
     devices.forEach((device) => {
@@ -160,7 +222,7 @@ export default function ManageDevicePage() {
       await setDefaultDevice(device.id);
       await load();
     } catch (cause) {
-      setError(cause?.message || 'Could not update the default device.');
+      notifyError(cause, 'Could not update the default device.');
     } finally {
       setMutating(false);
     }
@@ -173,7 +235,7 @@ export default function ManageDevicePage() {
       await deleteDevice(device.id);
       await load();
     } catch (cause) {
-      setError(cause?.message || 'Could not delete this device.');
+      notifyError(cause, 'Could not delete this device.');
     } finally {
       setMutating(false);
     }
@@ -228,14 +290,29 @@ export default function ManageDevicePage() {
               />
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   {visible.map((device) => (
-                    <DeviceCard key={device.id} device={device} busy={mutating} onSetDefault={onSetDefault} onEdit={setEditor} onDelete={onDelete} />
+                    <DeviceCard
+                      key={device.id}
+                      device={device}
+                      image={photos[String(device.modelId || '').toLowerCase()]}
+                      busy={mutating}
+                      onSetDefault={onSetDefault}
+                      onEdit={setEditor}
+                      onDelete={onDelete}
+                    />
                   ))}
-                </div>
-                <div className="mt-4 flex flex-col items-center gap-2 rounded-2xl border border-dashed border-brand-strong bg-brand-50/40 px-5 py-6 text-center sm:flex-row sm:justify-between sm:text-left">
-                  <div><p className="text-sm font-bold text-brand-ink">Add a new device</p><p className="text-xs text-brand-muted">Pick a category, brand, model and configuration.</p></div>
-                  <Button onClick={() => setEditor({})} variant="outline" size="sm" icon={Plus} iconPosition="left">Add device</Button>
+                  <button
+                    type="button"
+                    onClick={() => setEditor({})}
+                    className="group flex min-h-[176px] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-brand-strong bg-brand-50/40 p-5 text-center transition hover:border-brand-600 hover:bg-brand-50"
+                  >
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600 text-white shadow-soft transition group-hover:scale-105">
+                      <Plus className="h-6 w-6" aria-hidden="true" />
+                    </span>
+                    <span className="text-sm font-extrabold text-brand-ink">Add a new device</span>
+                    <span className="text-xs text-brand-muted">Pick a category, brand, model and configuration.</span>
+                  </button>
                 </div>
               </>
             )}

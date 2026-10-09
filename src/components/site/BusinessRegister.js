@@ -243,7 +243,7 @@ export default function BusinessRegister() {
             <LocationControl className="hidden sm:flex" />
             <span className="hidden text-sm text-brand-muted md:inline">Already have a business account?</span>
             <Link
-              href="/shopmanagement"
+              href="/sell-with-us/?login=1"
               className={cx(
                 'inline-flex items-center gap-1.5 rounded-xl border border-brand-line px-3.5 py-2 text-sm font-semibold text-brand-ink transition hover:border-brand-300 hover:bg-brand-soften',
                 FOCUS_RING,

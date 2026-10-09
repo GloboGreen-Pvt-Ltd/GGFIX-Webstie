@@ -24,7 +24,7 @@ function DetailRow({ icon: Icon, label, value }) {
       {Icon ? <Icon className="mt-0.5 h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" /> : null}
       <div className="min-w-0">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-[#98A2B3]">{label}</p>
-        <p className="break-words text-sm font-medium text-[#101828]">{value ?? '—'}</p>
+        <p className="break-words text-sm font-medium text-[#111111]">{value ?? '—'}</p>
       </div>
     </div>
   );
@@ -32,9 +32,9 @@ function DetailRow({ icon: Icon, label, value }) {
 
 function DocPreview({ label, url }) {
   return (
-    <div className="rounded-xl border border-[#EAECF0] bg-[#F9FAFB] p-3">
+    <div className="rounded-xl border border-[#ECECEC] bg-[#F8F8F8] p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#667085]">{label}</span>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-[#666666]">{label}</span>
         {url && <a href={url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold text-[#15803D] hover:underline">Open</a>}
       </div>
       {url ? (
@@ -69,23 +69,23 @@ export default function LocationDetailModal({ loc, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#101828]/60 p-4">
-      <div className="my-8 w-full max-w-2xl rounded-3xl bg-white shadow-[0_20px_60px_rgba(16,24,40,0.25)]">
-        <div className="flex items-center justify-between border-b border-[#EAECF0] px-5 py-4 sm:px-6">
+      <div className="my-auto w-full max-w-2xl rounded-3xl sm:my-8 bg-white shadow-[0_20px_60px_rgba(16,24,40,0.25)]">
+        <div className="flex items-center justify-between border-b border-[#ECECEC] px-5 py-4 sm:px-6">
           <div>
-            <h3 className="text-lg font-bold text-[#101828]">{loc.name}</h3>
-            <p className="text-xs text-[#667085]">Business location details and documents.</p>
+            <h3 className="text-lg font-bold text-[#111111]">{loc.name}</h3>
+            <p className="text-xs text-[#666666]">Business location details and documents.</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className={cx('rounded-full p-1.5 text-[#667085] transition hover:bg-[#F9FAFB] hover:text-[#101828]', FOCUS_RING)}
+            className={cx('rounded-full p-1.5 text-[#666666] transition hover:bg-[#F8F8F8] hover:text-[#111111]', FOCUS_RING)}
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="max-h-[70vh] space-y-5 overflow-y-auto p-5 sm:p-6">
+        <div className="max-h-[70dvh] space-y-5 overflow-y-auto p-5 sm:p-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <DetailRow icon={Phone} label="Mobile" value={loc.mobile} />
             <DetailRow icon={CreditCard} label="GST Number" value={loc.gstNumber} />
@@ -97,7 +97,7 @@ export default function LocationDetailModal({ loc, onClose }) {
 
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <h4 className="text-sm font-bold text-[#101828]">Shop Documents</h4>
+              <h4 className="text-sm font-bold text-[#111111]">Shop Documents</h4>
               <span className="text-xs font-semibold text-[#15803D]">{loc.progressPercent ?? 0}% complete</span>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -106,8 +106,8 @@ export default function LocationDetailModal({ loc, onClose }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-[#EAECF0] px-5 py-4 sm:px-6">
-          <button type="button" onClick={onClose} className={cx('rounded-xl border border-[#D0D5DD] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}>
+        <div className="flex items-center justify-end gap-2 border-t border-[#ECECEC] px-5 py-4 sm:px-6">
+          <button type="button" onClick={onClose} className={cx('rounded-xl border border-[#D0D5DD] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}>
             Close
           </button>
         </div>

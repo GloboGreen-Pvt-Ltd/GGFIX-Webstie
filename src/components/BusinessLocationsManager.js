@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
 import SafeImage from '@/components/SafeImage';
+import { notifyError } from '@/lib/toast';
 
 /**
  * The full "Business Locations" table + add/edit/view/delete flow for one
@@ -174,7 +175,7 @@ function IconEye() {
 function ConfirmModal({ title, message, confirmLabel, onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-      <div className="bg-admin-card border border-admin-border rounded-xl p-6 max-w-sm w-full space-y-4">
+      <div className="bg-admin-card border border-admin-border rounded-xl p-5 sm:p-6 max-w-sm w-full space-y-4">
         <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
         <p className="text-sm text-admin-muted">{message}</p>
         <div className="flex justify-end gap-2">
@@ -200,13 +201,13 @@ function LocationViewModal({ loc, onClose }) {
   ];
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-admin-card border border-admin-border rounded-xl max-w-3xl w-full my-8">
+      <div className="bg-admin-card border border-admin-border rounded-xl max-w-3xl w-full my-auto sm:my-8">
         <div className="flex items-center justify-between px-5 py-4 border-b border-admin-border">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">{loc.name}</h3>
             <p className="text-xs text-admin-muted">Business location details, documents, and KYC.</p>
           </div>
-          <button type="button" onClick={onClose} className="text-admin-muted hover:text-slate-800 text-xl leading-none">×</button>
+          <button type="button" onClick={onClose} className="-mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-admin-muted hover:text-slate-800 text-xl leading-none" aria-label="Close">×</button>
         </div>
         <div className="p-5 space-y-5">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -281,7 +282,6 @@ function UploadCard({ label, hint, url, uploading, onFile, accept }) {
 function LocationModal({ ownerId, mode, initial, onClose, onSaved }) {
   const [form, setForm] = useState(() => ({ ...EMPTY_LOC, ...initial, latitude: initial.latitude ?? '', longitude: initial.longitude ?? '' }));
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
   const [uploading, setUploading] = useState({});
   const [autoCoords, setAutoCoords] = useState(null);
   const [locating, setLocating] = useState(false);
@@ -360,7 +360,6 @@ function LocationModal({ ownerId, mode, initial, onClose, onSaved }) {
         setField('latitude', String(result.latitude));
         setField('longitude', String(result.longitude));
         setAutoCoords({ latitude: result.latitude, longitude: result.longitude });
-        setError('');
       } else {
         const msg = {
           denied:      'Location permission was blocked. Click the lock/info icon left of the URL → Site settings → set Location to Allow → reload. Or use the 🗺 Find on Google Maps link to paste coords manually.',
@@ -369,7 +368,7 @@ function LocationModal({ ownerId, mode, initial, onClose, onSaved }) {
           unsupported: 'This browser does not support geolocation. Paste coords manually.',
           unknown:     'Could not get your current location. Use the 🗺 Find on Google Maps link to look up coords manually.',
         }[result.reason] || 'Could not get your current location.';
-        setError(msg);
+        notifyError(msg);
       }
     } finally {
       setLocating(false);
@@ -389,7 +388,7 @@ function LocationModal({ ownerId, mode, initial, onClose, onSaved }) {
       const url = await uploadFile(file, folder, opts);
       if (url) setField(field, url);
     } catch (e) {
-      setError(e.message || 'Upload failed');
+      notifyError(e.message || 'Upload failed');
     } finally {
       setUploading((u) => ({ ...u, [field]: false }));
     }
@@ -397,8 +396,7 @@ function LocationModal({ ownerId, mode, initial, onClose, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    setError('');
-    if (!form.name.trim()) { setError('Shop / Location Name is required'); return; }
+    if (!form.name.trim()) { notifyError('Shop / Location Name is required'); return; }
     setSubmitting(true);
     try {
       const payload = { ...form,
@@ -420,7 +418,7 @@ function LocationModal({ ownerId, mode, initial, onClose, onSaved }) {
       }
       onSaved();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Save failed');
+      notifyError(e.body?.message || e.message || 'Save failed');
     } finally {
       setSubmitting(false);
     }
@@ -428,13 +426,13 @@ function LocationModal({ ownerId, mode, initial, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <form onSubmit={submit} className="bg-admin-card border border-admin-border rounded-xl max-w-4xl w-full my-8">
+      <form onSubmit={submit} className="bg-admin-card border border-admin-border rounded-xl max-w-4xl w-full my-auto sm:my-8">
         <div className="flex items-center justify-between px-5 py-4 border-b border-admin-border">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">{isEdit ? 'Edit Business Location' : 'New Business Location'}</h3>
             <p className="text-xs text-admin-muted">Capture shop information and proof documents for this location.</p>
           </div>
-          <button type="button" onClick={onClose} className="text-admin-muted hover:text-slate-800 text-xl leading-none">×</button>
+          <button type="button" onClick={onClose} className="-mr-2 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-admin-muted hover:text-slate-800 text-xl leading-none" aria-label="Close">×</button>
         </div>
 
         <div className="p-5 space-y-4">
@@ -638,8 +636,6 @@ function LocationModal({ ownerId, mode, initial, onClose, onSaved }) {
               <UploadCard label="Udyam Certificate" hint="PDF or image" url={form.udyamCertificateUrl} uploading={!!uploading.udyamCertificateUrl} onFile={(f) => handleUpload('udyamCertificateUrl', f, 'shops/udyam', { document: true })} accept="image/*,application/pdf" />
             </div>
           </div>
-
-          {error && <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-3 py-2 text-sm text-red-500">{error}</div>}
         </div>
 
         <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-admin-border">
@@ -670,24 +666,22 @@ export default function BusinessLocationsManager({ ownerId, locations, kycDocume
   const [showLocModal, setShowLocModal] = useState(null); // { mode: 'add'|'edit', loc, index }
   const [deletingLoc, setDeletingLoc] = useState(null);
   const [viewingLoc, setViewingLoc] = useState(null);
-  const [deleteError, setDeleteError] = useState('');
 
   const handleDeleteLoc = async (loc) => {
-    setDeleteError('');
     try {
       await authApi.delete(`/auth/shop-owners/${ownerId}/locations/${loc.id}`);
       setDeletingLoc(null);
       onChanged();
     } catch (e) {
-      setDeleteError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
   const list = locations || [];
 
   return (
-    <div className="rounded-xl bg-admin-card border border-admin-border p-5">
-      <div className="flex items-center justify-between mb-3">
+    <div className="rounded-xl bg-admin-card border border-admin-border p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div>
           <h3 className="text-base font-semibold text-slate-900">Business Locations</h3>
           <p className="text-xs text-admin-muted">Business locations linked to this shop owner account.</p>
@@ -697,10 +691,8 @@ export default function BusinessLocationsManager({ ownerId, locations, kycDocume
         </button>
       </div>
 
-      {deleteError && <p className="mb-3 text-sm text-red-600">{deleteError}</p>}
-
       <div className="overflow-x-auto rounded-lg border border-admin-border">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-admin-dark/60 text-[11px] uppercase tracking-wider text-admin-muted">
             <tr>
               <th className="px-3 py-2 text-left">S.No</th>

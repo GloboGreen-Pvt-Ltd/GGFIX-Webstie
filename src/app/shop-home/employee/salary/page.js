@@ -68,16 +68,16 @@ function SalaryEmptyIllustration({ className = 'h-28 w-28' }) {
 // identical to the other employee modules.
 const SALARY_STAT_STYLES = {
   green: {
-    card: 'bg-gradient-to-br from-[#F5FFF9] to-[#E5F9EF]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#22C55E] to-[#0A934D]',
     accent: 'from-[#4ADE80] to-[#0A934D]',
     value: 'text-[#10213D]',
     label: 'text-[#066B39]',
     wave: 'text-[#BBF7D0]',
-    glow: 'bg-[#86EFAC]',
+    glow: 'bg-[#F3F3F3]',
   },
   blue: {
-    card: 'bg-gradient-to-br from-[#F7FBFF] to-[#E4F3FF]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#38BDF8] to-[#1DA8E8]',
     accent: 'from-[#7DD3FC] to-[#1DA8E8]',
     value: 'text-[#10213D]',
@@ -86,7 +86,7 @@ const SALARY_STAT_STYLES = {
     glow: 'bg-[#93D6F7]',
   },
   orange: {
-    card: 'bg-gradient-to-br from-[#FFFBF5] to-[#FFF0D9]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#FBBF54] to-[#FF9A19]',
     accent: 'from-[#FDBA74] to-[#FF9A19]',
     value: 'text-[#10213D]',
@@ -95,7 +95,7 @@ const SALARY_STAT_STYLES = {
     glow: 'bg-[#FDD08A]',
   },
   pink: {
-    card: 'bg-gradient-to-br from-[#FFF8FA] to-[#FFE7ED]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#FB7185] to-[#F43F5E]',
     accent: 'from-[#FDA4AF] to-[#F43F5E]',
     value: 'text-[#10213D]',
@@ -139,7 +139,7 @@ function SalaryStatCard({ icon: Icon, bgIcon: BgIcon, label, tone }) {
   return (
     <div
       className={cx(
-        'group relative flex h-[170px] flex-col justify-between overflow-hidden rounded-[22px] border border-[#E4ECE8] p-5 shadow-[0_8px_22px_rgba(20,40,60,0.06)] transition-all duration-200 hover:-translate-y-[2px] hover:shadow-[0_14px_30px_rgba(20,40,60,0.1)]',
+        'group relative flex min-h-[170px] min-w-0 flex-col justify-between gap-3 overflow-hidden rounded-[22px] border border-[#ECECEC] p-4 transition-all sm:p-5 lg:h-[170px] duration-200 hover:-translate-y-[2px]',
         s.card,
       )}
     >
@@ -147,22 +147,21 @@ function SalaryStatCard({ icon: Icon, bgIcon: BgIcon, label, tone }) {
           "premium dashboard" tell that this card belongs to its own tone,
           beyond just the pastel background. */}
       <span className={cx('absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r', s.accent)} aria-hidden="true" />
-      <span className="pointer-events-none absolute inset-x-0 top-0 h-1/2 rounded-t-[22px] bg-gradient-to-b from-white/60 to-transparent" aria-hidden="true" />
       <BgIcon className={cx('pointer-events-none absolute -bottom-5 -right-5 h-[88px] w-[88px] rotate-[-8deg] opacity-[0.15] transition-transform duration-300 group-hover:scale-105', s.wave)} aria-hidden="true" />
 
       {/* icon + title, in a row (not stacked) — a large colored square icon
           tile beside the label, per the reference's "strong colored icon
           tile on left, title beside icon" card structure. */}
-      <div className="relative flex items-center gap-2.5">
+      <div className="relative flex flex-col items-start gap-2.5 lg:flex-row lg:items-center">
         <span
           className={cx(
-            'flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_9px_22px_rgba(0,0,0,0.16),inset_0_1px_0_rgba(255,255,255,0.5)]',
+            'flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white',
             s.chip,
           )}
         >
           <Icon className="h-8 w-8" aria-hidden="true" />
         </span>
-        <p className={cx('min-w-0 truncate text-sm font-bold', s.label)}>{label}</p>
+        <p className={cx('min-w-0 max-w-full text-sm font-bold lg:truncate', s.label)}>{label}</p>
       </div>
 
       {/* value bottom-left, micro sparkline bottom-right — "—" (unavailable)
@@ -192,79 +191,40 @@ export default function SalaryPayslipsPage() {
           plain background-image directly on the mint hero background, not
           wrapped in its own card/frame. */}
       <div
-        className="relative min-h-[150px] overflow-hidden rounded-[22px] p-6 shadow-[0_10px_30px_rgba(18,73,55,0.07)] md:p-[30px_36px]"
+        className="relative overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:p-7"
         style={{
-          background: 'linear-gradient(110deg, #ffffff 0%, #f4fcf8 45%, #e5f9ef 100%)',
+          background: '#F8F8F8',
           border: '1px solid rgba(17, 150, 95, 0.10)',
         }}
       >
-        <span className="pointer-events-none absolute -right-10 -top-16 z-0 h-64 w-64 rounded-full bg-[#86EFAC]/20 blur-3xl" aria-hidden="true" />
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-16 w-full text-[#DFF8EB]/70"
-          viewBox="0 0 500 70"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,35 C150,70 320,5 500,40 L500,70 L0,70 Z" />
-        </svg>
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-8 w-full text-white/80"
-          viewBox="0 0 500 35"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,18 C170,35 300,2 500,20 L500,35 L0,35 Z" />
-        </svg>
-        <span className="pointer-events-none absolute right-[8%] top-[18%] z-0 h-2 w-2 rounded-full bg-[#0A934D]/60" aria-hidden="true" />
-        <span className="pointer-events-none absolute right-[26%] top-[14%] z-0 h-1.5 w-1.5 rounded-full bg-[#F5B93D]/60" aria-hidden="true" />
-        <span className="pointer-events-none absolute right-[4%] bottom-[38%] z-0 h-1.5 w-1.5 rounded-full bg-[#38BDF8]/50" aria-hidden="true" />
 
         <div className="relative z-20 min-w-0 md:pr-[300px] lg:pr-[330px]">
           <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.115em] text-[#0A934D]">
             <span className="h-1.5 w-4 rounded-full bg-gradient-to-r from-[#22C55E] to-[#0A934D]" aria-hidden="true" />
             Employee Management
           </span>
-          <h1 className="mt-2.5 text-[28px] font-extrabold leading-[1.05] tracking-tight text-[#0C1E3C] sm:text-[34px] md:text-[36px]">
+          <h1 className="mt-2.5 text-[30px] font-extrabold leading-tight tracking-tight text-[#111111] sm:text-[34px]">
             Salary &amp; <span className="text-[#0A934D]">Payslips</span>
           </h1>
-          <p className="mt-3 max-w-[520px] text-[15px] leading-[1.55] text-[#597084] sm:text-[16px]">
+          <p className="mt-1 text-[14px] text-[#666666] sm:text-[15px] max-w-[520px]">
             Manage employee salary, advances, and monthly payslips.
           </p>
         </div>
 
-        {/* public/salary-payslip.png, windowed to its right-side
-            illustration cluster only (original asset is 2160x728; the
-            calendar/payslip-card/coins/money-bag cluster sits roughly at
-            x:1328-2063, y:205-475 in that image) — background-size scales
-            the whole image up, background-position shifts it so only that
-            region falls inside this box. No wrapper card/border/background
-            around it, so it blends straight into the hero. */}
-        <div
-          className="pointer-events-none absolute bottom-0 right-5 z-[5] hidden h-[155px] w-[422px] md:block lg:right-7 lg:h-[170px] lg:w-[463px]"
-          style={{
-            backgroundImage: "url('/salary-payslip.png')",
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '1240px 418px',
-            backgroundPosition: '-762px -118px',
-          }}
-          aria-hidden="true"
-        />
       </div>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {STATS.map((s) => (
           <SalaryStatCard key={s.label} icon={s.icon} bgIcon={s.bgIcon} label={s.label} tone={s.tone} />
         ))}
       </div>
 
-      <section className="relative flex min-h-[300px] flex-col overflow-hidden rounded-[22px] border border-[#E8EEF0] bg-white shadow-[0_10px_28px_rgba(21,44,58,0.06)]">
+      <section className="relative flex min-h-[300px] flex-col overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8]">
         {/* A faint echo of the hero's wave/glow language along the very top
             edge of the panel, so the page reads as one connected system
             instead of "colorful hero, then a plain white box." */}
-        <span className="pointer-events-none absolute -right-16 -top-16 z-0 h-48 w-48 rounded-full bg-[#DFF8EC]/60 blur-3xl" aria-hidden="true" />
-        <span className="pointer-events-none absolute -left-10 -top-10 z-0 h-32 w-32 rounded-full bg-[#EAF5FF]/50 blur-3xl" aria-hidden="true" />
 
-        <div className="relative z-10 flex h-[72px] items-center justify-between gap-3 border-b border-[#ECF1F3] px-5 py-3.5 sm:px-6">
+        <div className="relative z-10 flex h-[72px] items-center justify-between gap-3 border-b border-[#ECECEC] px-5 py-3.5 sm:px-6">
           {/* "This Month" is the only real option — there's no salary data
               to filter across other months, so this stays a single inert
               pill (same honest "nothing behind it yet" treatment the filter
@@ -274,7 +234,7 @@ export default function SalaryPayslipsPage() {
             type="button"
             disabled
             title="There's no salary data yet to filter by month."
-            className="inline-flex h-11 cursor-not-allowed items-center gap-2 rounded-[14px] bg-gradient-to-br from-[#17B868] to-[#10884F] px-[18px] text-sm font-bold text-white opacity-90 shadow-[0_4px_12px_rgba(16,136,79,0.28)]"
+            className="inline-flex h-11 cursor-not-allowed items-center gap-2 rounded-[14px] bg-[#F3BF23] px-[18px] text-sm font-bold text-[#1E1E1E] opacity-90 hover:bg-[#E5B11A]"
           >
             <CalendarDays className="h-4 w-4" aria-hidden="true" />
             This Month
@@ -292,7 +252,7 @@ export default function SalaryPayslipsPage() {
               disabled
               title="There's no salary data yet to refresh."
               aria-label="Refresh (not available yet)"
-              className="inline-flex h-[42px] w-[42px] cursor-not-allowed items-center justify-center rounded-xl border border-[#E4ECE8] bg-white text-[#3F5468] shadow-sm"
+              className="inline-flex h-[42px] w-[42px] cursor-not-allowed items-center justify-center rounded-xl border border-[#ECECEC] bg-white text-[#3F5468]"
             >
               <RefreshCw className="h-[18px] w-[18px]" aria-hidden="true" />
             </button>
@@ -301,7 +261,7 @@ export default function SalaryPayslipsPage() {
               disabled
               title="There's no salary data yet to export."
               aria-label="Export (not available yet)"
-              className="inline-flex h-[42px] w-[42px] cursor-not-allowed items-center justify-center rounded-xl border border-[#E4ECE8] bg-white text-[#3F5468] shadow-sm"
+              className="inline-flex h-[42px] w-[42px] cursor-not-allowed items-center justify-center rounded-xl border border-[#ECECEC] bg-white text-[#3F5468]"
             >
               <Download className="h-[18px] w-[18px]" aria-hidden="true" />
             </button>

@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   CalendarClock,
   Check,
@@ -53,6 +54,7 @@ import {
   listPickupSlots,
   rescheduleRepairBooking,
 } from '@/lib/customerAccount';
+import { notifyError, notifySuccess } from '@/lib/toast';
 import {
   AccountEmpty,
   AccountError,
@@ -490,7 +492,7 @@ function InfoLine({ label, value, success = false }) {
   return (
     <div className="flex items-start justify-between gap-4 border-b border-brand-line py-2 last:border-0 last:pb-0">
       <span className="shrink-0 text-xs text-brand-muted">{label}</span>
-      <span className={cx('text-right text-sm font-semibold text-brand-ink', success && 'text-brand-700')}>{value}</span>
+      <span className={cx('min-w-0 break-words text-right text-sm font-semibold text-brand-ink', success && 'text-brand-700')}>{value}</span>
     </div>
   );
 }
@@ -788,7 +790,7 @@ function SellDetails({ order, data, onCancel, cancelling }) {
                     <p className="truncate text-sm font-bold text-brand-ink">{quote.shopName || 'Repair shop'}</p>
                     {quote.shopCity ? <p className="mt-0.5 text-xs text-brand-muted">{quote.shopCity}</p> : null}
                   </div>
-                  <span className="font-extrabold text-brand-700">₹{money(quote.quotationPrice)}</span>
+                  <span className="shrink-0 font-extrabold text-brand-700">₹{money(quote.quotationPrice)}</span>
                 </div>
                 {quote.note ? <p className="mt-2 text-sm text-brand-muted">{quote.note}</p> : null}
                 {quote.status ? <StatusPill className="mt-2" status={quote.status} /> : null}
@@ -831,8 +833,8 @@ function GenericDetails({ order, data }) {
           <div className="space-y-2">
             {items.map((item, index) => (
               <div key={`${item?.productId || item?.title || 'item'}-${index}`} className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-brand-ink">{item?.title || item?.name || 'Item'}{item?.quantity ? ` × ${item.quantity}` : ''}</span>
-                {item?.price != null ? <span className="font-semibold text-brand-ink">₹{money(item.price)}</span> : null}
+                <span className="min-w-0 break-words text-brand-ink">{item?.title || item?.name || 'Item'}{item?.quantity ? ` × ${item.quantity}` : ''}</span>
+                {item?.price != null ? <span className="shrink-0 font-semibold text-brand-ink">₹{money(item.price)}</span> : null}
               </div>
             ))}
           </div>
@@ -1155,7 +1157,7 @@ function OrderDrawer({ selected, onClose, onViewChange, onRefresh, onReschedule,
   }, [onRefresh, selected]);
 
   if (!selected) return null;
-  const { order, data, loading, error, view, notice } = selected;
+  const { order, data, loading, error, view } = selected;
   const title = view === 'timeline'
     ? (isPickup(order, data) ? 'Pickup status' : 'Service history')
     : view === 'receipt' ? 'Receipt'
@@ -1199,20 +1201,19 @@ function OrderDrawer({ selected, onClose, onViewChange, onRefresh, onReschedule,
         onMouseDown={(event) => event.stopPropagation()}
         className="ml-auto flex h-full w-full max-w-3xl flex-col bg-brand-page shadow-2xl sm:rounded-3xl"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-brand-line bg-white px-4 py-4 sm:px-6">
+        <div className="flex items-start justify-between gap-4 border-b border-brand-line bg-white px-4 py-4 pt-[max(1rem,env(safe-area-inset-top))] sm:px-6">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-brand-600">My orders</p>
-            <h2 className="mt-1 text-xl font-extrabold text-brand-ink">{title}</h2>
+            <h2 className="mt-1 break-words text-lg font-extrabold text-brand-ink sm:text-xl">{title}</h2>
             {order?.orderNumber ? <p className="mt-1 text-xs text-brand-muted">#{String(order.orderNumber).replace(/^#/, '')}</p> : null}
           </div>
           <button type="button" onClick={onClose} aria-label="Close order details" className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-brand-line bg-white text-brand-muted transition hover:bg-brand-soften hover:text-brand-ink"><X className="h-5 w-5" /></button>
         </div>
-        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">
-          {notice ? <p className="mb-3 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">{notice}</p> : null}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-6">
           {content}
         </div>
         {data && !loading && !error ? (
-          <div className="flex flex-wrap gap-2 border-t border-brand-line bg-white px-4 py-3 sm:px-6">
+          <div className="flex flex-wrap gap-2 border-t border-brand-line bg-white px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-6">
             {view !== 'details' ? <button type="button" onClick={() => onViewChange('details')} className="rounded-xl border border-brand-line px-3 py-2 text-sm font-bold text-brand-ink transition hover:bg-brand-soften">View details</button> : null}
             {booking ? <button type="button" onClick={() => onViewChange('timeline')} className="rounded-xl border border-brand-line px-3 py-2 text-sm font-bold text-brand-ink transition hover:bg-brand-soften">{pickup ? 'Track pickup' : 'History'}</button> : null}
             {booking ? <button type="button" onClick={() => onViewChange('receipt')} className="rounded-xl border border-brand-line px-3 py-2 text-sm font-bold text-brand-ink transition hover:bg-brand-soften">Receipt</button> : null}
@@ -1227,7 +1228,10 @@ function OrderDrawer({ selected, onClose, onViewChange, onRefresh, onReschedule,
 }
 
 export default function OrdersExperience() {
-  const [tab, setTab] = useState('Service');
+  // The order type comes from the sidebar's My Orders links (?tab=service|pickup|buy|sell|enquiry).
+  const tabParam = (useSearchParams().get('tab') || '').toLowerCase();
+  const tab = TABS.find((item) => item.key.toLowerCase() === tabParam)?.key || 'Service';
+  const tabConfig = TABS.find((item) => item.key === tab) || TABS[0];
   const [status, setStatus] = useState('Pending');
   const [orders, setOrders] = useState([]);
   const [details, setDetails] = useState({});
@@ -1408,7 +1412,7 @@ export default function OrdersExperience() {
   const openOrder = useCallback(async (order, view = 'details', force = false) => {
     const request = ++selectionId.current;
     const cached = details[idKey(order?.id)] || null;
-    setSelected({ order, view, data: cached, loading: true, error: '', notice: '' });
+    setSelected({ order, view, data: cached, loading: true, error: '' });
     try {
       const data = await buildOrderData(order, { includeAddress: true, force });
       if (selectionId.current !== request) return;
@@ -1430,7 +1434,7 @@ export default function OrdersExperience() {
   }, [openOrder, selected]);
 
   const changeView = useCallback((view) => {
-    setSelected((current) => current ? { ...current, view, notice: '' } : current);
+    setSelected((current) => current ? { ...current, view } : current);
   }, []);
 
   const reschedule = useCallback(async (payload) => {
@@ -1440,10 +1444,11 @@ export default function OrdersExperience() {
     try {
       await rescheduleRepairBooking(bookingId, payload);
       const data = await buildOrderData(selected.order, { includeAddress: true, force: true });
-      setSelected((current) => current ? { ...current, data, view: 'details', loading: false, notice: `Pickup re-scheduled for ${formatDate(payload.pickupDate)}${timeRange(payload.pickupSlotStart, payload.pickupSlotEnd) ? ` · ${timeRange(payload.pickupSlotStart, payload.pickupSlotEnd)}` : ''}.` } : current);
+      setSelected((current) => current ? { ...current, data, view: 'details', loading: false } : current);
+      notifySuccess(`Pickup re-scheduled for ${formatDate(payload.pickupDate)}${timeRange(payload.pickupSlotStart, payload.pickupSlotEnd) ? ` · ${timeRange(payload.pickupSlotStart, payload.pickupSlotEnd)}` : ''}.`);
       setReloadKey((key) => key + 1);
     } catch (requestError) {
-      setSelected((current) => current ? { ...current, notice: requestError?.message || 'Could not re-schedule this pickup.' } : current);
+      notifyError(requestError, 'Could not re-schedule this pickup.');
     } finally {
       setSaving(false);
     }
@@ -1457,10 +1462,11 @@ export default function OrdersExperience() {
     try {
       await cancelSellOrder(id);
       const data = await buildOrderData(selected.order, { includeAddress: true, force: true });
-      setSelected((current) => current ? { ...current, data, notice: 'Your sell request has been cancelled.' } : current);
+      setSelected((current) => current ? { ...current, data } : current);
+      notifySuccess('Your sell request has been cancelled.');
       setReloadKey((key) => key + 1);
     } catch (requestError) {
-      setSelected((current) => current ? { ...current, notice: requestError?.message || 'Could not cancel this sell request.' } : current);
+      notifyError(requestError, 'Could not cancel this sell request.');
     } finally {
       setSaving(false);
     }
@@ -1471,11 +1477,8 @@ export default function OrdersExperience() {
 
   return (
     <div>
-      <AccountPageHeader eyebrow="My Orders" title="Bookings & purchases" subtitle="Track service, pickup, buy and sell requests in one place." />
-      <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
-        {TABS.map((item) => <Chip key={item.key} icon={item.icon} active={tab === item.key} onClick={() => setTab(item.key)}>{item.label}</Chip>)}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <AccountPageHeader eyebrow="My Orders" title={`${tabConfig.label} orders`} subtitle="Pick Service, Pickup, Buy, Sell or Enquiry from My Orders on the left." />
+      <div className="mt-5 flex flex-wrap gap-2">
         {STATUSES.map((item) => (
           <button
             key={item.value}
@@ -1483,7 +1486,7 @@ export default function OrdersExperience() {
             onClick={() => setStatus(item.value)}
             aria-pressed={status === item.value}
             className={cx(
-              'rounded-full px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2',
+              'rounded-full px-3 py-1.5 text-xs font-semibold transition [@media(pointer:coarse)]:py-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2',
               status === item.value ? 'bg-brand-ink text-white' : 'border border-brand-line bg-white text-brand-muted hover:text-brand-ink',
             )}
           >

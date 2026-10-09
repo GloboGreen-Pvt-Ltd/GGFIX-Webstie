@@ -89,6 +89,15 @@ jobs:
           NEXT_PUBLIC_NOTIFICATION_BASE: ${{ vars.NEXT_PUBLIC_NOTIFICATION_BASE }}
           NEXT_PUBLIC_SUBSCRIPTION_BASE: ${{ vars.NEXT_PUBLIC_SUBSCRIPTION_BASE }}
           NEXT_PUBLIC_ORDER_BASE: ${{ vars.NEXT_PUBLIC_ORDER_BASE }}
+          # SEO / analytics (src/lib/seo.js, src/components/seo/Analytics.js). All
+          # optional: the site URL defaults to https://ggfix.in, indexing is on
+          # unless ALLOW_INDEXING is "false", and GA/GTM/verification render nothing
+          # while their variable is unset.
+          NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_ALLOW_INDEXING: ${{ vars.NEXT_PUBLIC_ALLOW_INDEXING }}
+          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ vars.NEXT_PUBLIC_GA_MEASUREMENT_ID }}
+          NEXT_PUBLIC_GTM_ID: ${{ vars.NEXT_PUBLIC_GTM_ID }}
+          NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION: ${{ vars.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }}
         run: npm run build
 
       # OIDC when a role is configured, long-lived keys otherwise. The `secrets`
@@ -110,13 +119,15 @@ jobs:
 
       # Long-cache the fingerprinted assets, never cache the HTML. Without this the
       # CDN can hand out a stale index.html that points at deleted _next chunks.
+      # robots.txt and sitemap.xml change with every deploy that adds a page, so
+      # they go with the HTML, not into the year-long immutable cache.
       - name: Sync to S3
         run: |
           aws s3 sync out/ "s3://$BUCKET" --delete \
-            --exclude "*.html" --exclude "*.json" \
+            --exclude "*.html" --exclude "*.json" --exclude "*.xml" --exclude "*.txt" \
             --cache-control "public,max-age=31536000,immutable"
           aws s3 sync out/ "s3://$BUCKET" --delete \
-            --exclude "*" --include "*.html" --include "*.json" \
+            --exclude "*" --include "*.html" --include "*.json" --include "*.xml" --include "*.txt" \
             --cache-control "public,max-age=0,must-revalidate"
 
       # INTERIM until the CloudFront rewrite function is attached to this

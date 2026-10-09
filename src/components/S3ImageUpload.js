@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ACCEPTED_IMAGE_TYPES } from '@/lib/modelMedia';
+import { notifyError } from '@/lib/toast';
 
 /**
  * Picks an image file for an S3-backed upload.
@@ -27,7 +28,6 @@ import { ACCEPTED_IMAGE_TYPES } from '@/lib/modelMedia';
  */
 export default function S3ImageUpload({ value, onFileChange, label, caption }) {
   const [file, setFile] = useState(null);
-  const [error, setError] = useState('');
   // The input keeps its own value, and a file input does NOT fire change when the
   // same file is picked twice. Clearing it after a cancel or a Clear is what lets
   // the operator pick that same file again.
@@ -43,7 +43,6 @@ export default function S3ImageUpload({ value, onFileChange, label, caption }) {
 
   const pick = (event) => {
     const picked = event.target.files && event.target.files[0];
-    setError('');
     if (!picked) {
       setFile(null);
       onFileChange(null);
@@ -53,7 +52,7 @@ export default function S3ImageUpload({ value, onFileChange, label, caption }) {
     // a round trip. The server still validates by magic bytes — this is convenience,
     // not a security control, since any client can skip it.
     if (!ACCEPTED_IMAGE_TYPES.split(',').includes(picked.type)) {
-      setError('Please choose a JPEG, PNG or WebP image.');
+      notifyError('Please choose a JPEG, PNG or WebP image.');
       setFile(null);
       onFileChange(null);
       if (inputRef.current) inputRef.current.value = '';
@@ -80,7 +79,6 @@ export default function S3ImageUpload({ value, onFileChange, label, caption }) {
 
   const clear = () => {
     setFile(null);
-    setError('');
     onFileChange(null);
     if (inputRef.current) inputRef.current.value = '';
   };
@@ -115,8 +113,6 @@ export default function S3ImageUpload({ value, onFileChange, label, caption }) {
           Clear selection
         </button>
       ) : null}
-
-      {error ? <p className="mt-2 text-xs font-medium text-red-600">{error}</p> : null}
 
       {file && value ? (
         <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-[11px] font-medium text-amber-800">

@@ -5,15 +5,12 @@ import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadBannerImage } from '@/lib/modelMedia';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 export default function DirectoryBannersPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, because
-  // the modal closes on save — and a replacement deletes the old file from the
-  // bucket, which is worth saying in words rather than leaving to be inferred.
-  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null);
   const [title, setTitle] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -65,7 +62,6 @@ export default function DirectoryBannersPage() {
     e.preventDefault();
     if (!title.trim()) return;
     setSubmitting(true);
-    setNotice('');
     try {
       const body = {
         title: title.trim(),
@@ -84,12 +80,13 @@ export default function DirectoryBannersPage() {
       }
       if (imageFile && bannerId) {
         const uploaded = await uploadBannerImage(bannerId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Banner image'));
+        const notice = imageReplacementNotice(uploaded, 'Banner image');
+        if (notice) notifySuccess(notice);
       }
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -101,7 +98,7 @@ export default function DirectoryBannersPage() {
       await masterApi.delete(`/master/banners/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -122,9 +119,9 @@ export default function DirectoryBannersPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Banners</h1>
+    <div className="p-4 sm:p-6 md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Banners</h1>
         <button
           type="button"
           onClick={openCreate}
@@ -137,11 +134,6 @@ export default function DirectoryBannersPage() {
         Promotional banners shown in the mobile app (GET /api/master/banners).
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
       ) : (
@@ -156,7 +148,7 @@ export default function DirectoryBannersPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'New banner' : 'Edit banner'}
             </h2>

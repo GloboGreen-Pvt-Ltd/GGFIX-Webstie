@@ -2,8 +2,10 @@
 
 /**
  * AccountSidebar — the persistent left rail of the "My Account" area. Mirrors the
- * app's ProfileScreen hub: a green-gradient identity card, the four ACCOUNT
- * destinations (Orders · Cart · Manage My Device · Manage Address), a Log out
+ * app's ProfileScreen hub: a green-gradient identity card, the ACCOUNT
+ * destinations (Personal Information · Cart · Manage My Device · Manage Address),
+ * a MY ORDERS group (Service · Pickup · Buy · Sell · Enquiry — each opens
+ * /account/orders/?tab=…, the list OrdersExperience shows), a Log out
  * button, and a small secondary group for the app's SUPPORT items (which already
  * exist as public pages, so they link out rather than duplicate).
  *
@@ -14,7 +16,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   FileText,
   HelpCircle,
@@ -22,11 +25,15 @@ import {
   LifeBuoy,
   LogOut,
   MapPin,
+  MessageCircle,
   ShieldCheck,
   ShoppingBag,
   ShoppingCart,
   Smartphone,
+  Tag,
+  Truck,
   User,
+  Wrench,
 } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
@@ -38,10 +45,18 @@ const FOCUS_RING =
 
 const NAV = [
   { href: '/account/profile', label: 'Personal Information', icon: User, exact: false },
-  { href: '/account/orders', label: 'My Orders', icon: ShoppingBag, exact: false },
   { href: '/account/cart', label: 'My Cart', icon: ShoppingCart, exact: false },
   { href: '/account/devices', label: 'Manage My Device', icon: Smartphone, exact: false },
   { href: '/account/addresses', label: 'Manage Address', icon: MapPin, exact: false },
+];
+
+// My Orders — one entry per order type; the tab rides in the URL.
+const ORDER_TYPES = [
+  { tab: 'service', label: 'Service', icon: Wrench },
+  { tab: 'pickup', label: 'Pickup', icon: Truck },
+  { tab: 'buy', label: 'Buy', icon: ShoppingBag },
+  { tab: 'sell', label: 'Sell', icon: Tag },
+  { tab: 'enquiry', label: 'Enquiry', icon: MessageCircle },
 ];
 
 const SUPPORT = [
@@ -80,13 +95,37 @@ function SidebarAvatar({ customer }) {
   );
 }
 
+function OrdersNavItems({ onOrders }) {
+  const params = useSearchParams();
+  const current = (params.get('tab') || 'service').toLowerCase();
+  return ORDER_TYPES.map(({ tab, label, icon: Icon }) => {
+    const active = onOrders && current === tab;
+    return (
+      <li key={tab} className="shrink-0 lg:shrink">
+        <Link
+          href={`/account/orders/?tab=${tab}`}
+          aria-current={active ? 'page' : undefined}
+          className={cx(
+            'flex items-center gap-2.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-semibold transition lg:whitespace-normal',
+            FOCUS_RING,
+            active ? 'bg-brand-soft text-brand-700' : 'text-brand-ink hover:bg-brand-soften',
+          )}
+        >
+          <Icon className={cx('h-4 w-4 shrink-0', active ? 'text-brand-700' : 'text-brand-600')} aria-hidden="true" />
+          {label}
+        </Link>
+      </li>
+    );
+  });
+}
+
 export default function AccountSidebar({ customer }) {
   const isActive = useIsActive();
 
   return (
     <aside className="lg:sticky lg:top-28">
       {/* Identity card — green gradient, matching the app's profile header. */}
-      <div className="overflow-hidden rounded-3xl bg-gradient-to-br from-brand-800 via-brand-600 to-brand-500 p-5 text-white shadow-soft">
+      <div className="overflow-hidden rounded-3xl bg-gradient-to-br from-brand-800 via-brand-600 to-brand-500 p-4 text-white shadow-soft lg:p-5">
         <div className="flex items-center gap-3">
           <SidebarAvatar customer={customer} />
           <div className="min-w-0">
@@ -105,11 +144,11 @@ export default function AccountSidebar({ customer }) {
       </div>
 
       {/* Primary account nav */}
-      <nav className="mt-4" aria-label="Account">
+      <nav className="mt-3 lg:mt-4" aria-label="Account">
         <p className="px-2 pb-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-brand-subtle">
           Account
         </p>
-        <ul className="flex gap-1.5 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
+        <ul className="flex gap-1.5 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin] lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
           {NAV.map(({ href, label, icon: Icon, exact }) => {
             const active = isActive(href, exact);
             return (
@@ -134,6 +173,17 @@ export default function AccountSidebar({ customer }) {
               </li>
             );
           })}
+        </ul>
+      </nav>
+
+      {/* My Orders — Service / Pickup / Buy / Sell / Enquiry */}
+      <nav className="mt-3 lg:mt-4" aria-label="My orders">
+        <p className="px-2 pb-1.5 text-[0.7rem] font-bold uppercase tracking-wider text-brand-subtle">My Orders</p>
+        <ul className="flex gap-1.5 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin] lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0">
+          {/* useSearchParams needs a Suspense boundary under static export. */}
+          <Suspense fallback={null}>
+            <OrdersNavItems onOrders={isActive('/account/orders', false)} />
+          </Suspense>
         </ul>
       </nav>
 

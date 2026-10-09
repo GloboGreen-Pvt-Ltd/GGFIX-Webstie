@@ -3,6 +3,7 @@ import path from 'path';
 import { notFound } from 'next/navigation';
 
 import ComingSoon from '@/components/shop-dashboard/ComingSoon';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
 import { ALL_STUB_SLUGS, findNavItemBySlug } from '@/lib/partnerNav';
 
 /**
@@ -36,5 +37,10 @@ export default function PartnerNavStubPage({ params }) {
   const item = findNavItemBySlug(params.slug);
   if (!item) notFound();
 
-  return <ComingSoon icon={item.icon} title={item.label} description={item.description} />;
+  return (
+    <div className="flex flex-col gap-5">
+      <PageHeader title={item.label} subtitle={item.description} />
+      <ComingSoon icon={item.icon} title={item.label} description="This page is being built." />
+    </div>
+  );
 }

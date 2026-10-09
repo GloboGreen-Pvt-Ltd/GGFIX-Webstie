@@ -6,6 +6,7 @@ import { Loader2, MapPin, Navigation, X } from 'lucide-react';
 import { cx } from '@/components/site/ui';
 import SafeImage from '@/components/SafeImage';
 import { uploadShopLocationMedia } from '@/lib/shopLocations';
+import { notifyError } from '@/lib/toast';
 
 /**
  * Add/Edit form for one business location — ported from the admin's
@@ -32,7 +33,7 @@ const WORKING_DAYS_OPTIONS = [
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
 const INPUT_CLS =
-  'w-full rounded-xl border border-[#D0D5DD] bg-white px-3.5 py-2.5 text-sm text-[#101828] placeholder:text-[#98A2B3] transition focus:border-[#15803D] focus:outline-none focus:ring-[3px] focus:ring-[#DCFCE7]';
+  'w-full rounded-xl border border-[#D0D5DD] bg-white px-3.5 py-2.5 text-sm text-[#111111] placeholder:text-[#98A2B3] transition focus:border-[#15803D] focus:outline-none focus:ring-[3px] focus:ring-[#ECECEC]';
 
 function detectTimezone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'; }
@@ -99,7 +100,7 @@ async function searchAddressSuggestions(query) {
 function FormField({ label, required, children }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#667085]">
+      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#666666]">
         {label}
         {required ? <span className="text-red-500"> *</span> : null}
       </label>
@@ -110,12 +111,12 @@ function FormField({ label, required, children }) {
 
 function UploadCard({ label, hint, url, uploading, onFile, accept }) {
   return (
-    <div className="flex min-h-[150px] flex-col items-center rounded-xl border border-dashed border-[#D0D5DD] bg-[#F9FAFB] p-3">
+    <div className="flex min-h-[150px] flex-col items-center rounded-xl border border-dashed border-[#D0D5DD] bg-[#F8F8F8] p-3">
       <div className="mb-1 flex w-full items-center justify-between">
-        <span className="text-xs font-semibold text-[#101828]">{label}</span>
+        <span className="text-xs font-semibold text-[#111111]">{label}</span>
         {url && <a href={url} target="_blank" rel="noreferrer" className="text-[11px] font-semibold text-[#15803D] hover:underline">Open</a>}
       </div>
-      <span className="mb-2 w-full text-[11px] text-[#667085]">{hint}</span>
+      <span className="mb-2 w-full text-[11px] text-[#666666]">{hint}</span>
       <div className="flex flex-1 w-full items-center justify-center">
         {url ? (
           isImageUrl(url) ? (
@@ -133,7 +134,7 @@ function UploadCard({ label, hint, url, uploading, onFile, accept }) {
           <span className="text-xs text-[#98A2B3]">{uploading ? 'Uploading…' : 'No file'}</span>
         )}
       </div>
-      <label className={cx('mt-2 w-full cursor-pointer rounded-lg bg-[#15803D] py-1.5 text-center text-xs font-semibold text-white transition hover:bg-[#166534]', uploading && 'opacity-60')}>
+      <label className={cx('mt-2 w-full cursor-pointer rounded-lg bg-[#F3BF23] text-[#1E1E1E] hover:bg-[#E5B11A] py-1.5 text-center text-xs font-semibold transition', uploading && 'opacity-60')}>
         {url ? `Replace ${label}` : `Upload ${label}`}
         <input type="file" accept={accept} className="hidden" onChange={(e) => onFile(e.target.files?.[0] || null)} disabled={uploading} />
       </label>
@@ -144,7 +145,6 @@ function UploadCard({ label, hint, url, uploading, onFile, accept }) {
 export default function LocationFormModal({ ownerId, mode, initial, onClose, onSaved, submit: submitFn }) {
   const [form, setForm] = useState(() => ({ ...EMPTY_LOC, ...initial, latitude: initial?.latitude ?? '', longitude: initial?.longitude ?? '' }));
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
   const [uploading, setUploading] = useState({});
   const [autoCoords, setAutoCoords] = useState(null);
   const [locating, setLocating] = useState(false);
@@ -221,7 +221,6 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
         setField('latitude', String(result.latitude));
         setField('longitude', String(result.longitude));
         setAutoCoords({ latitude: result.latitude, longitude: result.longitude });
-        setError('');
       } else {
         const msg = {
           denied: 'Location permission was blocked. Allow location access for this site in your browser settings, or paste coordinates manually using Find on Google Maps.',
@@ -230,7 +229,7 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
           unsupported: 'This browser does not support location lookup. Paste coordinates manually.',
           unknown: 'Could not get your current location. Use Find on Google Maps to look up coordinates manually.',
         }[result.reason] || 'Could not get your current location.';
-        setError(msg);
+        notifyError(msg);
       }
     } finally {
       setLocating(false);
@@ -250,7 +249,7 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
       const url = await uploadShopLocationMedia(file, folder, opts);
       if (url) setField(field, url);
     } catch (e) {
-      setError(e.message || 'Upload failed');
+      notifyError(e, 'Upload failed');
     } finally {
       setUploading((u) => ({ ...u, [field]: false }));
     }
@@ -258,9 +257,8 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
 
   const submit = async (e) => {
     e.preventDefault();
-    setError('');
-    if (!form.name.trim()) { setError('Shop / Location Name is required'); return; }
-    if (!form.mobile.trim()) { setError('Mobile number is required'); return; }
+    if (!form.name.trim()) { notifyError('Shop / Location Name is required'); return; }
+    if (!form.mobile.trim()) { notifyError('Mobile number is required'); return; }
     setSubmitting(true);
     try {
       const payload = {
@@ -276,7 +274,7 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
       await submitFn(payload, { isEdit, ownerId, locationId: initial?.id });
       onSaved();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Save failed');
+      notifyError(e.body?.message || e.message || 'Save failed');
     } finally {
       setSubmitting(false);
     }
@@ -284,33 +282,33 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#101828]/60 p-4">
-      <form onSubmit={submit} className="my-8 w-full max-w-4xl rounded-3xl bg-white shadow-[0_20px_60px_rgba(16,24,40,0.25)]">
-        <div className="flex items-center justify-between border-b border-[#EAECF0] px-5 py-4 sm:px-6">
+      <form onSubmit={submit} className="my-auto w-full max-w-4xl rounded-3xl sm:my-8 bg-white shadow-[0_20px_60px_rgba(16,24,40,0.25)]">
+        <div className="flex items-center justify-between border-b border-[#ECECEC] px-5 py-4 sm:px-6">
           <div>
-            <h3 className="text-lg font-bold text-[#101828]">{isEdit ? 'Edit Business Location' : 'Add Business Location'}</h3>
-            <p className="text-xs text-[#667085]">Shop information and proof documents for this location.</p>
+            <h3 className="text-lg font-bold text-[#111111]">{isEdit ? 'Edit Business Location' : 'Add Business Location'}</h3>
+            <p className="text-xs text-[#666666]">Shop information and proof documents for this location.</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className={cx('rounded-full p-1.5 text-[#667085] transition hover:bg-[#F9FAFB] hover:text-[#101828]', FOCUS_RING)}
+            className={cx('rounded-full p-1.5 text-[#666666] transition hover:bg-[#F8F8F8] hover:text-[#111111]', FOCUS_RING)}
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto p-5 sm:p-6">
+        <div className="max-h-[70dvh] overflow-y-auto p-5 sm:p-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="relative sm:col-span-2 lg:col-span-2">
               <FormField label="Shop / Location Name" required>
                 <input value={form.name} onChange={(e) => onNameChange(e.target.value)} className={INPUT_CLS} placeholder="Type shop name or address" autoComplete="off" required />
               </FormField>
               {searching || suggestions.length > 0 || (searched && !searching) ? (
-                <div className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-auto rounded-xl border border-[#EAECF0] bg-white shadow-[0_8px_24px_rgba(16,24,40,0.15)]">
+                <div className="absolute left-0 right-0 z-30 mt-1 max-h-64 overflow-auto rounded-xl border border-[#ECECEC] bg-white shadow-[0_8px_24px_rgba(16,24,40,0.15)]">
                   {suggestions.length > 0 ? (
                     <>
-                      <div className="border-b border-[#EAECF0] bg-[#F9FAFB] px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#667085]">
+                      <div className="border-b border-[#ECECEC] bg-[#F8F8F8] px-3 py-1.5 text-[10px] uppercase tracking-wider text-[#666666]">
                         Verify pincode before picking — map data isn&apos;t always current
                       </div>
                       {suggestions.map((sug, k) => (
@@ -318,29 +316,29 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
                           type="button"
                           key={k}
                           onClick={() => applySuggestion(sug)}
-                          className="block w-full border-b border-[#EAECF0] px-3 py-2 text-left text-xs text-[#344054] last:border-b-0 hover:bg-[#F9FAFB]"
+                          className="block w-full border-b border-[#ECECEC] px-3 py-2 text-left text-xs text-[#344054] last:border-b-0 hover:bg-[#F8F8F8]"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex-1 truncate font-medium">{sug.displayName}</div>
                             {sug.pincode ? (
-                              <span className="shrink-0 rounded bg-[#DCFCE7] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#15803D]">{sug.pincode}</span>
+                              <span className="shrink-0 rounded bg-[#F3F3F3] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#15803D]">{sug.pincode}</span>
                             ) : null}
                           </div>
-                          <div className="mt-0.5 text-[10px] text-[#667085]">
+                          <div className="mt-0.5 text-[10px] text-[#666666]">
                             {sug.lat.toFixed(4)}, {sug.lng.toFixed(4)}
                             {sug.area ? ` · ${sug.area}` : ''}
                             {sug.district ? ` · ${sug.district}` : ''}
                           </div>
                         </button>
                       ))}
-                      <button type="button" onClick={dismissSuggestions} className="block w-full bg-[#F9FAFB] px-3 py-1.5 text-center text-[10px] text-[#667085] hover:bg-[#F0FDF4]">
+                      <button type="button" onClick={dismissSuggestions} className="block w-full bg-[#F8F8F8] px-3 py-1.5 text-center text-[10px] text-[#666666] hover:bg-[#F8F8F8]">
                         Dismiss
                       </button>
                     </>
                   ) : searching ? (
-                    <div className="px-3 py-3 text-xs text-[#667085]">Searching…</div>
+                    <div className="px-3 py-3 text-xs text-[#666666]">Searching…</div>
                   ) : (
-                    <div className="px-3 py-3 text-xs text-[#667085]">
+                    <div className="px-3 py-3 text-xs text-[#666666]">
                       <div className="font-medium text-[#344054]">No matches found</div>
                       <div className="mt-1 text-[11px]">Try just the area or pincode, or use Find on Google Maps below.</div>
                       <button type="button" onClick={dismissSuggestions} className="mt-2 text-[10px] font-semibold text-[#15803D] hover:underline">Dismiss</button>
@@ -403,7 +401,7 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
           </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="min-w-[220px] flex-1 text-[11px] text-[#667085]">
+            <p className="min-w-[220px] flex-1 text-[11px] text-[#666666]">
               <MapPin className="mr-1 inline h-3 w-3" aria-hidden="true" />
               Latitude/longitude lets customers within the pickup radius find this shop. Timezone: <span className="font-mono">{detectTimezone()}</span>
             </p>
@@ -411,7 +409,7 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
               <button
                 type="button"
                 onClick={clearAddressFields}
-                className={cx('whitespace-nowrap rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#475467] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+                className={cx('whitespace-nowrap rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#475467] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
               >
                 Clear Address
               </button>
@@ -419,7 +417,7 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
                 href={mapsSearchUrl()}
                 target="_blank"
                 rel="noreferrer"
-                className={cx('whitespace-nowrap rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}
+                className={cx('whitespace-nowrap rounded-lg border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}
               >
                 Find on Google Maps
               </a>
@@ -427,7 +425,7 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
                 type="button"
                 onClick={fetchLocationNow}
                 disabled={locating}
-                className={cx('inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#15803D] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#166534] disabled:opacity-60', FOCUS_RING)}
+                className={cx('inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-[#F3BF23] px-3 py-1.5 text-xs font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:opacity-60', FOCUS_RING)}
               >
                 {locating ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Navigation className="h-3.5 w-3.5" aria-hidden="true" />}
                 {locating ? 'Locating…' : 'Get Current Location'}
@@ -435,9 +433,9 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-[#EAECF0] p-4">
-            <h4 className="text-sm font-bold text-[#101828]">Shop Photos &amp; Documents</h4>
-            <p className="mb-3 text-xs text-[#667085]">Shop front + banner/visiting card are required; GST &amp; Udyam are optional proofs.</p>
+          <div className="mt-4 rounded-2xl border border-[#ECECEC] p-4">
+            <h4 className="text-sm font-bold text-[#111111]">Shop Photos &amp; Documents</h4>
+            <p className="mb-3 text-xs text-[#666666]">Shop front + banner/visiting card are required; GST &amp; Udyam are optional proofs.</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <UploadCard label="Shop Front View" hint="Photo of the shop front" url={form.frontImageUrl} uploading={!!uploading.frontImageUrl} onFile={(f) => handleUpload('frontImageUrl', f, 'shops/front')} accept="image/*" />
               <UploadCard label="Banner / Visiting Card" hint="Banner board or visiting card" url={form.bannerImageUrl} uploading={!!uploading.bannerImageUrl} onFile={(f) => handleUpload('bannerImageUrl', f, 'shops/banner')} accept="image/*" />
@@ -445,20 +443,16 @@ export default function LocationFormModal({ ownerId, mode, initial, onClose, onS
               <UploadCard label="Udyam Certificate" hint="PDF or image" url={form.udyamCertificateUrl} uploading={!!uploading.udyamCertificateUrl} onFile={(f) => handleUpload('udyamCertificateUrl', f, 'shops/udyam', { document: true })} accept="image/*,application/pdf" />
             </div>
           </div>
-
-          {error ? (
-            <div role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</div>
-          ) : null}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-[#EAECF0] px-5 py-4 sm:px-6">
-          <button type="button" onClick={onClose} className={cx('rounded-xl border border-[#D0D5DD] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F9FAFB]', FOCUS_RING)}>
+        <div className="flex items-center justify-end gap-2 border-t border-[#ECECEC] px-5 py-4 sm:px-6">
+          <button type="button" onClick={onClose} className={cx('rounded-xl border border-[#D0D5DD] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F8F8F8]', FOCUS_RING)}>
             Cancel
           </button>
           <button
             type="submit"
             disabled={submitting}
-            className={cx('inline-flex items-center gap-2 rounded-xl bg-[#15803D] px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING)}
+            className={cx('inline-flex items-center gap-2 rounded-xl bg-[#F3BF23] px-5 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60', FOCUS_RING)}
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
             {submitting ? 'Saving…' : isEdit ? 'Save Changes' : 'Save Location'}

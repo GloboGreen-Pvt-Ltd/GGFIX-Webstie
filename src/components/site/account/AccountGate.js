@@ -21,7 +21,7 @@ export default function AccountGate() {
   return (
     <Section tone="page" padding="default">
       <Container className="max-w-lg">
-        <div className="flex flex-col items-center rounded-3xl border border-brand-line bg-white px-6 py-14 text-center shadow-soft">
+        <div className="flex flex-col items-center rounded-3xl border border-brand-line bg-white px-5 py-10 text-center shadow-soft sm:px-6 sm:py-14">
           <span className="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-soft text-brand-700">
             <LockKeyhole className="h-8 w-8" aria-hidden="true" />
           </span>

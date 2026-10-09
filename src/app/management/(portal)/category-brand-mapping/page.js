@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { notifyError } from '@/lib/toast';
 
 export default function MasterCategoryBrandMappingPage() {
   const [categories, setCategories] = useState([]);
@@ -89,7 +90,6 @@ export default function MasterCategoryBrandMappingPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     if (!categoryId) return;
 
     if (modal.type === 'edit') {
@@ -100,7 +100,7 @@ export default function MasterCategoryBrandMappingPage() {
         closeModal();
         load();
       } catch (e) {
-        setError(e.body?.message || e.message || 'Request failed');
+        notifyError(e.body?.message || e.message || 'Request failed');
       } finally {
         setSubmitting(false);
       }
@@ -110,7 +110,7 @@ export default function MasterCategoryBrandMappingPage() {
     // Create mode: multi-select. POST one mapping per brand.
     const toCreate = brandIds.filter((id) => !mappedBrandIdsForFormCategory.has(id));
     if (toCreate.length === 0) {
-      setError('Pick at least one brand that isn\'t already mapped to this category.');
+      notifyError('Pick at least one brand that isn\'t already mapped to this category.');
       return;
     }
 
@@ -128,7 +128,7 @@ export default function MasterCategoryBrandMappingPage() {
         done += 1;
       }
       if (failed.length) {
-        setError(`${failed.length} of ${toCreate.length} failed: ${failed.map((f) => brandName(f.brandId)).join(', ')}`);
+        notifyError(`${failed.length} of ${toCreate.length} failed: ${failed.map((f) => brandName(f.brandId)).join(', ')}`);
       } else {
         closeModal();
       }
@@ -146,7 +146,7 @@ export default function MasterCategoryBrandMappingPage() {
       await masterApi.delete(`/master/category-brand-mappings/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -175,14 +175,14 @@ export default function MasterCategoryBrandMappingPage() {
   const newPairsCount = brandIds.filter((id) => !mappedBrandIdsForFormCategory.has(id)).length;
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Category-Brand Mapping</h1>
-        <div className="flex items-center gap-3">
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Category-Brand Mapping</h1>
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+            className="w-full rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm sm:w-auto"
           >
             <option value="">All categories</option>
             {categories.map((c) => (
@@ -219,7 +219,7 @@ export default function MasterCategoryBrandMappingPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-2xl rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-2xl rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'Add mappings' : 'Edit mapping'}
             </h2>
@@ -257,9 +257,9 @@ export default function MasterCategoryBrandMappingPage() {
                     onChange={(e) => setBrandSearch(e.target.value)}
                     className="w-full mb-2 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900 text-sm"
                   />
-                  <div className="max-h-72 overflow-y-auto rounded-lg border border-admin-border bg-admin-dark p-2 grid grid-cols-2 gap-1">
+                  <div className="max-h-72 overflow-y-auto rounded-lg border border-admin-border bg-admin-dark p-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
                     {visibleBrandsForForm.length === 0 ? (
-                      <p className="text-xs text-admin-muted col-span-2 p-2">No brands match.</p>
+                      <p className="text-xs text-admin-muted col-span-full p-2">No brands match.</p>
                     ) : visibleBrandsForForm.map((b) => {
                       const alreadyMapped = mappedBrandIdsForFormCategory.has(b.id);
                       const checked = brandIds.includes(b.id);

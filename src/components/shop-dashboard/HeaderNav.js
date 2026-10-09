@@ -85,8 +85,8 @@ function NavMenu({ section, activeItemKey, badges, openKey, setOpenKey }) {
           'flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition',
           FOCUS_RING,
           hasActive || open
-            ? 'bg-gradient-to-r from-[#DCFCE7] to-[#BBF7D0] text-[#15803D] shadow-[0_1px_4px_rgba(21,128,61,0.15)]'
-            : 'text-[#344054] hover:bg-[#F9FAFB]',
+            ? 'bg-[#F3F3F3] text-[#15803D]'
+            : 'text-[#344054] hover:bg-[#F8F8F8]',
         )}
       >
         <SectionIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -98,7 +98,7 @@ function NavMenu({ section, activeItemKey, badges, openKey, setOpenKey }) {
         <div
           role="menu"
           className={cx(
-            'absolute left-0 top-[calc(100%+0.5rem)] z-50 rounded-2xl border border-[#EAECF0] bg-white p-2 shadow-[0_1px_3px_rgba(16,24,40,0.08),0_12px_28px_rgba(16,24,40,0.1)]',
+            'absolute left-0 top-[calc(100%+0.5rem)] z-50 rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-2 shadow-[0_1px_3px_rgba(16,24,40,0.08),0_12px_28px_rgba(16,24,40,0.1)]',
             wide ? 'grid w-[560px] grid-cols-2 gap-0.5' : 'w-72',
           )}
         >
@@ -114,7 +114,7 @@ function NavMenu({ section, activeItemKey, badges, openKey, setOpenKey }) {
                 title={item.description}
                 className={cx(
                   'flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium transition',
-                  active ? 'bg-[#DCFCE7] text-[#15803D] font-semibold' : 'text-[#344054] hover:bg-[#F0FDF4]',
+                  active ? 'bg-[#F3F3F3] text-[#15803D] font-semibold' : 'text-[#344054] hover:bg-[#F8F8F8]',
                 )}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -138,13 +138,13 @@ export default function HeaderNav({ pathname, shopOwner, badges, onOpenMobileMen
   const dashboardActive = pathname === '/shop-home';
 
   return (
-    <header className="sticky top-0 z-40 border-b border-[#E5ECE8] bg-white/95 shadow-[0_2px_12px_rgba(20,80,55,0.04)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
+    <header className="sticky top-0 z-40 border-b border-[#ECECEC] bg-white/95 shadow-[0_2px_12px_rgba(17,17,17,0.04)] backdrop-blur supports-[backdrop-filter]:bg-white/80">
       <div className="flex h-16 items-center gap-2 px-4 sm:px-6">
         <button
           type="button"
           onClick={onOpenMobileMenu}
           aria-label="Open menu"
-          className={cx('inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[#344054] hover:bg-[#F0FDF4] lg:hidden', FOCUS_RING)}
+          className={cx('inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[#344054] hover:bg-[#F8F8F8] lg:hidden', FOCUS_RING)}
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
@@ -152,8 +152,8 @@ export default function HeaderNav({ pathname, shopOwner, badges, onOpenMobileMen
         <Link href="/shop-home" className="mr-2 flex shrink-0 items-center gap-2">
           <Image src={BRAND.logo} alt="" width={30} height={30} className="h-[30px] w-[30px] shrink-0 rounded-xl object-contain" />
           <div className="hidden min-w-0 lg:block">
-            <p className="truncate text-sm font-extrabold leading-tight text-[#101828]">GGFIX Partner</p>
-            <p className="truncate text-[0.68rem] text-[#667085]">Business Dashboard</p>
+            <p className="truncate text-sm font-extrabold leading-tight text-[#111111]">GGFIX Partner</p>
+            <p className="truncate text-[0.68rem] text-[#666666]">Business Dashboard</p>
           </div>
         </Link>
 
@@ -165,8 +165,8 @@ export default function HeaderNav({ pathname, shopOwner, badges, onOpenMobileMen
               'flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition',
               FOCUS_RING,
               dashboardActive
-                ? 'bg-gradient-to-r from-[#DCFCE7] to-[#BBF7D0] text-[#15803D] shadow-[0_1px_4px_rgba(21,128,61,0.15)]'
-                : 'text-[#344054] hover:bg-[#F9FAFB]',
+                ? 'bg-[#F3F3F3] text-[#15803D]'
+                : 'text-[#344054] hover:bg-[#F8F8F8]',
             )}
           >
             <DashboardIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -182,14 +182,14 @@ export default function HeaderNav({ pathname, shopOwner, badges, onOpenMobileMen
         </nav>
 
         <div className="hidden min-w-0 flex-1 justify-center px-2 md:flex">
-          <div className="flex w-full max-w-sm items-center gap-2 rounded-full border border-[#D0D5DD] bg-[#F9FAFB] px-4 py-2 transition focus-within:border-brand-600 focus-within:bg-white focus-within:ring-4 focus-within:ring-brand-100">
+          <div className="flex w-full max-w-sm items-center gap-2 rounded-full border border-[#D0D5DD] bg-[#F8F8F8] px-4 py-2 transition focus-within:border-brand-600 focus-within:bg-white focus-within:ring-4 focus-within:ring-brand-100">
             <Search className="h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search bookings, customers, devices..."
               aria-label="Search"
-              className="min-w-0 flex-1 bg-transparent text-sm text-[#101828] outline-none placeholder:text-[#98A2B3]"
+              className="min-w-0 flex-1 bg-transparent text-sm text-[#111111] outline-none placeholder:text-[#98A2B3]"
             />
           </div>
         </div>
@@ -200,14 +200,14 @@ export default function HeaderNav({ pathname, shopOwner, badges, onOpenMobileMen
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Help & support (opens in a new tab)"
-            className={cx('hidden h-10 w-10 items-center justify-center rounded-full text-[#667085] hover:bg-[#F0FDF4] sm:inline-flex', FOCUS_RING)}
+            className={cx('hidden h-10 w-10 items-center justify-center rounded-full text-[#666666] hover:bg-[#F8F8F8] sm:inline-flex', FOCUS_RING)}
           >
             <CircleHelp className="h-5 w-5" aria-hidden="true" />
           </a>
           <button
             type="button"
             aria-label="Notifications"
-            className={cx('relative inline-flex h-10 w-10 items-center justify-center rounded-full text-[#667085] hover:bg-[#F0FDF4]', FOCUS_RING)}
+            className={cx('relative inline-flex h-10 w-10 items-center justify-center rounded-full text-[#666666] hover:bg-[#F8F8F8]', FOCUS_RING)}
           >
             <Bell className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -218,8 +218,8 @@ export default function HeaderNav({ pathname, shopOwner, badges, onOpenMobileMen
         </div>
       </div>
 
-      <div className="border-t border-[#F0F4F2] px-4 py-2 sm:px-6">
-        <p className="truncate text-sm font-bold leading-tight text-[#101828]">{title}</p>
+      <div className="border-t border-[#ECECEC] px-4 py-2 sm:px-6">
+        <p className="truncate text-sm font-bold leading-tight text-[#111111]">{title}</p>
         <Breadcrumbs />
       </div>
     </header>

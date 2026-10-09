@@ -42,12 +42,13 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, CheckCircle2, ClipboardList, Download, FileText, IndianRupee, Loader2, MessageSquare, Package, RefreshCw, Smartphone, Truck, Wrench } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
 import Icon3D from '@/components/shop-dashboard/Icon3D';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
+import { HEADER_BUTTON } from '@/components/shop-dashboard/HeaderControls';
 import ErrorBanner from '@/components/shop-dashboard/ErrorBanner';
 import { SkeletonStatCards } from '@/components/shop-dashboard/SkeletonBlocks';
 import {
@@ -79,7 +80,7 @@ const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visibl
 const DASH = '—';
 
 const STATUS_BADGE = {
-  Created: 'bg-[#DCFCE7] text-[#15803D]',
+  Created: 'bg-[#F3F3F3] text-[#15803D]',
   'In Progress': 'bg-sky-100 text-sky-700',
   Pickup: 'bg-orange-100 text-orange-700',
   Completed: 'bg-violet-100 text-violet-700',
@@ -89,23 +90,23 @@ const STATUS_BADGE = {
 // Icon + tint + watermark per KPI card — six distinct identities, matching
 // a reference design's "one row of premium metric cards" look.
 const OVERVIEW_STAT_STYLES = {
-  green: { card: 'bg-gradient-to-br from-[#EAFBF3] to-[#DAF5E7]', chip: 'bg-gradient-to-br from-[#22C55E] to-[#0BA65A]', watermark: 'text-[#0BA65A]' },
-  orange: { card: 'bg-gradient-to-br from-[#FFF3E4] to-[#FEE4C4]', chip: 'bg-gradient-to-br from-[#FFB35C] to-[#FF8F2C]', watermark: 'text-[#FF8F2C]' },
-  blue: { card: 'bg-gradient-to-br from-[#EEF7FF] to-[#DFEFFE]', chip: 'bg-gradient-to-br from-[#5EB6FA] to-[#2196F3]', watermark: 'text-[#2196F3]' },
-  violet: { card: 'bg-gradient-to-br from-[#F5F0FE] to-[#EBE1FD]', chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8B5CF6]', watermark: 'text-[#8B5CF6]' },
-  pink: { card: 'bg-gradient-to-br from-[#FFF0F3] to-[#FDE1E8]', chip: 'bg-gradient-to-br from-[#FB7185] to-[#E11D48]', watermark: 'text-[#E11D48]' },
+  green: { card: 'bg-[#F3F3F3]', chip: 'bg-gradient-to-br from-[#22C55E] to-[#0BA65A]', watermark: 'text-[#0BA65A]' },
+  orange: { card: 'bg-[#F8F8F8]', chip: 'bg-gradient-to-br from-[#FFB35C] to-[#FF8F2C]', watermark: 'text-[#FF8F2C]' },
+  blue: { card: 'bg-[#F8F8F8]', chip: 'bg-gradient-to-br from-[#5EB6FA] to-[#2196F3]', watermark: 'text-[#2196F3]' },
+  violet: { card: 'bg-[#F8F8F8]', chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8B5CF6]', watermark: 'text-[#8B5CF6]' },
+  pink: { card: 'bg-[#F8F8F8]', chip: 'bg-gradient-to-br from-[#FB7185] to-[#E11D48]', watermark: 'text-[#E11D48]' },
 };
 
 function OverviewStatCard({ icon: Icon, watermark: Watermark, label, value, trend, tone }) {
   const s = OVERVIEW_STAT_STYLES[tone] || OVERVIEW_STAT_STYLES.green;
   return (
-    <div className={cx('relative flex min-h-[150px] flex-col overflow-hidden rounded-[20px] border border-[rgba(15,80,60,0.06)] p-4 shadow-[0_8px_24px_rgba(20,70,55,0.06)]', s.card)}>
+    <div className="relative flex flex-col overflow-hidden rounded-[18px] border border-[#ECECEC] bg-[#F8F8F8] p-5">
       <Watermark className={cx('pointer-events-none absolute -bottom-4 -right-4 h-24 w-24 opacity-15', s.watermark)} aria-hidden="true" />
-      <span className={cx('relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_6px_14px_rgba(0,0,0,0.1)]', s.chip)}>
+      <span className={cx('relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white', s.chip)}>
         <Icon className="h-5 w-5" aria-hidden="true" />
       </span>
-      <p className="relative mt-3 text-[28px] font-extrabold leading-none text-[#10233F]">{value}</p>
-      <p className="relative mt-1.5 text-sm font-semibold text-[#10233F]">{label}</p>
+      <p className="relative mt-4 text-[28px] font-extrabold leading-none text-[#111111]">{value}</p>
+      <p className="relative mt-1.5 text-[14px] font-medium text-[#666666]">{label}</p>
       {trend ? (
         <p className="relative mt-1 flex items-center gap-1 text-xs font-bold text-[#0BA65A]">
           <span aria-hidden="true">↗</span>
@@ -249,46 +250,14 @@ export default function BusinessOverviewPage() {
   };
 
   return (
-    <div className="flex flex-col gap-5" style={{ background: 'linear-gradient(180deg, #F7FBFA 0%, #F4FAF8 55%, #EDF8F3 100%)' }}>
-      {/* Hero — page-local, not the shared PageHeader (used by ~15+ other
-          pages, unaffected). Title/subtitle/Refresh/Download PDF are the
-          exact same content/handlers this page always had. No sidebar —
-          this only changes this page's own body, the shared header/nav
-          chrome (HeaderNav.js) is untouched. */}
-      <div
-        className="relative overflow-hidden rounded-[22px] p-6 shadow-[0_8px_24px_rgba(20,70,55,0.06)] sm:p-7"
-        style={{ background: 'linear-gradient(110deg, #ffffff 0%, #f6fcf9 45%, #e7faf1 100%)', border: '1px solid rgba(15, 140, 90, 0.14)' }}
-      >
-        <span className="pointer-events-none absolute -right-10 -top-14 h-56 w-56 rounded-full bg-[#6EE7B7]/15 blur-3xl" aria-hidden="true" />
-        {/* public/images/business-overview-illustration.png — a real,
-            provided asset (GGFIX shop + growth-chart tablet), cropped from
-            the full public/businesss overview.png reference mockup: that
-            source file is a complete page mockup with fake baked-in
-            title/Refresh/Download PDF/KPI cards/charts (matching what this
-            page already renders for real), so only its safe decorative
-            illustration cluster is used here — showing the whole mockup
-            would duplicate this page's real content as fake pixels. */}
-        <div className="pointer-events-none absolute right-16 top-2 hidden h-[130px] w-[430px] lg:block">
-          <Image src="/images/business-overview-illustration.png" alt="" fill sizes="430px" className="object-contain object-right" />
-        </div>
-
-        <div className="relative z-[1] flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#10233F] sm:text-[34px]">
-              Business <span className="text-[#0BA65A]">Overview</span>
-            </h1>
-            <p className="mt-1 text-[14px] text-[#6D7E94] sm:text-[15px]">Total bookings, revenue, completed/pending services and customer growth.</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setReloadKey((k) => k + 1)}
-              className={cx(
-                'inline-flex h-10 items-center gap-1.5 rounded-full border border-[#E4ECE8] bg-white px-4 text-sm font-semibold text-[#10233F] shadow-sm transition hover:border-[#0BA65A] hover:text-[#0BA65A]',
-                FOCUS_RING,
-              )}
-            >
-              <RefreshCw className={cx('h-4 w-4 text-[#0BA65A]', loading && 'animate-spin')} aria-hidden="true" />
+    <div className="flex flex-col gap-5" style={{ background: '#FFFFFF' }}>
+      <PageHeader
+        title="Business Overview"
+        subtitle="Total bookings, revenue, completed/pending services and customer growth."
+        action={
+          <>
+            <button type="button" onClick={() => setReloadKey((k) => k + 1)} className={HEADER_BUTTON}>
+              <RefreshCw className={cx('h-4 w-4', loading && 'animate-spin')} aria-hidden="true" />
               Refresh
             </button>
             <button
@@ -296,16 +265,16 @@ export default function BusinessOverviewPage() {
               onClick={handleExport}
               disabled={loading || exporting}
               className={cx(
-                'inline-flex h-10 items-center gap-1.5 rounded-full bg-gradient-to-r from-[#22C55E] to-[#0BA65A] px-4 text-sm font-semibold text-white shadow-[0_4px_12px_rgba(11,166,90,0.28)] transition hover:from-[#16A34A] hover:to-[#087A46] disabled:cursor-not-allowed disabled:opacity-60',
+                'inline-flex h-11 items-center gap-1.5 rounded-full bg-[#F3BF23] px-4 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60',
                 FOCUS_RING,
               )}
             >
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Download className="h-4 w-4" aria-hidden="true" />}
               Download PDF
             </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error ? <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
 
@@ -322,7 +291,7 @@ export default function BusinessOverviewPage() {
       {/* ---- Top Services Today / Device Category Distribution / Recent Bookings --- */}
       <div className="grid gap-4 lg:grid-cols-3">
         <section
-          className="rounded-[20px] bg-white p-5 shadow-[0_8px_26px_rgba(20,70,55,0.05)]"
+          className="rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8] p-5"
           style={{ border: '1px solid rgba(15, 80, 60, 0.06)' }}
         >
           <div className="flex items-center gap-2.5">
@@ -342,13 +311,13 @@ export default function BusinessOverviewPage() {
                 const maxCount = topServicesToday[0].count || 1;
                 return topServicesToday.map((s, i) => (
                   <div key={s.name} className="flex items-center gap-3">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#EAFBF3] text-xs font-bold text-[#0BA65A]">{i + 1}</span>
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-xs font-bold text-[#0BA65A]">{i + 1}</span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate text-sm font-semibold text-[#10233F]">{s.name}</p>
                         <span className="shrink-0 text-sm font-bold text-[#10233F]">{s.count}</span>
                       </div>
-                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#EDF3F1]">
+                      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-[#F3F3F3]">
                         <div className="h-full rounded-full bg-gradient-to-r from-[#22C55E] to-[#0BA65A]" style={{ width: `${Math.round((s.count / maxCount) * 100)}%` }} />
                       </div>
                     </div>
@@ -360,7 +329,7 @@ export default function BusinessOverviewPage() {
         </section>
 
         <section
-          className="rounded-[20px] bg-white p-5 shadow-[0_8px_26px_rgba(20,70,55,0.05)]"
+          className="rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8] p-5"
           style={{ border: '1px solid rgba(15, 80, 60, 0.06)' }}
         >
           <div className="flex items-center gap-2.5">
@@ -414,7 +383,7 @@ export default function BusinessOverviewPage() {
         </section>
 
         <section
-          className="rounded-[20px] bg-white p-5 shadow-[0_8px_26px_rgba(20,70,55,0.05)]"
+          className="rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8] p-5"
           style={{ border: '1px solid rgba(15, 80, 60, 0.06)' }}
         >
           <div className="flex items-start justify-between gap-3">
@@ -427,7 +396,7 @@ export default function BusinessOverviewPage() {
             </div>
             <Link
               href="/shop-home/services/bookings"
-              className="flex shrink-0 items-center gap-1 rounded-full border border-[#E4ECE8] px-3 py-1.5 text-xs font-bold text-[#10233F] transition hover:border-[#0BA65A] hover:text-[#0BA65A]"
+              className="flex shrink-0 items-center gap-1 rounded-full border border-[#ECECEC] px-3 py-1.5 text-xs font-bold text-[#10233F] transition hover:border-[#0BA65A] hover:text-[#0BA65A]"
             >
               View All
               <ArrowRight className="h-3 w-3" aria-hidden="true" />
@@ -442,14 +411,14 @@ export default function BusinessOverviewPage() {
               <p className="mt-0.5 text-xs text-[#6D7E94]">New bookings will appear here.</p>
             </div>
           ) : (
-            <div className="mt-3 flex flex-col divide-y divide-[#EEF3F0]">
+            <div className="mt-3 flex flex-col divide-y divide-[#ECECEC]">
               {recent.slice(0, 4).map((booking) => (
                 <Link
                   key={booking.id}
                   href={`/shop-home/services/bookings/view/?id=${encodeURIComponent(booking.id)}`}
-                  className="flex items-center gap-3 py-2.5 transition hover:bg-[#F9FDFB]"
+                  className="flex items-center gap-3 py-2.5 transition hover:bg-[#F8F8F8]"
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EAFBF3]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3]">
                     <Smartphone className="h-4 w-4 text-[#0BA65A]" aria-hidden="true" />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -458,7 +427,7 @@ export default function BusinessOverviewPage() {
                       {booking.deviceDisplayName || booking.modelName || 'Device'} · {booking.services?.[0]?.serviceName || booking.issueSummary || 'Service booking'}
                     </p>
                   </div>
-                  <span className={cx('shrink-0 rounded-full px-2 py-1 text-[0.62rem] font-bold uppercase tracking-wide', STATUS_BADGE[booking.statusLabel] || 'bg-[#F0FDF4] text-[#667085]')}>
+                  <span className={cx('shrink-0 rounded-full px-2 py-1 text-[0.62rem] font-bold uppercase tracking-wide', STATUS_BADGE[booking.statusLabel] || 'bg-[#F8F8F8] text-[#666666]')}>
                     {booking.statusLabel}
                   </span>
                 </Link>
@@ -471,7 +440,7 @@ export default function BusinessOverviewPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         {/* ---- Weekly Bookings ------------------------------------------ */}
         <section
-          className="rounded-[20px] bg-white p-5 shadow-[0_8px_26px_rgba(20,70,55,0.05)] sm:p-6"
+          className="rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:p-6"
           style={{ border: '1px solid rgba(15, 80, 60, 0.06)' }}
         >
           <div className="flex items-center gap-2.5">
@@ -485,7 +454,7 @@ export default function BusinessOverviewPage() {
             <div className="flex h-40 items-center justify-center text-sm text-[#98A2B3]">Loading…</div>
           ) : (
             <>
-              <div className="mt-5 flex h-40 items-end justify-between gap-2.5 border-t border-[#EEF3F0] pt-4">
+              <div className="mt-5 flex h-40 items-end justify-between gap-2.5 border-t border-[#ECECEC] pt-4">
                 {weekly.map((bar, index) => {
                   const pct = Math.round(Number(bar.value || 0) * 100);
                   const count = Number(bar.count || 0);
@@ -493,7 +462,7 @@ export default function BusinessOverviewPage() {
                     <div key={`${bar.day}-${index}`} className="flex flex-1 flex-col items-center gap-2">
                       <div className="flex h-32 w-full items-end justify-center" title={`${count} booking${count === 1 ? '' : 's'}`}>
                         <div
-                          className={cx('w-full max-w-[26px] rounded-full transition-all', bar.today ? 'bg-gradient-to-b from-[#22C55E] to-[#0BA65A]' : 'bg-[#DAF5E7]')}
+                          className={cx('w-full max-w-[26px] rounded-full transition-all', bar.today ? 'bg-gradient-to-b from-[#22C55E] to-[#0BA65A]' : 'bg-[#F3F3F3]')}
                           style={{ height: `${pct}%`, minHeight: pct > 0 ? '4px' : 0 }}
                         />
                       </div>
@@ -511,7 +480,7 @@ export default function BusinessOverviewPage() {
 
         {/* ---- Completion Rate ------------------------------------------ */}
         <section
-          className="rounded-[20px] bg-white p-5 shadow-[0_8px_26px_rgba(20,70,55,0.05)] sm:p-6"
+          className="rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:p-6"
           style={{ border: '1px solid rgba(15, 80, 60, 0.06)' }}
         >
           <div className="flex items-center gap-2.5">
@@ -521,7 +490,7 @@ export default function BusinessOverviewPage() {
               <p className="text-xs text-[#6D7E94]">Percentage of completed services.</p>
             </div>
           </div>
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-6 border-t border-[#EEF3F0] pt-5 sm:justify-between">
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-6 border-t border-[#ECECEC] pt-5 sm:justify-between">
             <div className="relative h-[130px] w-[130px] shrink-0">
               <svg width="130" height="130" viewBox="0 0 130 130" className="-rotate-90">
                 <circle cx="65" cy="65" r="46" fill="none" stroke="#EAFBF3" strokeWidth="12" />

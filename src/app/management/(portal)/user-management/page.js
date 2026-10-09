@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { authApi } from '@/lib/api';
 import { isAdmin as isAdminRole } from '@/lib/auth';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 // SUPER_ADMIN is the stored value for the platform administrator; the UI calls
 // it "Admin" to match how the roles are named to users.
@@ -31,7 +32,6 @@ export default function UserManagementPage() {
   const [marketPersons, setMarketPersons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -76,14 +76,12 @@ export default function UserManagementPage() {
     // non-admin can never actually flip this.
     if (!canManage) return;
     setBusyId(row.id);
-    setError('');
-    setNotice('');
     try {
       await authApi.patch(`/auth/shop-owners/${row.id}/status`, { active: !row.isActive });
-      setNotice(`${row.name || row.email} is now ${!row.isActive ? 'Active' : 'Inactive'}.`);
+      notifySuccess(`${row.name || row.email} is now ${!row.isActive ? 'Active' : 'Inactive'}.`);
       await load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Update failed');
+      notifyError(e.body?.message || e.message || 'Update failed');
     } finally {
       setBusyId(null);
     }
@@ -92,13 +90,11 @@ export default function UserManagementPage() {
   const assignPerson = async (row, marketPersonId) => {
     if (!canManage) return;
     setBusyId(row.id);
-    setError('');
-    setNotice('');
     try {
       await authApi.patch(`/auth/shop-owners/${row.id}/active-person`, { marketPersonId });
       await load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Assignment failed');
+      notifyError(e.body?.message || e.message || 'Assignment failed');
     } finally {
       setBusyId(null);
     }
@@ -115,8 +111,8 @@ export default function UserManagementPage() {
   }, [list, query]);
 
   return (
-    <div className="p-6 md:p-8 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 md:p-8 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">User Management</h1>
           <p className="text-sm text-admin-muted">
@@ -126,7 +122,7 @@ export default function UserManagementPage() {
               : ' Activation is restricted to administrators.'}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={load}
@@ -151,13 +147,12 @@ export default function UserManagementPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by name, mobile, email, creator, or active person"
-          className="flex-1 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-sm text-slate-900 placeholder:text-admin-muted focus:outline-none focus:border-admin-accent"
+          className="min-w-0 flex-1 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-sm text-slate-900 placeholder:text-admin-muted focus:outline-none focus:border-admin-accent"
         />
-        <span className="text-xs text-admin-muted">Total: {list.length}</span>
+        <span className="shrink-0 whitespace-nowrap text-xs text-admin-muted">Total: {list.length}</span>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {notice && <p className="text-sm text-emerald-600">{notice}</p>}
 
       <div className="rounded-xl bg-admin-card border border-admin-border overflow-hidden">
         <div className="overflow-x-auto">
@@ -237,7 +232,7 @@ export default function UserManagementPage() {
           onClose={() => setShowCreate(false)}
           onCreated={async () => {
             setShowCreate(false);
-            setNotice('Market person created.');
+            notifySuccess('Market person created.');
             await Promise.all([load(), loadMarketPersons()]);
           }}
         />
@@ -288,15 +283,13 @@ function StatusCell({ active, canManage, busy, onToggle }) {
 function CreateMarketPersonModal({ onClose, onCreated }) {
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async (e) => {
     e.preventDefault();
-    setError('');
     if (!form.name.trim() || !form.email.trim()) {
-      setError('Name and email are required.');
+      notifyError('Name and email are required.');
       return;
     }
     setSaving(true);
@@ -309,15 +302,15 @@ function CreateMarketPersonModal({ onClose, onCreated }) {
       });
       await onCreated();
     } catch (err) {
-      setError(err.body?.message || err.message || 'Could not create market person');
+      notifyError(err.body?.message || err.message || 'Could not create market person');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <form onSubmit={submit} className="bg-admin-card border border-admin-border rounded-xl p-6 max-w-md w-full mx-4 space-y-4">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <form onSubmit={submit} className="bg-admin-card border border-admin-border rounded-xl p-4 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto space-y-4">
         <h3 className="text-lg font-semibold text-slate-900">Add Market Person</h3>
 
         {['name', 'email', 'phone'].map((field) => (
@@ -344,8 +337,6 @@ function CreateMarketPersonModal({ onClose, onCreated }) {
             className="w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-sm text-slate-900 placeholder:text-admin-muted focus:outline-none focus:border-admin-accent"
           />
         </div>
-
-        {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-lg border border-admin-border px-4 py-2 text-sm text-slate-800 hover:bg-admin-dark">

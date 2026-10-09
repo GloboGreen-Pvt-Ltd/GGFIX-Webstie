@@ -1,28 +1,25 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Navigation, Receipt } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 
 import HeroCarousel from '@/components/site/HeroCarousel';
 import RepairBreadcrumb from '@/components/site/RepairBreadcrumb';
 import RepairExtras from '@/components/site/RepairExtras';
 import RepairFlow from '@/components/site/RepairFlow';
 import StoreBadges from '@/components/site/StoreBadges';
-import {
-  Badge,
-  Button,
-  Card,
-  Section,
-  SectionHeading,
-  StepList,
-  cx,
-} from '@/components/site/ui';
-import { REPAIR_STEPS, TICKET_LIFECYCLE } from '@/lib/siteContent';
+import AppBenefitsSection from '@/components/site/AppBenefitsSection';
+import { Button, Section } from '@/components/site/ui';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Repair your device',
+// The picker's ?category=…&brand=… steps all canonicalise to /repair/; the
+// per-category landing pages (/repair/mobile/ etc.) are what rank for
+// "<device> repair" searches.
+export const metadata = pageMetadata({
+  title: 'Book Mobile, Laptop & Tablet Repair Near You',
   description:
-    'Pick your device category, choose what needs fixing, and book a doorstep pickup or an in-shop repair with a verified GGFIX shop near you — then track every stage live.',
-};
+    'Choose your phone, tablet, laptop, smartwatch or earbuds, pick the fault, and book a doorstep pickup or in-shop repair with a verified GGFIX shop near you.',
+  path: '/repair',
+});
 
 export default function RepairPage() {
   /* The marketing chrome that surrounds the picker. Defined as consts so each can
@@ -37,65 +34,10 @@ export default function RepairPage() {
 
   const detailSections = (
     <>
-      {/* How a repair works — same REPAIR_STEPS / TICKET_LIFECYCLE as the home
-          page's #repair section, so the two can never drift in wording. */}
+      {/* GGFIX app benefits — the same AppBenefitsSection as the home page's
+          #repair section, so the two can never drift in wording. */}
       <Section tone="white">
-        <div className="grid gap-12 lg:grid-cols-[1.15fr_1fr] lg:gap-16">
-          <div>
-            <SectionHeading
-              eyebrow="Our Repair"
-              title="From cracked screen to delivered, in seven steps"
-              subtitle="Pick the device, pick the fault, review the report — then choose a doorstep pickup or walk it in. Either way you watch the whole thing happen."
-              align="left"
-            />
-            <StepList steps={REPAIR_STEPS} className="mt-10" />
-          </div>
-
-          <div className="lg:pt-4">
-            <Card hover={false} className="lg:sticky lg:top-28">
-              <Badge tone="brand" icon={Navigation}>
-                Live tracking
-              </Badge>
-              <h2 className="mt-4 text-xl font-bold tracking-tight text-brand-ink">
-                The six stages you will see
-              </h2>
-              <p className="mt-2 text-base leading-relaxed text-brand-muted">
-                This is the same ticket lifecycle the shop works to. When their technician moves the
-                job, your app moves with it.
-              </p>
-
-              <ol className="mt-6 space-y-4">
-                {TICKET_LIFECYCLE.map((stage, index) => (
-                  <li key={stage.status} className="flex gap-3">
-                    <span
-                      className={cx(
-                        'mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
-                        index === TICKET_LIFECYCLE.length - 1
-                          ? 'bg-accent-500 text-white'
-                          : 'bg-brand-soft text-brand-700',
-                      )}
-                    >
-                      {index + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-brand-ink">{stage.status}</p>
-                      <p className="mt-0.5 text-sm leading-relaxed text-brand-muted">
-                        {stage.description}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-
-              <div className="mt-6 flex items-start gap-2 rounded-2xl bg-brand-soften p-4">
-                <Receipt className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />
-                <p className="text-sm leading-relaxed text-brand-muted">
-                  A service receipt and a digital invoice land in the app when the job is delivered.
-                </p>
-              </div>
-            </Card>
-          </div>
-        </div>
+        <AppBenefitsSection />
       </Section>
 
       {/* Closing CTA — custom two-column band (message + store badges) rather than

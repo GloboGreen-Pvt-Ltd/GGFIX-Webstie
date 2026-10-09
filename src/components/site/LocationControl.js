@@ -104,8 +104,10 @@ function detectUnavailable() {
  *
  * @param {object} props
  * @param {string} [props.className] Applied to the positioning wrapper.
+ * @param {'md'|'lg'} [props.size]   'lg' is the borderless pill used in the site
+ *   header; its text label collapses to icon + chevron below xl.
  */
-export default function LocationControl({ className }) {
+export default function LocationControl({ className, size = 'md' }) {
   const [geo, setGeo] = useState(null);
   const [status, setStatus] = useState('idle'); // 'idle' | 'locating'
   const [messageKey, setMessageKey] = useState(null);
@@ -293,7 +295,34 @@ export default function LocationControl({ className }) {
 
   return (
     <div className={cx('relative flex min-w-0 items-center', className)}>
-      {geo ? (
+      {size === 'lg' ? (
+        /* Header pill: borderless "📍 Select Location ⌄", or the saved
+           "PIN - place". The label collapses to icon + chevron below xl. */
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setOpen(true)}
+          aria-expanded={open}
+          aria-label={geo ? `Location: ${currentLabel || 'Near you'}` : 'Select Location'}
+          className={cx(
+            'inline-flex h-11 max-w-full items-center gap-2 rounded-full px-2.5 text-left text-brand-ink transition hover:bg-brand-soften xl:px-3',
+            focusRing,
+          )}
+        >
+          {locating ? (
+            <LoaderCircle className="h-5 w-5 shrink-0 motion-safe:animate-spin text-brand-600" aria-hidden="true" />
+          ) : (
+            <MapPin className="h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />
+          )}
+          <span className="hidden max-w-[11rem] truncate text-sm font-bold xl:block">
+            {locating ? 'Locating…' : geo ? currentLabel || 'Near you' : 'Select Location'}
+          </span>
+          <ChevronDown
+            className={cx('h-4 w-4 shrink-0 text-brand-muted transition-transform', open && 'rotate-180')}
+            aria-hidden="true"
+          />
+        </button>
+      ) : geo ? (
         <button
           ref={triggerRef}
           type="button"
@@ -445,7 +474,7 @@ export default function LocationControl({ className }) {
                           applyPincode();
                         }
                       }}
-                      className="min-w-0 flex-1 rounded-full border border-brand-line bg-white px-4 py-2.5 text-sm text-brand-ink placeholder:text-brand-subtle focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                      className="min-w-0 flex-1 rounded-full border border-brand-line bg-white px-4 py-2.5 text-base text-brand-ink sm:text-sm placeholder:text-brand-subtle focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-100"
                     />
                     <button
                       type="button"

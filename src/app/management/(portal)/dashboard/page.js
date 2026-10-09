@@ -242,9 +242,9 @@ export default function AdminDashboardPage() {
   const maxCategoryCount = topCategories[0]?.count || 1;
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Welcome back, {name}! 👋</h1>
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Welcome back, {name}! 👋</h1>
         <p className="mt-1 text-sm text-admin-muted">Here&apos;s what&apos;s happening with your platform today.</p>
       </div>
 
@@ -267,7 +267,7 @@ export default function AdminDashboardPage() {
       {/* Master Data */}
       <section className="mb-8">
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-admin-muted">Master Data</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
           <MasterDataCard title="Categories" value={stats.categoriesCount} caption="Product categories" href="/management/device-categories" icon={Tag} accent="indigo" />
           <MasterDataCard title="Brands" value={stats.brandsCount} caption="Registered brands" href="/management/brands" icon={Briefcase} accent="amber" />
           <MasterDataCard
@@ -292,11 +292,11 @@ export default function AdminDashboardPage() {
       </section>
 
       {/* Summary row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <DashboardCard title="Shops Summary">
-          <div className="flex flex-1 items-center gap-6">
+          <div className="flex flex-1 flex-col items-center gap-6 sm:flex-row">
             <ShopsSummaryRing active={stats.shopsActive} inactive={stats.shopsInactive} />
-            <div className="flex-1 space-y-3 text-sm">
+            <div className="flex-1 space-y-3 self-stretch text-sm sm:self-auto">
               <div className="flex items-center justify-between gap-4">
                 <span className="flex items-center gap-2 text-slate-600">
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
@@ -330,8 +330,8 @@ export default function AdminDashboardPage() {
             <ul className="space-y-4">
               {topCategories.map((c) => (
                 <li key={c.id}>
-                  <div className="mb-1.5 flex items-center justify-between text-sm">
-                    <span className="text-slate-700">{c.name}</span>
+                  <div className="mb-1.5 flex items-center justify-between gap-3 text-sm">
+                    <span className="min-w-0 truncate text-slate-700">{c.name}</span>
                     <span className="font-medium text-slate-900">{c.count.toLocaleString()}</span>
                   </div>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-admin-dark">

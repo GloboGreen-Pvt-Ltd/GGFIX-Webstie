@@ -177,15 +177,11 @@
  *     selects (ReadyByPicker, below — a later request replaced this
  *     card's original Received/Duration/Ready By three-tile layout with
  *     this single widget, modeled on a reference design). Never submitted.
- * Device Photos (front/back/damage/additional, with the shop-token upload
- * to media storage) used to be a 4th card on this tab — removed entirely
- * per request, along with its `photos`/`photoUploading`/`photoError`
- * state, `pickPhoto`/`removePhoto`/`pickAdditionalPhoto`/
- * `removeAdditionalPhoto` handlers, the `PhotoTile` component, and the
- * `frontImageUrl`/`backImageUrl`/`damageImageUrl`/`additionalImageUrls`
- * payload fields — none of that is submitted with a booking anymore.
- * `uploadShopDevicePhoto` itself is untouched in src/lib/shopBooking.js in
- * case a future page needs it again.
+ * Device Files (devicePhotosCard) sits beside Estimated Delivery: Front
+ * Side + Back Side photos (required) and an optional Full Coverage video,
+ * matching the Partner app. Uploads go through uploadShopDevicePhoto() in
+ * src/lib/shopBooking.js into form.frontImageUrl/backImageUrl/videoUrl,
+ * saved on the ticket as devicePhotosJson {front, back, video}.
  *
  * Modeled on a reference "Service Price & Issue Estimate" screen, but
  * four of its elements were never built after investigation confirmed
@@ -205,31 +201,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowRight,
-  BatteryCharging,
   Calendar,
   Camera,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
+  ArrowLeft,
   ChevronRight,
-  CircleEllipsis,
   ClipboardList,
   Copy,
-  Cpu,
   CreditCard,
-  Database,
-  Droplet,
   Eye,
   EyeOff,
-  Fingerprint,
   Grid3x3,
   Hash,
   History,
   Home,
+  Image as ImageIcon,
   Info,
   KeyRound,
   Landmark,
@@ -256,41 +249,55 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Smartphone,
+  Sparkles,
   Square,
   Tag,
-  Terminal,
   Timer,
   Trash2,
   Truck,
   Usb,
   User,
   UserCog,
+  Video,
   Volume2,
-  Wifi,
   Wrench,
   X,
 } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
 import Icon3D from '@/components/shop-dashboard/Icon3D';
+import { MaterialIcon } from '@/components/site/MaterialIcon';
+import AssignTechnicianModal from '@/components/shop-dashboard/AssignTechnicianModal';
 import { masterApi } from '@/lib/api';
-import { fetchShopBookings } from '@/lib/shopDashboard';
+import { resolveMediaUrl } from '@/lib/deviceImage';
+import { iconForRepairCategory, iconForRepairService } from '@/lib/repairIcons';
+import { fetchShopBookings, fetchTicket } from '@/lib/shopDashboard';
 import { deriveCustomers } from '@/lib/customerDirectory';
-import { fetchMyProfile } from '@/lib/shopProfile';
-import { createShopBooking, estimateTotal, uploadShopDevicePhoto } from '@/lib/shopBooking';
-import { required, validateForm } from '@/lib/formValidation';
+import { readShopOwner } from '@/lib/shopAuth';
+import { getShopPublic } from '@/lib/repairBooking';
+import { createShopBooking, estimateTotal, ticketVariant, updateShopTicket, uploadShopDevicePhoto } from '@/lib/shopBooking';
+import { exactDigits, required, validateForm } from '@/lib/formValidation';
 import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 const FOCUS_RING =
-  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#09AD2A] focus-visible:ring-offset-2';
 // Page-local, compact tokens — see file header for why these aren't the
 // shared FIELD_INPUT_CLS/CardShell used elsewhere in the dashboard.
+// 16px text below sm so iOS Safari doesn't auto-zoom on focus.
 const COMPACT_INPUT_CLS =
-  'w-full rounded-xl border border-[#DFE9E5] bg-[#F8FBFA] px-3.5 py-3 text-sm text-[#10213D] placeholder:text-[#98A2B3] transition focus:border-[#0A8F4B] focus:bg-white focus:outline-none focus:ring-[3px] focus:ring-[#DCFCE7] disabled:cursor-not-allowed disabled:bg-[#F9FAFB] disabled:text-[#98A2B3]';
+  'w-full rounded-xl border border-[#ECECEC] bg-white px-3.5 py-3 text-base text-[#111111] sm:text-sm placeholder:text-[#98A2B3] transition focus:border-[#09AD2A] focus:bg-white focus:outline-none focus:ring-[3px] focus:ring-[#ECECEC] disabled:cursor-not-allowed disabled:bg-[#F3F3F3] disabled:text-[#98A2B3]';
 // Same box, with room carved out on the left for a leading icon (see
 // IconField, below) — used wherever a field shows one, so the input text
 // never sits underneath the icon.
 const ICON_INPUT_CLS = cx(COMPACT_INPUT_CLS, 'pl-10');
+// Booking Confirmation action rows (Assign Technician / Share Receipt / Barcode Print).
+const CONFIRM_ACTION_CLS = cx(
+  'group flex items-center gap-3 rounded-2xl border border-[#ECECEC] bg-white px-4 py-3 text-left transition hover:border-[#09AD2A]/50 hover:bg-[#F2FBF4]',
+  FOCUS_RING,
+);
+const CONFIRM_ACTION_ICON_CLS =
+  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F2FBF4] text-[#09AD2A] transition group-hover:bg-white';
 
 // Per-service Price/Warranty in "Add Issue / Service" (below) — neither has
 // a field on repair-services or the booking payload's `services` array
@@ -318,15 +325,15 @@ const WARRANTY_OPTIONS = ['3', '6', '12'];
 // keys, order and everything the tab bar's click handlers/validation key
 // off of are unchanged.
 const SECTIONS = [
-  { key: 'customer', label: 'Customer Details', subtitle: 'Add customer information', icon: User },
-  { key: 'device', label: 'Device Details', subtitle: 'Add device information', icon: Smartphone },
-  { key: 'problem', label: 'Add Issue / Service', subtitle: 'Select issue and service', icon: Wrench },
-  { key: 'pickup', label: 'Service Price & Issue Estimate', subtitle: 'Review and estimate', icon: Receipt },
-  { key: 'deviceInfo', label: 'Device Information', subtitle: 'Device details and photos', icon: Info },
-  { key: 'deviceSecurity', label: 'Device Security Lock', subtitle: 'Screen lock details', icon: Lock },
-  { key: 'missingParts', label: 'Device Missing Parts', subtitle: 'Inspection checklist', icon: ListChecks },
-  { key: 'devicesList', label: 'Service Booking Devices List', subtitle: 'Review and submit', icon: ClipboardList },
-  { key: 'confirmation', label: 'Booking Confirmation', subtitle: 'Booking created', icon: CheckCircle2 },
+  { key: 'customer', ms: 'person', short: 'Customer', label: 'Customer Details', subtitle: 'Add customer information', icon: User },
+  { key: 'device', ms: 'smartphone', short: 'Device', label: 'Device Details', subtitle: 'Add device information', icon: Smartphone },
+  { key: 'problem', ms: 'build', short: 'Issue / Service', label: 'Add Issue / Service', subtitle: 'Select issue and service', icon: Wrench },
+  { key: 'pickup', ms: 'request_quote', short: 'Price & Estimate', label: 'Service Price & Issue Estimate', subtitle: 'Review and estimate', icon: Receipt },
+  { key: 'deviceInfo', ms: 'info', short: 'Device Info', label: 'Device Information', subtitle: 'Device details and photos', icon: Info },
+  { key: 'deviceSecurity', ms: 'lock', short: 'Security Lock', label: 'Device Security Lock', subtitle: 'Screen lock details', icon: Lock },
+  { key: 'missingParts', ms: 'checklist', short: 'Missing Parts', label: 'Device Missing Parts', subtitle: 'Inspection checklist', icon: ListChecks },
+  { key: 'devicesList', ms: 'assignment', short: 'Devices List', label: 'Service Booking Devices List', subtitle: 'Review and submit', icon: ClipboardList },
+  { key: 'confirmation', ms: 'check_circle', short: 'Confirmation', label: 'Booking Confirmation', subtitle: 'Booking created', icon: CheckCircle2 },
 ];
 
 const PAYMENT_MODES = ['Cash', 'UPI', 'Card', 'Bank Transfer', 'Pay Later', 'Other'];
@@ -384,12 +391,13 @@ const EMPTY_FORM = {
   devicePin: '',
   serviceCategoryId: '',
   serviceIds: [],
+  // "Others" custom issues (not in the service catalog) — see addCustomIssue.
+  customIssues: [],
   issueDescription: '',
   deviceCondition: '',
   frontImageUrl: '',
   backImageUrl: '',
-  damageImageUrl: '',
-  additionalImageUrls: [],
+  videoUrl: '',
   serviceMode: 'WALK_IN',
   addressLine: '',
   landmark: '',
@@ -407,6 +415,18 @@ const EMPTY_FORM = {
   discount: '',
   taxPercent: '',
 };
+
+// "Others" custom-issue draft (Add Issue / Service tab) and its accordion key.
+const EMPTY_CUSTOM_ISSUE = { name: '', categoryId: '', price: '' };
+const OTHERS_KEY = '__others__';
+
+/** "Apple iPhone 11 Pro Max" — brand prefixed only when the model name doesn't already start with it. */
+function deviceTitle(brand, model) {
+  const b = String(brand || '').trim();
+  const m = String(model || '').trim();
+  if (!m) return b;
+  return b && !m.toLowerCase().startsWith(b.toLowerCase()) ? `${b} ${m}` : m;
+}
 
 function unwrap(list) {
   if (Array.isArray(list)) return list;
@@ -433,34 +453,6 @@ function money(n) {
 }
 
 /**
- * Best-guess icon for a repair category, from its real name/displayName —
- * same idea as guessColorHex() in src/lib/colorSwatch.js (derive a visual
- * from real text instead of a hand-maintained per-category table), so it
- * works for whatever repair categories the backend actually has, not a
- * fixed list. Falls back to the generic Wrench icon for anything that
- * doesn't match a keyword.
- */
-function iconForRepairCategory(name) {
-  const n = String(name || '').toLowerCase();
-  const rules = [
-    [/screen|display|glass|touch|lcd|pixel/, Smartphone],
-    [/batter|power\b/, BatteryCharging],
-    [/charg|usb|port/, Usb],
-    [/audio|speaker|mic|earpiece|sound|volume/, Volume2],
-    [/camera|lens/, Camera],
-    [/button|sensor|fingerprint|face|proximity/, Fingerprint],
-    [/network|wi-?fi|bluetooth|signal|sim|gps|cellular/, Wifi],
-    [/motherboard|hardware|\bic\b|circuit|board/, Cpu],
-    [/software|operating system|\bos\b|boot|app|hang|slow/, Terminal],
-    [/water|physical|frame|body|clean/, Droplet],
-    [/storage|\bdata\b|memory/, Database],
-    [/other|misc/, CircleEllipsis],
-  ];
-  const hit = rules.find(([re]) => re.test(n));
-  return hit ? hit[1] : Wrench;
-}
-
-/**
  * Per-section required-field schemas — same fields/messages validate()
  * always checked, just structured per tab so both goNext() (gate the
  * current step) and the final submit (gate everything) can reuse the exact
@@ -468,28 +460,48 @@ function iconForRepairCategory(name) {
  * validateForm() below is always `{ ...form, needsAddress }` since
  * `needsAddress` is a derived local, not a form field.
  */
+/** Strips a stored phone like "+91 98765 43210" down to its 10-digit local number. */
+function toTenDigitMobile(phone) {
+  const digits = String(phone ?? '').replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
 const SECTION_VALIDATORS = {
   customer: {
     customerName: required('Customer name is required.'),
-    customerMobile: required('Customer mobile number is required.'),
+    customerMobile: [required('Customer mobile number is required.'), exactDigits(10, 'Enter a valid 10-digit mobile number.')],
+    customerAltMobile: exactDigits(10, 'Enter a valid 10-digit alternate mobile number.'),
   },
   device: {
     categoryId: required('Select the device category, brand and model.'),
     brandId: required('Select the device category, brand and model.'),
     modelId: required('Select the device category, brand and model.'),
   },
+  // Keyed on serviceIds (not issueDescription) so it doesn't collide with
+  // the pickup step's required Issue Description below — validateAll()
+  // merges every schema, and sectionForField() must send an empty
+  // description to Price & Estimate, where its textarea is.
   problem: {
-    issueDescription: (value, all) =>
-      (all.serviceIds || []).length === 0 && !String(value || '').trim()
+    serviceIds: (value, all) =>
+      (value || []).length === 0 && !(all.customIssues || []).length && !String(all.issueDescription || '').trim()
         ? 'Select at least one service type or describe the problem.'
         : '',
   },
   pickup: {
+    issueDescription: required('Issue Description is required'),
     addressLine: (value, all) => (all.needsAddress && !String(value || '').trim() ? 'Fill in the pickup address.' : ''),
     pincode: (value, all) => (all.needsAddress && !String(value || '').trim() ? 'Fill in the pickup address.' : ''),
     city: (value, all) => (all.needsAddress && !String(value || '').trim() ? 'Fill in the pickup address.' : ''),
     state: (value, all) => (all.needsAddress && !String(value || '').trim() ? 'Fill in the pickup address.' : ''),
+    // Device Files — Front + Back required, as in the Partner app; the coverage video is optional.
+    frontImageUrl: required('Add Front Side and Back Side photos to continue.'),
+    backImageUrl: required('Add Front Side and Back Side photos to continue.'),
+    customerApproved: (value) => (value ? '' : 'Customer Booking approval is required — tick the box once the customer agrees.'),
   },
+  // No deviceInfo entry: that tab only DISPLAYS the Price & Estimate
+  // details (pickupSummarySection), so an error there couldn't be fixed in
+  // place. The pickup rules above already gate every route forward to it
+  // (goNext/handleTabClick), and submit() re-checks them via validateAll().
   deviceSecurity: {
     deviceSecurityType: required('Please select the device security type.'),
     devicePin: (value, all) => {
@@ -512,77 +524,23 @@ function sectionForField(field) {
   return entry ? entry[0] : null;
 }
 
-/**
- * BookServiceIllustration — small decorative device+repair-tools graphic for
- * the hero's right side (phone, wrench, gears), matching a reference
- * design's "3D mobile phone + wrench + gear" corner illustration. Hand-drawn
- * inline SVG, purely decorative — no data, same treatment as the Partner
- * Dashboard's own ShopIllustration (src/app/shop-home/page.js).
- */
-function BookServiceIllustration() {
-  return (
-    <svg viewBox="0 0 220 150" className="h-full w-full" aria-hidden="true">
-      <defs>
-        <linearGradient id="bsGear1" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#4ADE80" />
-          <stop offset="1" stopColor="#15803D" />
-        </linearGradient>
-        <linearGradient id="bsGear2" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#6EE7B7" />
-          <stop offset="1" stopColor="#059669" />
-        </linearGradient>
-      </defs>
 
-      <circle cx="185" cy="40" r="16" fill="#BFE8FF" opacity="0.6" />
-      <circle cx="205" cy="70" r="10" fill="#BFE8FF" opacity="0.5" />
-
-      {/* gears */}
-      <g fill="url(#bsGear1)">
-        <circle cx="168" cy="55" r="20" />
-        <circle cx="168" cy="55" r="7" fill="white" opacity="0.9" />
-      </g>
-      <g fill="url(#bsGear2)">
-        <circle cx="130" cy="95" r="16" />
-        <circle cx="130" cy="95" r="5.5" fill="white" opacity="0.9" />
-      </g>
-
-      {/* phone */}
-      <g>
-        <rect x="150" y="80" width="46" height="66" rx="9" fill="#FFFFFF" stroke="#DCFCE7" strokeWidth="2" />
-        <rect x="157" y="88" width="32" height="46" rx="3" fill="#EAF5FF" />
-        <circle cx="173" cy="139" r="2.4" fill="#DCFCE7" />
-      </g>
-
-      {/* wrench, laid across the phone */}
-      <g transform="translate(140,118) rotate(-28)">
-        <rect x="0" y="0" width="46" height="8" rx="4" fill="#15803D" />
-        <circle cx="0" cy="4" r="8" fill="none" stroke="#15803D" strokeWidth="6" />
-      </g>
-
-      {/* floating dots/diamonds */}
-      <circle cx="112" cy="40" r="4" fill="#86EFAC" />
-      <rect x="94" y="66" width="7" height="7" transform="rotate(45 97.5 69.5)" fill="#86EFAC" opacity="0.8" />
-    </svg>
-  );
-}
-
-function Section({ title, subtitle, icon: Icon, children, className }) {
+function Section({ title, subtitle, icon: Icon, action, children, className }) {
   return (
     <section
       className={cx(
-        'relative overflow-hidden rounded-[22px] border border-[#E4EFEB] bg-white/95 p-5 shadow-[0_12px_32px_rgba(20,80,55,0.07),0_3px_10px_rgba(20,80,55,0.04)]',
+        'relative overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F3F3F3] p-4 sm:p-5',
         className,
       )}
     >
-      <span className="pointer-events-none absolute -bottom-10 -right-10 h-32 w-32 rounded-full bg-[#E4F8EC] blur-2xl" aria-hidden="true" />
-      <span className="pointer-events-none absolute -right-6 top-1/2 h-20 w-20 -translate-y-1/2 rounded-full bg-[#EAF5FF] blur-2xl" aria-hidden="true" />
       {title ? (
-        <div className="relative mb-4 flex items-center gap-3">
-          {Icon ? <Icon3D icon={Icon} tone="green" size="md" /> : null}
+        <div className="relative mb-4 flex flex-wrap items-center gap-3">
+          {Icon ? <Icon3D flat icon={Icon} tone="green" size="md" /> : null}
           <div className="min-w-0">
-            <h2 className="text-[17px] font-bold text-[#10213D]">{title}</h2>
-            {subtitle ? <p className="mt-0.5 text-xs text-[#6B7890]">{subtitle}</p> : null}
+            <h2 className="break-words text-[17px] font-bold text-[#111111]">{title}</h2>
+            {subtitle ? <p className="mt-0.5 text-xs text-[#666666]">{subtitle}</p> : null}
           </div>
+          {action ? <div className="ml-auto shrink-0">{action}</div> : null}
         </div>
       ) : null}
       <div className="relative">{children}</div>
@@ -594,7 +552,7 @@ function Section({ title, subtitle, icon: Icon, children, className }) {
 function IconField({ icon: Icon, children }) {
   return (
     <div className="relative">
-      <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#0A8F4B]" aria-hidden="true" />
+      <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#111111]/70" aria-hidden="true" />
       {children}
     </div>
   );
@@ -603,7 +561,7 @@ function IconField({ icon: Icon, children }) {
 function FormField({ label, required, error, fieldRef, className, children }) {
   return (
     <div ref={fieldRef} className={className}>
-      <label className="mb-1 block text-[0.7rem] font-semibold uppercase tracking-wide text-[#667085]">
+      <label className="mb-1 block text-[0.7rem] font-semibold uppercase tracking-wide text-[#666666]">
         {label}
         {required ? <span className="text-red-500"> *</span> : null}
       </label>
@@ -651,7 +609,7 @@ function CustomerNameField({ value, onChangeText, directory, onPick }) {
 
   return (
     <div ref={wrapRef} className="relative">
-      <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#0A8F4B]" aria-hidden="true" />
+      <User className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#09AD2A]" aria-hidden="true" />
       <input
         className={ICON_INPUT_CLS}
         value={value}
@@ -664,7 +622,7 @@ function CustomerNameField({ value, onChangeText, directory, onPick }) {
         autoComplete="off"
       />
       {open && matches.length > 0 ? (
-        <div className="absolute left-0 top-[calc(100%+0.25rem)] z-30 w-full min-w-[260px] rounded-xl border border-[#EAECF0] bg-white p-1.5 shadow-[0_12px_28px_rgba(16,24,40,0.12)]">
+        <div className="absolute left-0 top-[calc(100%+0.25rem)] z-30 w-full min-w-[260px] rounded-xl border border-[#ECECEC] bg-white p-1.5 shadow-[0_12px_28px_rgba(16,24,40,0.12)]">
           <p className="px-2 pb-1 pt-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Previous customers</p>
           {matches.map((c) => (
             <button
@@ -674,14 +632,14 @@ function CustomerNameField({ value, onChangeText, directory, onPick }) {
                 onPick(c);
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-[#F0FDF4]"
+              className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition hover:bg-[#F8F8F8]"
             >
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] text-[10px] font-bold text-[#15803D]">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[10px] font-bold text-[#09AD2A]">
                 {initials(c.name)}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium text-[#101828]">{c.name}</span>
-                <span className="block truncate text-xs text-[#667085]">
+                <span className="block truncate font-medium text-[#111111]">{c.name}</span>
+                <span className="block truncate text-xs text-[#666666]">
                   {c.phone || 'No phone'} · {c.totalBookings} booking{c.totalBookings === 1 ? '' : 's'}
                 </span>
               </span>
@@ -706,172 +664,46 @@ function addressFieldsFrom(booking) {
   };
 }
 
+/**
+ * Fixed-size device/brand image box. The box (inline-flex, so `size` applies
+ * wherever it's placed — not only as a flex child) bounds the image, and the
+ * image is capped at the box with object-contain, so a large brand logo can
+ * never render at its own file dimensions. Missing/broken → device icon.
+ */
 function Thumb({ url, name, size = 'h-7 w-7' }) {
-  return url ? (
-    <span className={cx('shrink-0 overflow-hidden rounded-lg border border-[#EAECF0] bg-white', size)}>
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [url]);
+  const src = resolveMediaUrl(url);
+  return src && !broken ? (
+    <span className={cx('inline-flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#ECECEC] bg-white p-0.5', size)}>
       {/* eslint-disable-next-line @next/next/no-img-element -- master-data brand/model images, remote S3 URLs. */}
-      <img src={url} alt="" className="h-full w-full object-contain" />
+      <img src={src} alt={name || ''} onError={() => setBroken(true)} className="block h-full max-h-full w-full max-w-full object-contain" />
     </span>
   ) : (
-    <span className={cx('flex shrink-0 items-center justify-center rounded-lg border border-[#EAECF0] bg-[#F0FDF4] text-[10px] font-bold text-[#15803D]', size)}>
-      {initials(name)}
+    <span className={cx('inline-flex shrink-0 items-center justify-center rounded-lg border border-[#ECECEC] bg-[#F8F8F8] text-[#98A2B3]', size)}>
+      <Smartphone className="h-1/2 w-1/2" aria-hidden="true" />
     </span>
   );
 }
 
-/**
- * Searchable image-aware picker — used for Device Category/Brand/Model.
- * `options` is the exact array already fetched for the plain `<select>`
- * this replaced (`{id, name, imageUrl, ...}`); `onChange` receives the
- * whole selected option object (or null when cleared), same as a
- * `<select>`'s handler would derive from `options.find(o => o.id ===
- * e.target.value)`.
- *
- * Root-caused bug: Category/Brand/Model all live inside the Device Details
- * `Section`, which (like every other Section on this page) has
- * `overflow-hidden` on its own outer box — needed there to clip its two
- * decorative corner glows to the card's rounded edge. This open panel used
- * to be a plain `absolute` child of that same box, so it rendered fine but
- * was then invisibly clipped by that ancestor's overflow-hidden the moment
- * it extended past the card's bottom edge — the actual API data (verified
- * live: categories/brands/models all return correctly, real imageUrl
- * included) was never the problem; the popped-open list was just cut off
- * to near-nothing. Portaling the open panel to document.body — fixed-
- * positioned from the trigger's own real on-screen rect, recomputed on
- * open/scroll/resize — escapes that ancestor entirely without touching
- * Section itself (so its glow-clipping stays intact for every other tab on
- * this page). */
-function ImageSelect({ label, required, value, options, onChange, placeholder, loading, disabled }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [rect, setRect] = useState(null);
-  const wrapRef = useRef(null);
-  const btnRef = useRef(null);
-  const panelRef = useRef(null);
-  const selected = options.find((o) => o.id === value) || null;
-
-  const updateRect = () => {
-    if (btnRef.current) setRect(btnRef.current.getBoundingClientRect());
-  };
-
+/** Device Details picker card image: the master-data image (contained), or the name's initials. */
+function PickImage({ url, name, className }) {
+  const [broken, setBroken] = useState(false);
   useEffect(() => {
-    if (!open) return undefined;
-    updateRect();
-    function onDown(event) {
-      const inTrigger = wrapRef.current && wrapRef.current.contains(event.target);
-      const inPanel = panelRef.current && panelRef.current.contains(event.target);
-      if (!inTrigger && !inPanel) setOpen(false);
-    }
-    function onKey(event) {
-      if (event.key === 'Escape') setOpen(false);
-    }
-    window.addEventListener('scroll', updateRect, true);
-    window.addEventListener('resize', updateRect);
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('scroll', updateRect, true);
-      window.removeEventListener('resize', updateRect);
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- updateRect closes over refs only, stable across renders.
-  }, [open]);
-
-  useEffect(() => {
-    if (open) setQuery('');
-  }, [open]);
-
-  const q = query.trim().toLowerCase();
-  const filtered = q ? options.filter((o) => (o.name || '').toLowerCase().includes(q)) : options;
-  const emptyMessage = options.length === 0 ? `No ${label.toLowerCase()} available` : 'No matches';
-
-  const panel =
-    open && rect && typeof document !== 'undefined'
-      ? createPortal(
-          <div
-            ref={panelRef}
-            style={{ position: 'fixed', top: rect.bottom + 4, left: rect.left, width: rect.width }}
-            className="z-[100] min-w-[260px] rounded-xl border border-[#EAECF0] bg-white p-2 shadow-[0_12px_28px_rgba(16,24,40,0.12)]"
-          >
-            <div className="relative mb-1.5">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#98A2B3]" aria-hidden="true" />
-              {/* eslint-disable-next-line jsx-a11y/no-autofocus -- picker just opened via explicit click, focusing its own search field is expected. */}
-              <input
-                autoFocus
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={`Search ${label.toLowerCase()}…`}
-                className="w-full rounded-lg border border-[#D0D5DD] bg-white py-1.5 pl-8 pr-2.5 text-sm text-[#101828] outline-none focus:border-[#15803D]"
-              />
-            </div>
-            <div role="listbox" className="max-h-56 overflow-y-auto">
-              {filtered.length === 0 ? (
-                <p className="px-2 py-3 text-center text-xs text-[#98A2B3]">{emptyMessage}</p>
-              ) : (
-                filtered.map((o) => {
-                  const isSel = o.id === value;
-                  return (
-                    <button
-                      key={o.id}
-                      type="button"
-                      role="option"
-                      aria-selected={isSel}
-                      onClick={() => {
-                        onChange(o);
-                        setOpen(false);
-                      }}
-                      className={cx(
-                        'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition',
-                        isSel ? 'bg-[#F0FDF4] text-[#15803D]' : 'text-[#344054] hover:bg-[#F9FAFB]',
-                      )}
-                    >
-                      <Thumb url={o.imageUrl} name={o.name} />
-                      <span className="min-w-0 flex-1 truncate">{o.name}</span>
-                      {isSel ? <Check className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>,
-          document.body,
-        )
-      : null;
-
-  return (
-    <div ref={wrapRef} className="relative">
-      <label className="mb-1 block text-[0.7rem] font-semibold uppercase tracking-wide text-[#667085]">
-        {label}
-        {required ? <span className="text-red-500"> *</span> : null}
-      </label>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={() => !disabled && setOpen((v) => !v)}
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={cx(
-          'flex w-full items-center gap-2 rounded-lg border border-[#D0D5DD] bg-white px-2.5 py-1.5 text-left text-sm transition',
-          FOCUS_RING,
-          disabled ? 'cursor-not-allowed bg-[#F9FAFB] text-[#98A2B3]' : 'hover:border-[#86EFAC]',
-        )}
-      >
-        {selected ? <Thumb url={selected.imageUrl} name={selected.name} /> : null}
-        <span className={cx('min-w-0 flex-1 truncate', selected ? 'font-medium text-[#101828]' : 'text-[#98A2B3]')}>
-          {loading ? 'Loading…' : selected ? selected.name : placeholder}
-        </span>
-        <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform', open && 'rotate-180')} aria-hidden="true" />
-      </button>
-
-      {panel}
-    </div>
+    setBroken(false);
+  }, [url]);
+  return url && !broken ? (
+    // eslint-disable-next-line @next/next/no-img-element -- master-data category/brand/model images, remote S3 URLs.
+    <img src={url} alt="" loading="lazy" onError={() => setBroken(true)} className={cx('object-contain', className)} />
+  ) : (
+    <span className={cx('flex items-center justify-center rounded-xl bg-[#F3F3F3] text-sm font-bold text-[#09AD2A]', className)}>{initials(name)}</span>
   );
 }
 
 function ColorSwatch({ hex, size = 'h-7 w-7' }) {
-  return <span className={cx('shrink-0 rounded-full border border-[#EAECF0]', size)} style={{ backgroundColor: hex }} aria-hidden="true" />;
+  return <span className={cx('shrink-0 rounded-full border border-[#ECECEC]', size)} style={{ backgroundColor: hex }} aria-hidden="true" />;
 }
 
 const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -1001,25 +833,25 @@ function ReadyByPicker({ value, onChange }) {
   };
 
   return (
-    <div className="rounded-2xl border border-[#EAECF0] bg-white p-4">
+    <div className="rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-4">
       <div className="flex items-center justify-between">
         <button
           type="button"
           onClick={goPrevMonth}
           disabled={isCurrentMonth}
           aria-label="Previous month"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-[#344054] transition hover:bg-[#F0FDF4] disabled:opacity-30"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-[#344054] transition sm:h-8 sm:w-8 hover:bg-[#F8F8F8] disabled:opacity-30"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         </button>
-        <p className="text-sm font-bold text-[#101828]">
+        <p className="text-sm font-bold text-[#111111]">
           {MO_FULL[viewDate.getMonth()]}, {viewDate.getFullYear()}
         </p>
         <button
           type="button"
           onClick={goNextMonth}
           aria-label="Next month"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-[#344054] transition hover:bg-[#F0FDF4]"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-[#344054] transition sm:h-8 sm:w-8 hover:bg-[#F8F8F8]"
         >
           <ChevronRight className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -1027,7 +859,7 @@ function ReadyByPicker({ value, onChange }) {
 
       <div className="mt-3 grid grid-cols-7 gap-y-1.5 text-center">
         {DOW_SHORT.map((d) => (
-          <span key={d} className="text-[0.65rem] font-bold uppercase tracking-wide text-[#667085]">
+          <span key={d} className="text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">
             {d}
           </span>
         ))}
@@ -1042,16 +874,16 @@ function ReadyByPicker({ value, onChange }) {
               onClick={() => pickDate(date)}
               disabled={disabled}
               className={cx(
-                'mx-auto flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition',
+                'mx-auto flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition sm:h-8 sm:w-8',
                 selected
-                  ? 'bg-[#15803D] text-white'
+                  ? 'bg-[#09AD2A] text-white'
                   : disabled
                     ? 'cursor-not-allowed text-[#D0D5DD]'
                     : !inMonth
-                      ? 'text-[#98A2B3] hover:bg-[#F0FDF4]'
+                      ? 'text-[#98A2B3] hover:bg-[#F8F8F8]'
                       : isToday
-                        ? 'text-[#15803D] hover:bg-[#F0FDF4]'
-                        : 'text-[#101828] hover:bg-[#F0FDF4]',
+                        ? 'text-[#09AD2A] hover:bg-[#F8F8F8]'
+                        : 'text-[#111111] hover:bg-[#F8F8F8]',
               )}
             >
               {date.getDate()}
@@ -1062,10 +894,10 @@ function ReadyByPicker({ value, onChange }) {
 
       <div className="mt-4 grid grid-cols-3 gap-3">
         <div>
-          <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#667085]">Hour</p>
+          <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Hour</p>
           <select
             aria-label="Ready by hour"
-            className="w-full rounded-lg border border-[#D0D5DD] bg-[#F9FAFB] px-2.5 py-2 text-sm font-semibold text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#DCFCE7]"
+            className="w-full rounded-lg border border-[#D0D5DD] bg-[#F3F3F3] px-2.5 py-2 text-base font-semibold text-[#111111] focus:outline-none sm:text-sm focus:ring-2 focus:ring-[#ECECEC]"
             value={hour12}
             onChange={(e) => setTime(Number(e.target.value), minute, ampm)}
           >
@@ -1077,10 +909,10 @@ function ReadyByPicker({ value, onChange }) {
           </select>
         </div>
         <div>
-          <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#667085]">Minute</p>
+          <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Minute</p>
           <select
             aria-label="Ready by minute"
-            className="w-full rounded-lg border border-[#D0D5DD] bg-[#F9FAFB] px-2.5 py-2 text-sm font-semibold text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#DCFCE7]"
+            className="w-full rounded-lg border border-[#D0D5DD] bg-[#F3F3F3] px-2.5 py-2 text-base font-semibold text-[#111111] focus:outline-none sm:text-sm focus:ring-2 focus:ring-[#ECECEC]"
             value={minute}
             onChange={(e) => setTime(hour12, Number(e.target.value), ampm)}
           >
@@ -1092,10 +924,10 @@ function ReadyByPicker({ value, onChange }) {
           </select>
         </div>
         <div>
-          <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#667085]">AM / PM</p>
+          <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">AM / PM</p>
           <select
             aria-label="Ready by AM or PM"
-            className="w-full rounded-lg border border-[#D0D5DD] bg-[#F9FAFB] px-2.5 py-2 text-sm font-semibold text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#DCFCE7]"
+            className="w-full rounded-lg border border-[#D0D5DD] bg-[#F3F3F3] px-2.5 py-2 text-base font-semibold text-[#111111] focus:outline-none sm:text-sm focus:ring-2 focus:ring-[#ECECEC]"
             value={ampm}
             onChange={(e) => setTime(hour12, minute, e.target.value)}
           >
@@ -1105,8 +937,8 @@ function ReadyByPicker({ value, onChange }) {
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl bg-[#F0FDF4] px-4 py-3">
-        <p className="text-sm font-bold text-[#15803D]">
+      <div className="mt-4 rounded-xl bg-[#F8F8F8] px-4 py-3">
+        <p className="text-sm font-bold text-[#09AD2A]">
           {DOW_SHORT[value.getDay()]}, {value.getDate()} {MO[value.getMonth()]} – {hour12}:{pad2(minute)} {ampm}
         </p>
         <p className="text-xs text-[#5C8F74]">{relativeFromNow(value, now)}</p>
@@ -1132,12 +964,12 @@ function DateTimeSheet({ title, description, confirmLabel, initialValue, onConfi
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={onClose}>
       <div
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 sm:rounded-3xl"
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-[#EAECF0] sm:hidden" />
-        <h2 className="text-lg font-bold text-[#101828]">{title}</h2>
-        <p className="mt-1 text-sm text-[#667085]">{description}</p>
+        <h2 className="text-lg font-bold text-[#111111]">{title}</h2>
+        <p className="mt-1 text-sm text-[#666666]">{description}</p>
 
         <div className="mt-4">
           <ReadyByPicker value={draft} onChange={setDraft} />
@@ -1146,7 +978,7 @@ function DateTimeSheet({ title, description, confirmLabel, initialValue, onConfi
         <button
           type="button"
           onClick={() => onConfirm(draft)}
-          className={cx('mt-4 w-full rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#166534]', FOCUS_RING)}
+          className={cx('mt-4 w-full rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-bold text-[#111111] transition hover:bg-[#E5B11A]', FOCUS_RING)}
         >
           {confirmLabel}
         </button>
@@ -1169,12 +1001,12 @@ function DurationSheet({ initialMinutes, onConfirm, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" onClick={onClose}>
       <div
-        className="max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-t-3xl bg-white p-5 sm:rounded-3xl"
+        className="max-h-[90dvh] w-full max-w-sm overflow-y-auto overscroll-contain rounded-t-3xl bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-3xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mx-auto mb-3 h-1 w-10 shrink-0 rounded-full bg-[#EAECF0] sm:hidden" />
-        <h2 className="text-lg font-bold text-[#101828]">Duration</h2>
-        <p className="mt-1 text-sm text-[#667085]">How long will this repair take?</p>
+        <h2 className="text-lg font-bold text-[#111111]">Duration</h2>
+        <p className="mt-1 text-sm text-[#666666]">How long will this repair take?</p>
 
         <div className="mt-4 grid grid-cols-3 gap-2">
           {DURATION_PRESETS.map((p) => (
@@ -1185,8 +1017,8 @@ function DurationSheet({ initialMinutes, onConfirm, onClose }) {
               className={cx(
                 'rounded-xl border px-3 py-2.5 text-sm font-bold transition',
                 mode === 'preset' && initialMinutes === p.minutes
-                  ? 'border-[#15803D] bg-[#F0FDF4] text-[#15803D]'
-                  : 'border-[#EAECF0] text-[#344054] hover:border-[#86EFAC]',
+                  ? 'border-[#09AD2A] bg-[#F8F8F8] text-[#09AD2A]'
+                  : 'border-[#ECECEC] text-[#344054] hover:border-[#ECECEC]',
               )}
             >
               {p.label}
@@ -1197,7 +1029,7 @@ function DurationSheet({ initialMinutes, onConfirm, onClose }) {
             onClick={() => setMode('custom')}
             className={cx(
               'rounded-xl border px-3 py-2.5 text-sm font-bold transition',
-              mode === 'custom' ? 'border-[#15803D] bg-[#F0FDF4] text-[#15803D]' : 'border-[#EAECF0] text-[#344054] hover:border-[#86EFAC]',
+              mode === 'custom' ? 'border-[#09AD2A] bg-[#F8F8F8] text-[#09AD2A]' : 'border-[#ECECEC] text-[#344054] hover:border-[#ECECEC]',
             )}
           >
             Custom
@@ -1207,31 +1039,31 @@ function DurationSheet({ initialMinutes, onConfirm, onClose }) {
         {mode === 'custom' ? (
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div>
-              <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#667085]">Hours</p>
+              <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Hours</p>
               <input
                 type="number"
                 min={0}
                 max={999}
                 value={customHours}
                 onChange={(e) => setCustomHours(Math.max(0, Number(e.target.value) || 0))}
-                className="w-full rounded-lg border border-[#D0D5DD] bg-[#F9FAFB] px-2.5 py-2 text-sm font-semibold text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#DCFCE7]"
+                className="w-full rounded-lg border border-[#D0D5DD] bg-[#F3F3F3] px-2.5 py-2 text-base font-semibold text-[#111111] focus:outline-none sm:text-sm focus:ring-2 focus:ring-[#ECECEC]"
               />
             </div>
             <div>
-              <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#667085]">Minutes</p>
+              <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Minutes</p>
               <input
                 type="number"
                 min={0}
                 max={59}
                 value={customMinutes}
                 onChange={(e) => setCustomMinutes(Math.min(59, Math.max(0, Number(e.target.value) || 0)))}
-                className="w-full rounded-lg border border-[#D0D5DD] bg-[#F9FAFB] px-2.5 py-2 text-sm font-semibold text-[#101828] focus:outline-none focus:ring-2 focus:ring-[#DCFCE7]"
+                className="w-full rounded-lg border border-[#D0D5DD] bg-[#F3F3F3] px-2.5 py-2 text-base font-semibold text-[#111111] focus:outline-none sm:text-sm focus:ring-2 focus:ring-[#ECECEC]"
               />
             </div>
             <button
               type="button"
               onClick={() => onConfirm(Math.max(1, customHours * 60 + customMinutes))}
-              className={cx('col-span-2 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-[#166534]', FOCUS_RING)}
+              className={cx('col-span-2 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-bold text-[#111111] transition hover:bg-[#E5B11A]', FOCUS_RING)}
             >
               Apply
             </button>
@@ -1249,25 +1081,24 @@ function DurationSheet({ initialMinutes, onConfirm, onClose }) {
  * upload endpoint for a booking's voice note anywhere in this codebase
  * (confirmed — same investigation noted near the top of this file), so —
  * same "estimate only" treatment as Estimated Delivery and Customer repair
- * approval above — the clip lives only in this component's own state
- * (an in-memory object URL) and is discarded on delete/re-record or when
- * this component unmounts; it is never submitted with the booking. If a
- * real voice-note upload endpoint is ever added, this is the one place a
- * fetch call would be wired in.
+ * approval above — the clip lives only in memory (an object URL) and is
+ * never submitted with the booking. If a real voice-note upload endpoint is
+ * ever added, this is the one place a fetch call would be wired in.
+ *
+ * The recorder state is a hook the page owns (not state inside the card),
+ * so moving between wizard steps — which unmounts the card — keeps the
+ * clip, and even an in-progress recording; it is discarded only on
+ * delete/re-record, Reset / "Add another device", or leaving the page.
  */
-function VoiceNoteCard() {
-  const [expanded, setExpanded] = useState(false);
+function useVoiceNote() {
   const [status, setStatus] = useState('idle'); // idle | recording | recorded
   const [seconds, setSeconds] = useState(0);
   const [audioUrl, setAudioUrl] = useState('');
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [error, setError] = useState('');
 
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
   const streamRef = useRef(null);
   const timerRef = useRef(null);
-  const audioElRef = useRef(null);
   const audioUrlRef = useRef('');
   audioUrlRef.current = audioUrl;
 
@@ -1286,7 +1117,6 @@ function VoiceNoteCard() {
   );
 
   async function startRecording() {
-    setError('');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -1296,6 +1126,9 @@ function VoiceNoteCard() {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = () => {
+        // A clear() while recording detaches the recorder first, so its
+        // late onstop can't resurrect the discarded clip.
+        if (mediaRecorderRef.current !== recorder) return;
         const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
         setAudioUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
@@ -1310,7 +1143,7 @@ function VoiceNoteCard() {
       setStatus('recording');
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     } catch {
-      setError('Microphone access was denied or is unavailable.');
+      notifyError('Microphone access was denied or is unavailable.');
     }
   }
 
@@ -1319,13 +1152,30 @@ function VoiceNoteCard() {
     mediaRecorderRef.current?.stop();
   }
 
-  function deleteRecording() {
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
+  function clear() {
+    clearInterval(timerRef.current);
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    stopStream();
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     setAudioUrl('');
     setStatus('idle');
     setSeconds(0);
-    setIsPlaying(false);
   }
+
+  return { status, seconds, audioUrl, startRecording, stopRecording, clear };
+}
+
+/**
+ * The voice-note UI inside the Issue Description & Voice Note card; `voice`
+ * is useVoiceNote()'s value. `readOnly` (the Device Info tab's summary)
+ * drops Record/Stop/Delete and keeps only playback.
+ */
+function VoiceNoteCard({ voice, readOnly = false }) {
+  const { status, seconds, audioUrl, startRecording, stopRecording, clear: deleteRecording } = voice;
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioElRef = useRef(null);
 
   function togglePlay() {
     const el = audioElRef.current;
@@ -1337,110 +1187,111 @@ function VoiceNoteCard() {
   const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
   return (
-    <div className="rounded-xl border border-[#EAECF0] bg-white p-4">
-      <button type="button" onClick={() => setExpanded((v) => !v)} className="flex w-full items-center gap-3 text-left">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4]">
-          <Mic className="h-4.5 w-4.5 text-[#15803D]" aria-hidden="true" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-bold text-[#101828]">Record Voice Note</span>
-          <span className="block text-xs text-[#667085]">Record a voice note (optional)</span>
-        </span>
-        <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform duration-200', expanded && 'rotate-180')} aria-hidden="true" />
-      </button>
-
-      <div className={cx('grid transition-all duration-300 ease-in-out', expanded ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0')}>
-        <div className="overflow-hidden">
-          <div className="pt-3">
-            {status === 'idle' ? (
+    <div>
+      {status === 'idle' && readOnly ? (
+        <p className="rounded-xl bg-[#F8F8F8] px-4 py-3 text-sm text-[#98A2B3]">No voice note recorded.</p>
+      ) : status === 'idle' ? (
+        <button
+          type="button"
+          onClick={startRecording}
+          className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-[#F3BF23] px-4 py-3.5 text-sm font-bold text-[#111111] transition hover:bg-[#E5B11A]"
+        >
+          <Mic className="h-[18px] w-[18px]" aria-hidden="true" />
+          Record voice note
+        </button>
+      ) : status === 'recording' ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between rounded-xl bg-red-50 px-4 py-3">
+            <span className="flex items-center gap-2 text-sm font-bold text-red-600">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-red-600" aria-hidden="true" />
+              Recording…
+            </span>
+            <span className="text-sm font-bold text-red-600">{fmt(seconds)}</span>
+          </div>
+          {readOnly ? null : (
+            <button
+              type="button"
+              onClick={stopRecording}
+              className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3.5 text-sm font-bold text-white transition hover:bg-red-700"
+            >
+              <Square className="h-4 w-4" aria-hidden="true" />
+              Stop recording
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 rounded-xl bg-[#F8F8F8] px-4 py-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#09AD2A]">
+              <Music2 className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold text-[#111111]">Voice Note</p>
+              <p className="text-xs text-[#666666]">{fmt(seconds)}</p>
+            </div>
+          </div>
+          <div className={cx('grid gap-2', readOnly ? 'grid-cols-1' : 'grid-cols-2')}>
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm font-bold text-[#09AD2A] transition hover:bg-[#F8F8F8]"
+            >
+              {isPlaying ? <Pause className="h-4 w-4" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
+              {isPlaying ? 'Pause' : 'Play'}
+            </button>
+            {readOnly ? null : (
               <button
                 type="button"
-                onClick={startRecording}
-                className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-[#14532D] px-4 py-3.5 text-sm font-bold text-white transition hover:bg-[#166534]"
+                onClick={deleteRecording}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50"
               >
-                <Mic className="h-4.5 w-4.5" aria-hidden="true" />
-                Record voice note
+                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                Delete
               </button>
-            ) : status === 'recording' ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between rounded-xl bg-red-50 px-4 py-3">
-                  <span className="flex items-center gap-2 text-sm font-bold text-red-600">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-red-600" aria-hidden="true" />
-                    Recording…
-                  </span>
-                  <span className="text-sm font-bold text-red-600">{fmt(seconds)}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={stopRecording}
-                  className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3.5 text-sm font-bold text-white transition hover:bg-red-700"
-                >
-                  <Square className="h-4 w-4" aria-hidden="true" />
-                  Stop recording
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-3 rounded-xl bg-[#F0FDF4] px-4 py-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#15803D]">
-                    <Music2 className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-[#101828]">Voice Note</p>
-                    <p className="text-xs text-[#667085]">{fmt(seconds)}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={togglePlay}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-[#D0D5DD] bg-white px-3 py-2.5 text-sm font-bold text-[#15803D] transition hover:bg-[#F0FDF4]"
-                  >
-                    {isPlaying ? <Pause className="h-4 w-4" aria-hidden="true" /> : <Play className="h-4 w-4" aria-hidden="true" />}
-                    {isPlaying ? 'Pause' : 'Play'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={deleteRecording}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2.5 text-sm font-bold text-red-600 transition hover:bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                    Delete
-                  </button>
-                </div>
-                <audio
-                  ref={audioElRef}
-                  src={audioUrl}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                  onEnded={() => setIsPlaying(false)}
-                  className="hidden"
-                />
-              </div>
             )}
-            {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
           </div>
+          <audio
+            ref={audioElRef}
+            src={audioUrl}
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+            className="hidden"
+          />
         </div>
-      </div>
+      )}
     </div>
   );
 }
 
 /**
- * One Device Photos tile — a hidden file input behind a dashed drop-zone
- * button, or the uploaded thumbnail with a remove button once one exists.
- * The browser's own file picker already offers Camera vs Photo Library on
+ * Device Files slots — the Partner app's DeviceInformationScreen SLOTS:
+ * Front + Back photos are required, the full-coverage video is optional.
+ * `key` is the media-upload slot and the devicePhotosJson key
+ * ({front, back, video}, the shape the app writes); `field` is the form field.
+ */
+const DEVICE_FILE_SLOTS = [
+  { key: 'front', field: 'frontImageUrl', label: 'Front Side', required: true },
+  { key: 'back', field: 'backImageUrl', label: 'Back Side', required: true },
+  { key: 'video', field: 'videoUrl', label: 'Full Coverage', video: true },
+];
+
+/**
+ * One Device Files tile — a hidden file input behind a dashed "+ Add"
+ * button, or the uploaded thumbnail (or video frame) with a remove button
+ * and an "Added" badge once one exists. The label sits below the tile, as in
+ * the app. The browser's own file picker already offers Camera vs Library on
  * mobile, so there's no separate "choose upload method" control to build.
  */
-function PhotoTile({ label, url, uploading, error, onUpload, onRemove }) {
+function PhotoTile({ slot, url, uploading, invalid, fieldRef, onUpload, onRemove }) {
   const inputRef = useRef(null);
+  const Icon = slot.video ? Video : ImageIcon;
   return (
-    <div>
-      <p className="mb-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-[#667085]">{label}</p>
+    <div ref={fieldRef} className="flex min-w-0 flex-col items-center">
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept={slot.video ? 'video/mp4,video/quicktime,video/webm' : 'image/*'}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -1449,30 +1300,65 @@ function PhotoTile({ label, url, uploading, error, onUpload, onRemove }) {
         }}
       />
       {url ? (
-        <div className="relative overflow-hidden rounded-xl border border-[#EAECF0]">
-          {/* eslint-disable-next-line @next/next/no-img-element -- shop-uploaded device photo, remote media URL. */}
-          <img src={url} alt={label} className="h-24 w-full object-cover" />
+        <div className="relative h-28 w-full overflow-hidden rounded-2xl border-2 border-[#09AD2A] bg-[#F2FBF4]">
+          {slot.video ? (
+            <>
+              {/* #t=0.1 makes the browser paint a frame instead of a blank box. */}
+              <video src={`${url}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+              <span className="absolute inset-0 flex flex-col items-center justify-center bg-black/45 text-white">
+                <Video className="h-6 w-6" aria-hidden="true" />
+                <span className="mt-1 text-[9px] font-extrabold tracking-widest">VIDEO</span>
+              </span>
+            </>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element -- shop-uploaded device photo, remote media URL. */
+            <img src={url} alt={slot.label} className="h-full w-full object-cover" />
+          )}
           <button
             type="button"
             onClick={onRemove}
-            aria-label={`Remove ${label}`}
+            aria-label={`Remove ${slot.label}`}
             className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
+          <span className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-0.5 rounded-full bg-[#09AD2A] px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-white">
+            <CheckCircle2 className="h-2.5 w-2.5" aria-hidden="true" /> Added
+          </span>
         </div>
       ) : (
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
           disabled={uploading}
-          className="flex h-24 w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#D0D5DD] bg-[#F9FAFB] text-[#98A2B3] transition hover:border-[#86EFAC] disabled:cursor-not-allowed"
+          aria-label={`Add ${slot.label}${slot.video ? ' video' : ' photo'}`}
+          className={cx(
+            'flex h-28 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed transition disabled:cursor-not-allowed',
+            FOCUS_RING,
+            invalid ? 'border-red-300 bg-red-50/40' : 'border-[#D0D5DD] bg-[#F8F8F8] hover:border-[#09AD2A]/60',
+          )}
         >
-          {uploading ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <Camera className="h-5 w-5" aria-hidden="true" />}
-          <span className="text-xs font-semibold">{uploading ? 'Uploading…' : 'Add photo'}</span>
+          {uploading ? (
+            <>
+              <Loader2 className="h-5 w-5 animate-spin text-[#09AD2A]" aria-hidden="true" />
+              <span className="mt-2 text-xs font-semibold text-[#98A2B3]">Uploading…</span>
+            </>
+          ) : (
+            <>
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-[#09AD2A] shadow-sm">
+                <Icon className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <span className="mt-2 inline-flex items-center gap-0.5 text-xs font-extrabold text-[#09AD2A]">
+                <Plus className="h-3 w-3" aria-hidden="true" /> Add
+              </span>
+            </>
+          )}
         </button>
       )}
-      {error ? <p className="mt-1 text-[0.65rem] text-red-600">{error}</p> : null}
+      <p className="mt-1.5 text-center text-[13px] font-bold text-[#111111]">
+        {slot.label}
+        {slot.required ? <span className="text-red-500"> *</span> : null}
+      </p>
     </div>
   );
 }
@@ -1491,9 +1377,6 @@ function IssueCategoryRow({
   onToggleExpand,
   selectedIds,
   onToggleService,
-  isOther,
-  otherValue,
-  onOtherChange,
   draftPrices,
   draftWarranty,
   onDraftPriceChange,
@@ -1504,32 +1387,29 @@ function IssueCategoryRow({
   const name = category.displayName || category.name || 'Repair Category';
 
   return (
-    <div
-      className={cx(
-        'self-start overflow-hidden rounded-2xl border bg-white transition',
-        selectedCount > 0 ? 'border-[#86EFAC] shadow-[0_1px_3px_rgba(16,128,61,0.1)]' : 'border-[#EAECF0] hover:border-[#86EFAC] hover:shadow-[0_1px_3px_rgba(16,24,40,0.06)]',
-      )}
-    >
+    <div className="self-start overflow-hidden rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] transition">
       <button
         type="button"
         onClick={onToggleExpand}
         aria-expanded={expanded}
-        className={cx('flex w-full items-center gap-3 px-3.5 py-3.5 text-left transition', expanded ? 'bg-[#F9FAFB]' : 'hover:bg-[#F9FAFB]')}
+        className={cx('flex w-full items-center gap-3 px-3.5 py-3.5 text-left transition', expanded ? 'bg-[#F3F3F3]' : 'hover:bg-[#F3F3F3]')}
       >
         <span
           className={cx(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition',
-            selectedCount > 0 ? 'bg-[#15803D] text-white' : 'bg-[#F0FDF4] text-[#15803D]',
+            selectedCount > 0 ? 'bg-[#09AD2A] text-white' : 'bg-[#F8F8F8] text-[#09AD2A]',
           )}
         >
           <Icon className="h-5 w-5" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-bold text-[#101828]">{name}</span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[#667085]">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-bold text-[#111111]">{name}</span>
+          </span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[#666666]">
             {services.length} option{services.length === 1 ? '' : 's'}
             {selectedCount > 0 ? (
-              <span className="inline-flex items-center rounded-full bg-[#F0FDF4] px-2 py-0.5 text-[0.68rem] font-bold text-[#15803D]">
+              <span className="inline-flex items-center rounded-full bg-[#F8F8F8] px-2 py-0.5 text-[0.68rem] font-bold text-[#09AD2A]">
                 {selectedCount} selected
               </span>
             ) : null}
@@ -1540,25 +1420,34 @@ function IssueCategoryRow({
 
       <div className={cx('grid transition-all duration-200 ease-out', expanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
         <div className="overflow-hidden">
-          <div className="space-y-2 border-t border-dashed border-[#EAECF0] px-3 py-3">
-            {services.length === 0 && !isOther ? (
+          <div className="space-y-2 border-t border-dashed border-[#ECECEC] px-3 py-3">
+            {services.length === 0 ? (
               <p className="text-xs text-[#98A2B3]">No services listed under this category yet.</p>
             ) : (
               <div className="grid grid-cols-1 gap-2">
                 {services.map((s) => {
                   const checked = selectedIds.includes(s.id);
+                  const ServiceIcon = iconForRepairService(s.name, name);
                   return (
                     <div
                       key={s.id}
                       className={cx(
                         'overflow-hidden rounded-xl border transition',
-                        checked ? 'border-[#15803D] bg-[#F0FDF4] shadow-[0_1px_2px_rgba(16,24,40,0.04)]' : 'border-[#E4E7EC] bg-white hover:border-[#86EFAC]',
+                        checked ? 'border-[#09AD2A] bg-[#F8F8F8]' : 'border-[#ECECEC] bg-white hover:border-[#ECECEC]',
                       )}
                     >
                       <div className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                        <span className={cx('flex min-w-0 items-center gap-2 truncate text-sm font-semibold', checked ? 'text-[#15803D]' : 'text-[#344054]')}>
-                          {checked ? <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
+                        <span className={cx('flex min-w-0 items-center gap-2.5 text-sm font-semibold', checked ? 'text-[#09AD2A]' : 'text-[#344054]')}>
+                          <span
+                            className={cx(
+                              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition',
+                              checked ? 'bg-[#09AD2A] text-white' : 'bg-[#F3F3F3] text-[#09AD2A]',
+                            )}
+                          >
+                            <ServiceIcon className="h-4 w-4" aria-hidden="true" />
+                          </span>
                           <span className="truncate">{s.name}</span>
+                          {checked ? <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
                         </span>
                         <button
                           type="button"
@@ -1567,8 +1456,8 @@ function IssueCategoryRow({
                           className={cx(
                             'inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-bold transition',
                             checked
-                              ? 'border border-[#D0D5DD] bg-white text-[#667085] hover:border-red-300 hover:bg-red-50 hover:text-red-600'
-                              : 'bg-[#15803D] text-white hover:bg-[#166534]',
+                              ? 'border border-[#D0D5DD] bg-white text-[#666666] hover:border-red-300 hover:bg-red-50 hover:text-red-600'
+                              : 'bg-[#09AD2A] text-white hover:bg-[#078F22]',
                             FOCUS_RING,
                           )}
                         >
@@ -1585,7 +1474,7 @@ function IssueCategoryRow({
                       </div>
 
                       {checked ? (
-                        <div className="space-y-3 border-t border-dashed border-[#BBF7D0] bg-white px-3.5 py-3.5">
+                        <div className="space-y-3 border-t border-dashed border-[#ECECEC] bg-white px-3.5 py-3.5">
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,180px)_1fr] sm:items-end">
                             <div>
                               <label className="mb-1.5 block text-xs font-semibold text-[#344054]" htmlFor={`svc-price-${s.id}`}>
@@ -1601,7 +1490,7 @@ function IssueCategoryRow({
                                   value={draftPrices[s.id] || ''}
                                   onChange={(e) => onDraftPriceChange(s.id, e.target.value)}
                                   placeholder="0"
-                                  className={cx(COMPACT_INPUT_CLS, 'h-10 pl-7 text-sm font-semibold text-[#101828]')}
+                                  className={cx(COMPACT_INPUT_CLS, 'h-10 pl-7 text-sm font-semibold text-[#111111]')}
                                 />
                               </div>
                             </div>
@@ -1618,7 +1507,7 @@ function IssueCategoryRow({
                                       aria-pressed={active}
                                       className={cx(
                                         'h-10 rounded-full border px-3.5 text-xs font-bold transition',
-                                        active ? 'border-[#15803D] bg-[#15803D] text-white' : 'border-[#D0D5DD] bg-white text-[#344054] hover:border-[#86EFAC]',
+                                        active ? 'border-[#09AD2A] bg-[#09AD2A] text-white' : 'border-[#D0D5DD] bg-white text-[#344054] hover:border-[#ECECEC]',
                                       )}
                                     >
                                       {months} Months
@@ -1638,14 +1527,6 @@ function IssueCategoryRow({
                 })}
               </div>
             )}
-            {isOther ? (
-              <textarea
-                className={cx(COMPACT_INPUT_CLS, 'min-h-[60px] resize-y')}
-                value={otherValue}
-                onChange={onOtherChange}
-                placeholder="Describe the issue…"
-              />
-            ) : null}
           </div>
         </div>
       </div>
@@ -1654,20 +1535,30 @@ function IssueCategoryRow({
 }
 
 export default function BookServicePage() {
+  // The ACTIVE shop — the JWT session's shopId (the shop an owner switched to,
+  // or a shop login's own shop) — and that shop's own public record. Not the
+  // owner's first location, and never the owner's personal profile/phone.
   const [profile, setProfile] = useState(null);
   const [profileError, setProfileError] = useState('');
+  const [shopId, setShopId] = useState(null);
 
   useEffect(() => {
     let alive = true;
-    fetchMyProfile()
-      .then((data) => alive && setProfile(data))
-      .catch((err) => alive && setProfileError(err.message || 'Could not load your shop profile.'));
+    const activeShopId = readShopOwner()?.shopId || null;
+    setShopId(activeShopId);
+    if (!activeShopId) {
+      setProfileError('Could not identify your shop. Please sign in again.');
+      return undefined;
+    }
+    getShopPublic(activeShopId).then((data) => {
+      if (!alive) return;
+      if (data) setProfile(data);
+      else setProfileError('Could not load your shop profile.');
+    });
     return () => {
       alive = false;
     };
   }, []);
-
-  const shopId = profile?.locations?.[0]?.id || null;
 
   const [activeSection, setActiveSection] = useState('customer');
   // Moved up from just above the JSX return (where it originally lived,
@@ -1684,9 +1575,12 @@ export default function BookServicePage() {
   // instead of moving to the next tab.
   const goNext = () => {
     if (activeIndex >= SECTIONS.length - 1) return;
+    if (SECTIONS[activeIndex + 1].key === 'confirmation' && !confirmed) return;
     const { errors, firstErrorField, isValid } = validateSection(activeSection);
     if (!isValid) {
       setFieldErrors((prev) => ({ ...prev, ...errors }));
+      // A rule with no on-screen field (e.g. "select a service") shows as a toast.
+      if (!fieldRefs.current?.[firstErrorField]) notifyError(errors[firstErrorField]);
       focusField(fieldRefs, firstErrorField);
       return;
     }
@@ -1725,6 +1619,7 @@ export default function BookServicePage() {
       if (!isValid) {
         setFieldErrors((prev) => ({ ...prev, ...errors }));
         if (sectionKey === activeSection) {
+          if (!fieldRefs.current?.[firstErrorField]) notifyError(errors[firstErrorField]);
           focusField(fieldRefs, firstErrorField);
         } else {
           setActiveSection(sectionKey);
@@ -1742,6 +1637,16 @@ export default function BookServicePage() {
       }
       return next;
     });
+    // Confirmation only opens once Devices List is finished — i.e. submit()
+    // has created the booking and set `confirmed`. devicesList has no
+    // required fields of its own, so the loop above alone would let a tab
+    // click land on an empty Confirmation; send the user to Devices List
+    // to submit instead.
+    if (targetKey === 'confirmation' && !confirmed) {
+      setActiveSection('devicesList');
+      notifyError('Submit the booking from Devices List to continue');
+      return;
+    }
     setActiveSection(targetKey);
   };
 
@@ -1774,7 +1679,6 @@ export default function BookServicePage() {
 
   /* ---- Previous-customer type-ahead (Customer Name) — see file header ---- */
   const [directoryBookings, setDirectoryBookings] = useState([]);
-  const [autofillNote, setAutofillNote] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -1793,16 +1697,15 @@ export default function BookServicePage() {
     setForm((f) => ({
       ...f,
       customerName: customer.name,
-      customerMobile: customer.phone || f.customerMobile,
+      customerMobile: toTenDigitMobile(customer.phone) || f.customerMobile,
       customerEmail: customer.email || f.customerEmail,
       ...(address || {}),
     }));
-    setAutofillNote(
+    notifySuccess(
       address
         ? `Loaded ${customer.name}'s details and their last pickup address.`
         : `Loaded ${customer.name}'s details. No saved address found for them yet.`,
     );
-    setTimeout(() => setAutofillNote(''), 4000);
   };
 
   /* ---- Device: category -> brand -> model ----
@@ -1904,11 +1807,74 @@ export default function BookServicePage() {
     return models.filter((m) => !m.categoryId || m.categoryId === form.categoryId);
   }, [models, form.categoryId]);
 
+  // Device Details visual picker: brand search, model search, series chips
+  // (real series from GET /master/brands/{id}/series, matched to models by
+  // model.seriesId) and a "show more" limit for long model grids.
+  // Which picker level is on screen. null = follow the selections (the next
+  // unanswered level); a level name = the user stepped back to it.
+  const [deviceView, setDeviceView] = useState(null);
+  const autoDeviceStep = form.modelId ? 'done' : form.brandId ? 'model' : form.categoryCode ? 'brand' : 'category';
+  const deviceStep =
+    (deviceView === 'brand' && form.categoryCode) || (deviceView === 'model' && form.brandId) || (deviceView === 'done' && form.modelId) || deviceView === 'category'
+      ? deviceView
+      : autoDeviceStep;
+  const DEVICE_STEP_ORDER = ['category', 'brand', 'model', 'done'];
+  const deviceStepBack = () => setDeviceView(DEVICE_STEP_ORDER[Math.max(0, DEVICE_STEP_ORDER.indexOf(deviceStep) - 1)]);
+  const [brandQuery, setBrandQuery] = useState('');
+  const [modelQuery, setModelQuery] = useState('');
+  const [seriesFilter, setSeriesFilter] = useState('');
+  const [modelLimit, setModelLimit] = useState(24);
+  const [brandSeries, setBrandSeries] = useState([]);
+  useEffect(() => {
+    setModelQuery('');
+    setSeriesFilter('');
+    setModelLimit(24);
+    if (!form.brandId) {
+      setBrandSeries([]);
+      return undefined;
+    }
+    let alive = true;
+    masterApi
+      .get(`/master/brands/${form.brandId}/series`)
+      .then(unwrap)
+      .then((rows) => alive && setBrandSeries(Array.isArray(rows) ? rows : []))
+      .catch(() => alive && setBrandSeries([]));
+    return () => {
+      alive = false;
+    };
+  }, [form.brandId]);
+  useEffect(() => {
+    setBrandQuery('');
+  }, [form.categoryCode]);
+
+  const visibleBrands = useMemo(() => {
+    const q = brandQuery.trim().toLowerCase();
+    return q ? brands.filter((b) => String(b.name || '').toLowerCase().includes(q)) : brands;
+  }, [brands, brandQuery]);
+  // Only series that actually have models in the chosen category, in the API's order.
+  const seriesChips = useMemo(() => {
+    const used = new Set(categoryModels.map((m) => m.seriesId).filter(Boolean));
+    return brandSeries
+      .filter((s) => used.has(s.id))
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.name).localeCompare(String(b.name), undefined, { numeric: true }));
+  }, [brandSeries, categoryModels]);
+  const visibleModels = useMemo(() => {
+    const q = modelQuery.trim().toLowerCase();
+    return categoryModels.filter(
+      (m) =>
+        (!seriesFilter || m.seriesId === seriesFilter) &&
+        (!q || [m.name, ...(Array.isArray(m.modelNumber) ? m.modelNumber : [m.modelNumber])].some((v) => String(v || '').toLowerCase().includes(q))),
+    );
+  }, [categoryModels, seriesFilter, modelQuery]);
+
   const selectedModel = useMemo(
     () => categoryModels.find((m) => m.id === form.modelId) || null,
     [categoryModels, form.modelId],
   );
   const selectedBrand = useMemo(() => brands.find((b) => b.id === form.brandId) || null, [brands, form.brandId]);
+  // The selected device's image: the model's own photo, then the brand logo
+  // only as a fallback (Thumb shows a device icon when neither exists).
+  const selectedDeviceImage = selectedModel?.imageUrl || selectedBrand?.imageUrl || null;
   const modelColors = cleanList(selectedModel?.colors);
   const modelVariants = cleanList(selectedModel?.ramStorage);
   // Manufacturer model number(s) (e.g. "A2221"), a real field on the same
@@ -1962,6 +1928,10 @@ export default function BookServicePage() {
   // there's no separate snapshot to go stale.
   const [devicePreviewOpen, setDevicePreviewOpen] = useState(false);
   const [devicePreviewVisible, setDevicePreviewVisible] = useState(false);
+  // The model the preview shows — opened from the product grid, so the modal
+  // offers "Select this product" and prev/next through visibleModels, like
+  // the mobile app. (The "Your device" card image is not clickable.)
+  const [previewModelId, setPreviewModelId] = useState(null);
 
   // Zoom/pan for the preview image — mouse wheel, on-screen +/- buttons,
   // keyboard (+/-/0), and click-drag to pan once zoomed in.
@@ -1987,10 +1957,29 @@ export default function BookServicePage() {
     setPreviewPan({ x: 0, y: 0 });
   };
 
-  const openDevicePreview = () => {
+  const openDevicePreview = (modelId = null) => {
     resetPreviewZoom();
+    setPreviewModelId(modelId);
     setDevicePreviewOpen(true);
     requestAnimationFrame(() => setDevicePreviewVisible(true));
+  };
+  const previewModel = previewModelId ? categoryModels.find((m) => m.id === previewModelId) || null : selectedModel;
+  const previewIndex = previewModelId ? visibleModels.findIndex((m) => m.id === previewModelId) : -1;
+  const stepPreview = (dir) => {
+    if (previewIndex < 0) return;
+    const next = visibleModels[previewIndex + dir];
+    if (!next) return;
+    resetPreviewZoom();
+    setPreviewModelId(next.id);
+  };
+  const selectModel = (model) => {
+    if (form.modelId === model.id) {
+      setDeviceView('done');
+      return;
+    }
+    setDeviceView(null);
+    setForm((fm) => ({ ...fm, modelId: model.id || '', modelName: model.name || '', color: '', variant: '' }));
+    setFieldErrors((prev) => (prev.categoryId || prev.brandId || prev.modelId ? { ...prev, categoryId: undefined, brandId: undefined, modelId: undefined } : prev));
   };
   const closeDevicePreview = () => {
     setDevicePreviewVisible(false);
@@ -2000,6 +1989,8 @@ export default function BookServicePage() {
     if (!devicePreviewOpen) return undefined;
     function onKey(e) {
       if (e.key === 'Escape') closeDevicePreview();
+      else if (e.key === 'ArrowLeft') stepPreview(-1);
+      else if (e.key === 'ArrowRight') stepPreview(1);
       else if (e.key === '+' || e.key === '=') zoomPreviewIn();
       else if (e.key === '-' || e.key === '_') zoomPreviewOut();
       else if (e.key === '0') resetPreviewZoom();
@@ -2012,7 +2003,7 @@ export default function BookServicePage() {
       document.body.style.overflow = previousOverflow;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [devicePreviewOpen]);
+  }, [devicePreviewOpen, previewIndex, visibleModels]);
 
   // Mouse wheel to zoom — attached as a native, non-passive listener so
   // preventDefault() actually stops the page from scrolling behind the
@@ -2029,33 +2020,81 @@ export default function BookServicePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [devicePreviewOpen]);
 
-  // Click-drag to pan once zoomed in — only active while previewDragging,
-  // tracked on window so the drag keeps following the cursor even past the
-  // image's own edges.
-  const startPreviewDrag = (e) => {
-    if (previewZoom <= PREVIEW_MIN_ZOOM) return;
-    e.preventDefault();
-    previewDragRef.current = { startX: e.clientX, startY: e.clientY, panX: previewPan.x, panY: previewPan.y };
+  // Pointer gestures for the preview image — one code path for mouse, touch
+  // and pen (Android, iOS, Windows touchscreens): two fingers pinch-zoom,
+  // one pointer pans once zoomed in, otherwise a horizontal swipe steps to
+  // the previous/next model, and a double-tap toggles zoom on touch.
+  // Pointer capture keeps the drag following past the image's own edges.
+  const previewPointersRef = useRef(new Map());
+  const previewLastTapRef = useRef(null);
+  const previewLastPointerTypeRef = useRef('mouse');
+  const clampPreviewZoom = (z) => Math.min(PREVIEW_MAX_ZOOM, Math.max(PREVIEW_MIN_ZOOM, +z.toFixed(2)));
+  const togglePreviewZoom = () => (previewZoom > PREVIEW_MIN_ZOOM ? resetPreviewZoom() : setPreviewZoom(2.25));
+  const startPreviewPan = (x, y) => {
+    previewDragRef.current = { type: 'pan', startX: x, startY: y, panX: previewPan.x, panY: previewPan.y };
     setPreviewDragging(true);
   };
-  useEffect(() => {
-    if (!previewDragging) return undefined;
-    function onMove(e) {
-      const d = previewDragRef.current;
-      if (!d) return;
-      setPreviewPan({ x: d.panX + (e.clientX - d.startX), y: d.panY + (e.clientY - d.startY) });
-    }
-    function onUp() {
+  const onPreviewPointerDown = (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    previewLastPointerTypeRef.current = e.pointerType;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    const pointers = previewPointersRef.current;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      previewDragRef.current = { type: 'pinch', startDist: Math.hypot(a.x - b.x, a.y - b.y) || 1, startZoom: previewZoom };
       setPreviewDragging(false);
-      previewDragRef.current = null;
+    } else if (pointers.size === 1) {
+      if (previewZoom > PREVIEW_MIN_ZOOM) startPreviewPan(e.clientX, e.clientY);
+      else previewDragRef.current = { type: 'swipe', startX: e.clientX, startY: e.clientY };
     }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  }, [previewDragging]);
+  };
+  const onPreviewPointerMove = (e) => {
+    const pointers = previewPointersRef.current;
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = previewDragRef.current;
+    if (g?.type === 'pinch' && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const next = clampPreviewZoom((g.startZoom * Math.hypot(a.x - b.x, a.y - b.y)) / g.startDist);
+      setPreviewZoom(next);
+      if (next === PREVIEW_MIN_ZOOM) setPreviewPan({ x: 0, y: 0 });
+    } else if (g?.type === 'pan') {
+      setPreviewPan({ x: g.panX + (e.clientX - g.startX), y: g.panY + (e.clientY - g.startY) });
+    }
+  };
+  const onPreviewPointerEnd = (e) => {
+    const pointers = previewPointersRef.current;
+    if (!pointers.delete(e.pointerId)) return;
+    const g = previewDragRef.current;
+    previewDragRef.current = null;
+    setPreviewDragging(false);
+    if (e.type !== 'pointerup') return;
+    if (g?.type === 'swipe') {
+      const dx = e.clientX - g.startX;
+      const dy = e.clientY - g.startY;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+        stepPreview(dx < 0 ? 1 : -1);
+        return;
+      }
+      // Touch has no reliable dblclick (iOS Safari), so detect the double-tap here.
+      if (e.pointerType !== 'mouse' && Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+        const last = previewLastTapRef.current;
+        const now = Date.now();
+        if (last && now - last.t < 300 && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 30) {
+          previewLastTapRef.current = null;
+          togglePreviewZoom();
+        } else {
+          previewLastTapRef.current = { t: now, x: e.clientX, y: e.clientY };
+        }
+      }
+    }
+    // One finger left on the glass after a pinch keeps panning.
+    if (pointers.size === 1 && previewZoom > PREVIEW_MIN_ZOOM) {
+      const [p] = [...pointers.values()];
+      startPreviewPan(p.x, p.y);
+    }
+  };
 
   /* ---- Problem & Service Type ---- */
   const [repairCategories, setRepairCategories] = useState([]);
@@ -2085,7 +2124,14 @@ export default function BookServicePage() {
     [repairCategories, form.categoryId],
   );
 
-  const chosenServices = useMemo(() => repairServices.filter((s) => form.serviceIds.includes(s.id)), [repairServices, form.serviceIds]);
+  // Catalog picks first, then "Others" custom issues ({ id, name, categoryId,
+  // code: 'OTHER', isCustom }) — so every list, total and the payload that
+  // reads chosenServices covers both kinds without its own special case.
+  const chosenServices = useMemo(
+    () => [...repairServices.filter((s) => form.serviceIds.includes(s.id)), ...form.customIssues],
+    [repairServices, form.serviceIds, form.customIssues],
+  );
+  const repairCategoryNames = useMemo(() => new Map(repairCategories.map((c) => [c.id, c.displayName || c.name])), [repairCategories]);
 
   const toggleService = (id) => {
     setForm((f) => {
@@ -2112,7 +2158,6 @@ export default function BookServicePage() {
   const toggleIssueCategory = (id) => {
     setExpandedIssueCategories((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
-  const isOtherIssueCategory = (c) => /other|misc/i.test(c?.displayName || c?.name || '');
 
   // Local-only per-service price/warranty drafts — see the WARRANTY_OPTIONS
   // comment above. Keyed by repairService id, never read by validate()/
@@ -2122,6 +2167,31 @@ export default function BookServicePage() {
   const setDraftServicePrice = (id, value) => setDraftServicePrices((p) => ({ ...p, [id]: value }));
   const setDraftServiceWarrantyMonths = (id, months) =>
     setDraftServiceWarranty((w) => ({ ...w, [id]: w[id] === months ? '' : months }));
+
+  // "Others" — a custom issue not in the service catalog, as in the Partner
+  // app's DeviceServicesScreen: issue → condition category → price → Add
+  // Issue. Kept on form.customIssues (merged into chosenServices above), its
+  // price in draftServicePrices like any other line so it sums into Service
+  // Charge, and sent with repairServiceId: null — the same catalog-less line
+  // the app sends, which createShopBooking already passes through.
+  const [customIssueDraft, setCustomIssueDraft] = useState(EMPTY_CUSTOM_ISSUE);
+  const customIssueSeq = useRef(0);
+  const setCustomIssueField = (key, value) => setCustomIssueDraft((d) => ({ ...d, [key]: value }));
+  const addCustomIssue = () => {
+    const name = customIssueDraft.name.trim();
+    if (!name) return;
+    customIssueSeq.current += 1;
+    const id = `custom-${customIssueSeq.current}`;
+    setForm((f) => ({
+      ...f,
+      customIssues: [...f.customIssues, { id, name, categoryId: customIssueDraft.categoryId || null, code: 'OTHER', isCustom: true }],
+    }));
+    if (Number(customIssueDraft.price) > 0) setDraftServicePrice(id, customIssueDraft.price);
+    setCustomIssueDraft(EMPTY_CUSTOM_ISSUE);
+  };
+  const removeCustomIssue = (id) => setForm((f) => ({ ...f, customIssues: f.customIssues.filter((c) => c.id !== id) }));
+  // Remove buttons on the chips / Bill Details take either kind of line.
+  const removeChosenService = (s) => (s.isCustom ? removeCustomIssue(s.id) : toggleService(s.id));
   const draftServicesSubtotal = useMemo(
     () => chosenServices.reduce((sum, s) => sum + (Number(draftServicePrices[s.id]) || 0), 0),
     [chosenServices, draftServicePrices],
@@ -2165,11 +2235,12 @@ export default function BookServicePage() {
     setDraftDurationMinutes(minutes);
   }
 
-  // Customer repair approval — a local-only confirmation checkbox, same
-  // "estimate only" treatment as Estimated Delivery: no consent/approval
-  // field exists anywhere in this backend (confirmed investigation), so
-  // this is never submitted with the booking, just a shop-side reminder.
+  // Customer Booking approval — REQUIRED before Next / Confirm Booking
+  // (validated as customerApproved in SECTION_VALIDATORS). Still not sent with
+  // the booking: the booking API has no approval field.
   const [customerApproved, setCustomerApproved] = useState(false);
+  // Price & Estimate's voice note — page-owned so it survives step changes (see useVoiceNote).
+  const voiceNote = useVoiceNote();
 
   // Device Security Lock — form.deviceSecurityType/devicePin are the real,
   // submitted fields (see the payload in submit(), above); showSecret and
@@ -2185,6 +2256,19 @@ export default function BookServicePage() {
   // pointermove events routed to the grid container even once the finger/
   // cursor has moved on top of a different dot's own element.
   const patternDragging = useRef(false);
+
+  // The PIN / Password / Pattern entry opens in a popup (lockModalOpen) when
+  // its option is picked; the step itself shows a small "saved / Change" row.
+  const [lockModalOpen, setLockModalOpen] = useState(false);
+  const lockLabel = { PIN: 'PIN', Password: 'Password', Pattern: 'Pattern' }[form.deviceSecurityType] || 'Lock';
+  const lockValueValid =
+    form.deviceSecurityType === 'PIN'
+      ? /^\d{4,6}$/.test(form.devicePin || '')
+      : form.deviceSecurityType === 'Password'
+        ? (form.devicePin || '').length >= 4
+        : form.deviceSecurityType === 'Pattern'
+          ? patternDots.length >= 4
+          : false;
 
   function selectLockType(type) {
     setForm((f) => ({ ...f, deviceSecurityType: type, devicePin: '' }));
@@ -2247,37 +2331,36 @@ export default function BookServicePage() {
 
   // Device Photos — real uploads via uploadShopDevicePhoto() (src/lib/
   // shopBooking.js), the same shop-token media upload the public /repair
-  // flow's customer-facing photo picker uses. photoUploading/photoError are
-  // per-slot transient UI state (never submitted); the URLs themselves live
-  // in form.frontImageUrl/backImageUrl/damageImageUrl/additionalImageUrls,
-  // which ARE submitted (see the payload in submit(), below).
+  // flow's customer-facing photo picker uses. photoUploading is per-slot
+  // transient UI state (never submitted; upload failures are shown as a
+  // toast); the URLs themselves live in each DEVICE_FILE_SLOTS entry's
+  // form field (frontImageUrl/backImageUrl/videoUrl), which ARE submitted
+  // (see the payload in submit(), below).
   const [photoUploading, setPhotoUploading] = useState({});
-  const [photoError, setPhotoError] = useState({});
 
   async function handlePhotoUpload(slot, file) {
     if (!file) return;
-    setPhotoUploading((u) => ({ ...u, [slot]: true }));
-    setPhotoError((e) => ({ ...e, [slot]: '' }));
+    // Same ceilings media-service enforces (MediaProperties), checked here so
+    // a too-big file fails instantly instead of after a long upload.
+    const limitMb = slot.video ? 48 : 5;
+    if (file.size > limitMb * 1024 * 1024) {
+      notifyError(`${slot.video ? 'Videos' : 'Photos'} must be under ${limitMb} MB.`);
+      return;
+    }
+    setPhotoUploading((u) => ({ ...u, [slot.key]: true }));
     try {
-      const url = await uploadShopDevicePhoto(file, slot);
-      if (slot === 'additional') {
-        setForm((f) => ({ ...f, additionalImageUrls: [...f.additionalImageUrls, url] }));
-      } else {
-        set(`${slot}ImageUrl`, url);
-      }
+      const url = await uploadShopDevicePhoto(file, slot.key);
+      set(slot.field, url);
+      if (fieldErrors[slot.field]) setFieldErrors((prev) => ({ ...prev, [slot.field]: undefined }));
     } catch (err) {
-      setPhotoError((e) => ({ ...e, [slot]: err?.message || 'Upload failed. Please try again.' }));
+      notifyError(err, 'Upload failed. Please try again.');
     } finally {
-      setPhotoUploading((u) => ({ ...u, [slot]: false }));
+      setPhotoUploading((u) => ({ ...u, [slot.key]: false }));
     }
   }
 
   function removePhoto(slot) {
-    set(`${slot}ImageUrl`, '');
-  }
-
-  function removeAdditionalPhoto(url) {
-    setForm((f) => ({ ...f, additionalImageUrls: f.additionalImageUrls.filter((u) => u !== url) }));
+    set(slot.field, '');
   }
 
   /* ---- Pricing ---- */
@@ -2296,26 +2379,171 @@ export default function BookServicePage() {
   // shopBooking.js) rather than invented as a real, guaranteed-persisted
   // field.
   const [paymentMode, setPaymentMode] = useState('');
+  // Devices already added with "Add another device" — each holds its own
+  // submit payload and the card it showed; the form keeps the current device.
+  const [queuedDevices, setQueuedDevices] = useState([]);
+
+  /* ---- Re-Est (edit) mode ----
+   * ?edit=<ticketId> (the Requote page's Re-Est button) opens this same form
+   * filled from that repair ticket (GET /tickets/{id}); Save Re-Estimate
+   * writes it back with updateShopTicket() (PUT + status QUOTED) instead of
+   * creating a booking. Category isn't on the ticket, so it's found from the
+   * model's own categoryId. Service lines come from priceItemsJson: catalog
+   * ids become selected services, anything else an "Others" custom issue,
+   * each keeping its price and warranty.
+   */
+  const router = useRouter();
+  const [editTicketId, setEditTicketId] = useState(null);
+  const [editTicket, setEditTicket] = useState(null);
+  const [editError, setEditError] = useState('');
+  const [editRetry, setEditRetry] = useState(0);
+  const isEditing = Boolean(editTicketId);
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('edit');
+    if (id) setEditTicketId(id);
+  }, []);
+
+  useEffect(() => {
+    if (!editTicketId) return undefined;
+    let alive = true;
+    setEditError('');
+    setEditTicket(null);
+    (async () => {
+      const ticket = await fetchTicket(editTicketId);
+      if (!ticket?.id) throw new Error('Repair ticket not found.');
+      const [brandModels, deviceCategories] = await Promise.all([
+        ticket.brandId ? masterApi.get(`/master/brands/${ticket.brandId}/models`).then(unwrap).catch(() => []) : [],
+        masterApi.get('/master/device-categories').then(unwrap).catch(() => []),
+      ]);
+      const model = (brandModels || []).find((m) => String(m.id) === String(ticket.modelId)) || null;
+      const category = model?.categoryId ? (deviceCategories || []).find((c) => String(c.id) === String(model.categoryId)) : null;
+
+      let items = [];
+      try {
+        const parsed = ticket.priceItemsJson ? JSON.parse(ticket.priceItemsJson) : [];
+        if (Array.isArray(parsed)) items = parsed;
+      } catch {
+        items = [];
+      }
+      if (!items.length && ticket.repairServicesSummary) {
+        items = [{ id: null, label: ticket.repairServicesSummary, amount: ticket.estimatedPrice }];
+      }
+      const serviceIds = [];
+      const customIssues = [];
+      const prices = {};
+      const warranty = {};
+      items.forEach((it) => {
+        const label = it.label || it.serviceName || it.name || 'Service';
+        const amount = Math.round(Number(it.amount ?? it.price ?? it.estimatedPrice) || 0);
+        let key = it.id || it.serviceId || null;
+        if (key && !serviceIds.includes(key)) {
+          serviceIds.push(key);
+        } else {
+          customIssueSeq.current += 1;
+          key = `custom-${customIssueSeq.current}`;
+          customIssues.push({ id: key, name: label, categoryId: null, code: it.code || 'OTHER', isCustom: true });
+        }
+        if (amount > 0) prices[key] = String(amount);
+        const months = String(it.warranty ?? '').match(/\d+/)?.[0];
+        if (months && WARRANTY_OPTIONS.includes(months)) warranty[key] = months;
+      });
+
+      let photos = {};
+      try {
+        photos = ticket.devicePhotosJson ? JSON.parse(ticket.devicePhotosJson) || {} : {};
+      } catch {
+        photos = {};
+      }
+      let missing = [];
+      try {
+        const parsed = ticket.missingPartsJson ? JSON.parse(ticket.missingPartsJson) : [];
+        missing = Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch {
+        missing = [];
+      }
+
+      const lockType = ['PIN', 'Password', 'Pattern', 'NONE'].includes(ticket.deviceSecurityType) ? ticket.deviceSecurityType : 'NONE';
+      const lockValue = lockType === 'NONE' ? '' : ticket.deviceSecurityValue || '';
+      if (!alive) return;
+      setForm({
+        ...EMPTY_FORM,
+        customerName: ticket.customerName || '',
+        customerMobile: toTenDigitMobile(ticket.customerPhone),
+        categoryCode: category?.code || '',
+        categoryId: category?.id || '',
+        brandId: ticket.brandId || '',
+        brandName: ticket.brandName || model?.brandName || '',
+        modelId: ticket.modelId || '',
+        modelName: model?.name || String(ticket.deviceDisplayName || '').split(' · ')[0] || '',
+        color: ticket.color || '',
+        variant: ticketVariant(ticket),
+        imei: ticket.imei || '',
+        deviceSecurityType: lockType,
+        devicePin: lockValue,
+        serviceIds,
+        customIssues,
+        issueDescription: ticket.issueDescription || '',
+        frontImageUrl: photos.front || '',
+        backImageUrl: photos.back || '',
+        videoUrl: photos.video || '',
+      });
+      setDraftServicePrices(prices);
+      setDraftServiceWarranty(warranty);
+      setPatternDots(lockType === 'Pattern' ? lockValue.split('-').filter(Boolean) : []);
+      setMissingParts(
+        Object.fromEntries(
+          MISSING_PART_ITEMS.map((item) => {
+            const hit = missing.find((m) => m.toLowerCase().startsWith(`${item.title.toLowerCase()}:`));
+            return [item.key, hit ? (/damaged/i.test(hit) ? 'damaged' : 'missing') : null];
+          }),
+        ),
+      );
+      setCustomerApproved(Boolean(ticket.customerApproval));
+      if (ticket.paymentType) setPaymentMode(ticket.paymentType);
+      setQueuedDevices([]);
+      setDeviceView(null);
+      setFieldErrors({});
+      setActiveSection('customer');
+      setEditTicket(ticket);
+      if (!category) notifyError('Could not work out this device’s category — pick it again on the Device tab.');
+    })().catch((err) => {
+      if (alive) setEditError(err?.message || 'Could not load this booking.');
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editTicketId, editRetry]);
+
+  // The ticket carries no brand name; take it from the brand list once loaded.
+  useEffect(() => {
+    if (selectedBrand && !form.brandName) set('brandName', selectedBrand.name || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBrand, form.brandName]);
+
   const bookingDevices = useMemo(() => {
-    if (!form.brandName && !form.modelName) return [];
+    const queued = queuedDevices.map((q, i) => ({ ...q.display, isPrimary: i === 0, queuedIndex: i }));
+    if (!form.brandName && !form.modelName) return queued;
     return [
+      ...queued,
       {
         brand: form.brandName,
         model: form.modelName,
-        image: selectedModel?.imageUrl || selectedBrand?.imageUrl || null,
+        image: selectedDeviceImage,
         modelCode: modelNumbers.join(' / '),
         selectedServices: chosenServices,
         estimatedAmount: totals.total,
-        isPrimary: true,
+        isPrimary: queued.length === 0,
         deviceSecurityLock: form.deviceSecurityType,
         deviceMissingParts: missingPartsSummary,
       },
     ];
   }, [
+    queuedDevices,
     form.brandName,
     form.modelName,
-    selectedModel,
-    selectedBrand,
+    selectedDeviceImage,
     modelNumbers,
     chosenServices,
     totals.total,
@@ -2326,32 +2554,25 @@ export default function BookServicePage() {
 
   /* ---- Submit ---- */
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const fieldRefs = useRef({});
   const [confirmed, setConfirmed] = useState(null);
-  const [trackingCopied, setTrackingCopied] = useState(false);
+  // Assign Technician on the confirmation: which booking the modal is for,
+  // whether the per-device picker is open, and who got assigned (by ticketId).
+  const [assignTarget, setAssignTarget] = useState(null);
+  const [assignPickerOpen, setAssignPickerOpen] = useState(false);
+  const [assignedTechs, setAssignedTechs] = useState({});
 
-  // Booking Confirmation's "Customer Details" card — shopLocation/shopAddress
-  // reuse the exact same real profile.locations[0] fields (name/street/area/
-  // taluk/district/state/pincode) the account settings page's own QR/address
-  // display already builds from, and profile.phone (the owner's own number,
-  // the only real "shop number" this profile response carries).
-  const shopLocation = profile?.locations?.[0] || null;
-  const shopAddress = shopLocation
-    ? [shopLocation.street, shopLocation.area, shopLocation.taluk, shopLocation.district, shopLocation.state, shopLocation.pincode]
-        .filter(Boolean)
-        .join(', ')
-    : '';
+  // Booking Confirmation's "Customer Details" card — the active shop's own
+  // public record (name / mobile / address), fetched above.
+  const shopLocation = profile || null;
+  const shopAddress = shopLocation ? [shopLocation.address, shopLocation.district, shopLocation.state, shopLocation.pincode].filter(Boolean).join(', ') : '';
 
   function copyTrackingId() {
     if (!confirmed || typeof navigator === 'undefined' || !navigator.clipboard) return;
     navigator.clipboard
       .writeText(String(confirmed.bookingNumber || confirmed.id))
-      .then(() => {
-        setTrackingCopied(true);
-        setTimeout(() => setTrackingCopied(false), 1600);
-      })
+      .then(() => notifySuccess('Copied'))
       .catch(() => {});
   }
 
@@ -2361,19 +2582,75 @@ export default function BookServicePage() {
   const validateSection = (sectionKey) => {
     const schema = SECTION_VALIDATORS[sectionKey];
     if (!schema) return { errors: {}, firstErrorField: null, isValid: true };
-    return validateForm(schema, { ...form, needsAddress });
+    return validateForm(schema, { ...form, needsAddress, customerApproved });
   };
 
   const validateAll = () => {
     const merged = Object.assign({}, ...Object.values(SECTION_VALIDATORS));
-    return validateForm(merged, { ...form, needsAddress });
+    return validateForm(merged, { ...form, needsAddress, customerApproved });
   };
 
+  const buildPayload = () => ({
+    shopId,
+    customerName: form.customerName.trim(),
+    customerMobile: form.customerMobile.trim(),
+    customerAltMobile: form.customerAltMobile.trim() || undefined,
+    customerEmail: form.customerEmail.trim() || undefined,
+    categoryId: form.categoryId,
+    brandId: form.brandId,
+    brandName: form.brandName,
+    modelId: form.modelId,
+    modelName: form.modelName,
+    color: form.color || undefined,
+    ramStorage: form.variant || undefined,
+    imei: form.imei.trim() || undefined,
+    deviceSecurityType: form.deviceSecurityType && form.deviceSecurityType !== 'NONE' ? form.deviceSecurityType : undefined,
+    devicePin: form.devicePin || undefined,
+    missingDamageParts: missingPartsSummary || undefined,
+    paymentMode: paymentMode || undefined,
+    services: chosenServices.map((s) => ({ repairServiceId: s.isCustom ? null : s.id, serviceCode: s.code, serviceName: s.name })),
+    issueSummary: chosenServices.map((s) => s.name).join(', ') || form.issueDescription.slice(0, 120),
+    issueDescription: form.issueDescription.trim() || undefined,
+    deviceCondition: form.deviceCondition || undefined,
+    frontImageUrl: form.frontImageUrl || undefined,
+    backImageUrl: form.backImageUrl || undefined,
+    videoUrl: form.videoUrl || undefined,
+    serviceMode: form.serviceMode,
+    pickupAddress: needsAddress
+      ? {
+          addressLine: form.addressLine.trim(),
+          landmark: form.landmark.trim() || undefined,
+          pincode: form.pincode.trim(),
+          city: form.city.trim(),
+          district: form.district.trim() || undefined,
+          state: form.state.trim(),
+        }
+      : undefined,
+    pickupDate: form.pickupDate,
+    pickupSlotStart: form.pickupSlotStart,
+    pickupSlotEnd: form.pickupSlotEnd,
+    customerApproval: customerApproved,
+    pricing: {
+      inspectionCharge: Number(form.inspectionCharge) || 0,
+      serviceCharge: Number(form.serviceCharge) || 0,
+      partsCharge: Number(form.partsCharge) || 0,
+      pickupCharge: Number(form.pickupCharge) || 0,
+      discount: Number(form.discount) || 0,
+      taxPercent: Number(form.taxPercent) || 0,
+      estimatedAmount: totals.total,
+    },
+  });
+
+  // Hard lock against a second submit landing before the first finishes
+  // (two fast clicks run before `submitting` re-renders the disabled button).
+  const submitLockRef = useRef(false);
+
   const submit = async () => {
+    if (submitLockRef.current) return;
     const { errors, firstErrorField, isValid } = validateAll();
     if (!isValid) {
       setFieldErrors(errors);
-      setSubmitError(errors[firstErrorField]);
+      notifyError(errors[firstErrorField]);
       const jumpTo = sectionForField(firstErrorField);
       if (jumpTo) {
         setActiveSection(jumpTo);
@@ -2383,76 +2660,104 @@ export default function BookServicePage() {
       }
       return;
     }
+    submitLockRef.current = true;
     setFieldErrors({});
-    setSubmitError('');
     setSubmitting(true);
-    // Temporary debug aid per request — the type and whether a value was
-    // captured, never the PIN/password/pattern itself.
-    console.log('Device lock type:', form.deviceSecurityType);
-    console.log('Has device lock value:', Boolean(form.devicePin));
+    if (isEditing) {
+      try {
+        const items = chosenServices.map((s) => ({
+          id: s.isCustom ? null : s.id,
+          code: s.code || null,
+          label: s.name || 'Service',
+          amount: Number(draftServicePrices[s.id]) || 0,
+          warranty: draftServiceWarranty[s.id] || null,
+        }));
+        await updateShopTicket(editTicket, buildPayload(), items);
+        notifySuccess('Re-estimate saved');
+        router.push('/shop-home/services/requote/?tab=reestimated');
+      } catch (e) {
+        notifyError(e.message ? `Unable to save re-estimate: ${e.message}` : 'Unable to save re-estimate. Please try again.');
+      } finally {
+        submitLockRef.current = false;
+        setSubmitting(false);
+      }
+      return;
+    }
     try {
-      const payload = {
-        shopId,
-        customerName: form.customerName.trim(),
-        customerMobile: form.customerMobile.trim(),
-        customerAltMobile: form.customerAltMobile.trim() || undefined,
-        customerEmail: form.customerEmail.trim() || undefined,
-        categoryId: form.categoryId,
-        brandId: form.brandId,
-        brandName: form.brandName,
-        modelId: form.modelId,
-        modelName: form.modelName,
-        color: form.color || undefined,
-        ramStorage: form.variant || undefined,
-        imei: form.imei.trim() || undefined,
-        deviceSecurityType: form.deviceSecurityType && form.deviceSecurityType !== 'NONE' ? form.deviceSecurityType : undefined,
-        devicePin: form.devicePin || undefined,
-        missingDamageParts: missingPartsSummary || undefined,
-        paymentMode: paymentMode || undefined,
-        services: chosenServices.map((s) => ({ repairServiceId: s.id, serviceCode: s.code, serviceName: s.name })),
-        issueSummary: chosenServices.map((s) => s.name).join(', ') || form.issueDescription.slice(0, 120),
-        issueDescription: form.issueDescription.trim() || undefined,
-        deviceCondition: form.deviceCondition || undefined,
-        frontImageUrl: form.frontImageUrl || undefined,
-        backImageUrl: form.backImageUrl || undefined,
-        damageImageUrl: form.damageImageUrl || undefined,
-        additionalImageUrls: form.additionalImageUrls.length ? form.additionalImageUrls : undefined,
-        serviceMode: form.serviceMode,
-        pickupAddress: needsAddress
-          ? {
-              addressLine: form.addressLine.trim(),
-              landmark: form.landmark.trim() || undefined,
-              pincode: form.pincode.trim(),
-              city: form.city.trim(),
-              district: form.district.trim() || undefined,
-              state: form.state.trim(),
-            }
-          : undefined,
-        pickupDate: form.pickupDate,
-        pickupSlotStart: form.pickupSlotStart,
-        pickupSlotEnd: form.pickupSlotEnd,
-        pricing: {
-          inspectionCharge: Number(form.inspectionCharge) || 0,
-          serviceCharge: Number(form.serviceCharge) || 0,
-          partsCharge: Number(form.partsCharge) || 0,
-          pickupCharge: Number(form.pickupCharge) || 0,
-          discount: Number(form.discount) || 0,
-          taxPercent: Number(form.taxPercent) || 0,
-          estimatedAmount: totals.total,
-        },
-      };
-      const created = await createShopBooking(payload);
-      setConfirmed(created);
+      // Every queued device first, then the one in the form — one ticket per
+      // device for the same customer (the Partner app's multi-device flow).
+      const payloads = [...queuedDevices.map((q) => q.payload), buildPayload()];
+      // Each device's own image, kept beside its result (display only, not
+      // sent) so the confirmation never pairs one device's name with another's photo.
+      const images = [...queuedDevices.map((q) => q.display?.image || null), selectedDeviceImage];
+      const created = [];
+      for (let i = 0; i < payloads.length; i += 1) {
+        try {
+          created.push({ ...(await createShopBooking(payloads[i])), deviceImage: images[i] });
+        } catch (err) {
+          // Drop the devices that did save so a retry can't book them twice.
+          if (created.length) setQueuedDevices((prev) => prev.slice(Math.min(created.length, prev.length)));
+          throw new Error(
+            created.length
+              ? `${created.length} of ${payloads.length} devices were booked (${created.map((c) => c.bookingNumber).join(', ')}). The rest failed: ${err.message}`
+              : err.message,
+          );
+        }
+      }
+      setQueuedDevices([]);
+      setConfirmed({ ...created[0], bookingNumber: created.map((c) => c.bookingNumber).filter(Boolean).join(', '), allBookings: created });
       // Booking Confirmation is now its own tab (9th/last), not a separate
       // full-page takeover — this is the one place that navigates there,
       // and only after a real successful response, never speculatively.
       setActiveSection('confirmation');
+      notifySuccess('Booking created');
     } catch (e) {
-      setSubmitError(e.message || 'Could not create the booking. Please try again.');
+      if (process.env.NODE_ENV !== 'production') console.error('[Booking] ERROR:', e.status, e.message, e.body); // eslint-disable-line no-console
+      notifyError(e.message ? `Unable to create booking: ${e.message}` : 'Unable to create booking. Please try again.');
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
+
+  // "Add another device": validate the current device, queue it, then clear only
+  // the device-specific fields and go back to Device Details (customer kept).
+  const addAnotherDevice = () => {
+    const { errors, firstErrorField, isValid } = validateAll();
+    if (!isValid) {
+      setFieldErrors(errors);
+      notifyError(errors[firstErrorField]);
+      const jumpTo = sectionForField(firstErrorField);
+      if (jumpTo) {
+        setActiveSection(jumpTo);
+        setPendingFocusField(firstErrorField);
+      }
+      return;
+    }
+    setQueuedDevices((prev) => [...prev, { payload: buildPayload(), display: bookingDevices[bookingDevices.length - 1] }]);
+    setForm((f) => ({
+      ...f,
+      categoryCode: '', categoryId: '', brandId: '', brandName: '', modelId: '', modelName: '',
+      color: '', variant: '', imei: '', deviceSecurityType: '', devicePin: '',
+      serviceCategoryId: '', serviceIds: [], customIssues: [], issueDescription: '', deviceCondition: '',
+      frontImageUrl: '', backImageUrl: '', videoUrl: '',
+      inspectionCharge: '', serviceCharge: '', partsCharge: '', pickupCharge: '', discount: '', taxPercent: '',
+    }));
+    setMissingParts(Object.fromEntries(MISSING_PART_ITEMS.map((item) => [item.key, null])));
+    setPatternDots([]);
+    setShowSecret(false);
+    setCustomerApproved(false);
+    // Per-device drafts too, so the next device never inherits this one's
+    // prices (they'd be re-summed into its Service Charge) or voice note.
+    setDraftServicePrices({});
+    setDraftServiceWarranty({});
+    setCustomIssueDraft(EMPTY_CUSTOM_ISSUE);
+    voiceNote.clear();
+    setFieldErrors({});
+    setActiveSection('device');
+  };
+
+  const removeQueuedDevice = (index) => setQueuedDevices((prev) => prev.filter((_, i) => i !== index));
 
   const resetForm = () => {
     // setPhotos/setDayIdx were leftover calls to state that no longer
@@ -2463,17 +2768,32 @@ export default function BookServicePage() {
     // every other local-only state this flow has picked up since is reset
     // here too so a fresh booking genuinely starts clean.
     setForm(EMPTY_FORM);
+    setQueuedDevices([]);
     setConfirmed(null);
-    setSubmitError('');
+    setAssignTarget(null);
+    setAssignPickerOpen(false);
+    setAssignedTechs({});
     setActiveSection('customer');
-    setAutofillNote('');
     setPhotoUploading({});
-    setPhotoError({});
     setShowSecret(false);
     setPatternDots([]);
     setMissingParts(Object.fromEntries(MISSING_PART_ITEMS.map((item) => [item.key, null])));
     setPaymentMode('');
     setCustomerApproved(false);
+    // Reset is the one intentional clear — normal Back/Next keeps all of
+    // these (they're page state, not per-step), so they're cleared here too.
+    setDraftServicePrices({});
+    setDraftServiceWarranty({});
+    setCustomIssueDraft(EMPTY_CUSTOM_ISSUE);
+    setExpandedIssueCategories([]);
+    setDraftReceivedAt(new Date());
+    setDraftDurationMinutes(120);
+    setReceivedPickerOpen(false);
+    setDurationPickerOpen(false);
+    setReadyByPickerOpen(false);
+    setLockModalOpen(false);
+    voiceNote.clear();
+    setFieldErrors({});
   };
 
   // Booking Confirmation used to be a full-page early return here,
@@ -2488,12 +2808,6 @@ export default function BookServicePage() {
 
   const customerSection = (
     <Section title="Customer Details" subtitle="Enter customer contact information" icon={User}>
-      {autofillNote ? (
-        <div role="status" className="mb-3 flex items-start gap-2 rounded-lg border border-[#DCFCE7] bg-[#F0FDF4] px-3 py-2 text-xs font-medium text-[#15803D]">
-          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span>{autofillNote}</span>
-        </div>
-      ) : null}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <FormField label="Customer Name" required error={fieldErrors.customerName} fieldRef={registerField(fieldRefs, 'customerName')}>
           <CustomerNameField
@@ -2513,19 +2827,26 @@ export default function BookServicePage() {
               className={ICON_INPUT_CLS}
               value={form.customerMobile}
               onChange={(e) => {
-                set('customerMobile', e.target.value.replace(/[^0-9+ ]/g, ''));
+                set('customerMobile', e.target.value.replace(/\D/g, '').slice(0, 10));
                 if (fieldErrors.customerMobile) setFieldErrors((prev) => ({ ...prev, customerMobile: undefined }));
               }}
-              placeholder="+91 …"
+              placeholder="10-digit mobile number"
+              inputMode="numeric"
+              maxLength={10}
             />
           </IconField>
         </FormField>
-        <FormField label="Alternate Mobile">
+        <FormField label="Alternate Mobile" error={fieldErrors.customerAltMobile} fieldRef={registerField(fieldRefs, 'customerAltMobile')}>
           <IconField icon={Phone}>
             <input
               className={ICON_INPUT_CLS}
               value={form.customerAltMobile}
-              onChange={(e) => set('customerAltMobile', e.target.value.replace(/[^0-9+ ]/g, ''))}
+              onChange={(e) => {
+                set('customerAltMobile', e.target.value.replace(/\D/g, '').slice(0, 10));
+                if (fieldErrors.customerAltMobile) setFieldErrors((prev) => ({ ...prev, customerAltMobile: undefined }));
+              }}
+              inputMode="numeric"
+              maxLength={10}
               placeholder="Optional"
             />
           </IconField>
@@ -2624,349 +2945,585 @@ export default function BookServicePage() {
           fieldRefs.current.brandId = el;
           fieldRefs.current.modelId = el;
         }}
-        className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+        className="space-y-7"
       >
-        <div>
-          <ImageSelect
-            label="Device Category"
-            required
-            value={form.categoryCode}
-            options={categoryOptions}
-            loading={categoriesLoading}
-            placeholder={categoriesLoading ? 'Loading…' : categoryOptions.length === 0 && !categoriesError ? 'No categories available' : 'Select category'}
-            onChange={(cat) => {
-              setForm((f) => ({
-                ...f,
-                categoryCode: cat?.id || '',
-                categoryId: cat?.categoryId || '',
-                brandId: '',
-                brandName: '',
-                modelId: '',
-                modelName: '',
-                color: '',
-                variant: '',
-              }));
-              setFieldErrors((prev) => (prev.categoryId || prev.brandId || prev.modelId ? { ...prev, categoryId: undefined, brandId: undefined, modelId: undefined } : prev));
-            }}
-          />
-          {categoriesError ? (
-            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[0.7rem] text-red-600">
-              <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
-              {categoriesError}
-              <button type="button" onClick={() => setCategoriesRetry((k) => k + 1)} className="font-bold underline underline-offset-2">
-                Retry
-              </button>
-            </p>
-          ) : null}
-        </div>
-
-        <div>
-          <ImageSelect
-            label="Brand"
-            required
-            value={form.brandId}
-            options={brands}
-            disabled={!form.categoryCode || brandsLoading}
-            loading={brandsLoading}
-            placeholder={
-              !form.categoryCode
-                ? 'Select a category first'
-                : brands.length === 0 && !brandsLoading && !brandsError
-                  ? 'No brands available for this category'
-                  : 'Select brand'
-            }
-            onChange={(brand) => {
-              setForm((f) => ({ ...f, brandId: brand?.id || '', brandName: brand?.name || '', modelId: '', modelName: '', color: '', variant: '' }));
-              setFieldErrors((prev) => (prev.categoryId || prev.brandId || prev.modelId ? { ...prev, categoryId: undefined, brandId: undefined, modelId: undefined } : prev));
-            }}
-          />
-          {brandsError ? (
-            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[0.7rem] text-red-600">
-              <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
-              {brandsError}
-              <button type="button" onClick={() => setBrandsRetry((k) => k + 1)} className="font-bold underline underline-offset-2">
-                Retry
-              </button>
-            </p>
-          ) : null}
-        </div>
-
-        <div>
-          <ImageSelect
-            label="Model"
-            required
-            value={form.modelId}
-            options={categoryModels}
-            disabled={!form.brandId || modelsLoading}
-            loading={modelsLoading}
-            placeholder={
-              !form.brandId
-                ? 'Select a brand first'
-                : categoryModels.length === 0 && !modelsLoading && !modelsError
-                  ? 'No models available for this brand'
-                  : 'Select model'
-            }
-            onChange={(model) => {
-              setForm((f) => ({ ...f, modelId: model?.id || '', modelName: model?.name || '', color: '', variant: '' }));
-              setFieldErrors((prev) => (prev.categoryId || prev.brandId || prev.modelId ? { ...prev, categoryId: undefined, brandId: undefined, modelId: undefined } : prev));
-            }}
-          />
-          {modelsError ? (
-            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[0.7rem] text-red-600">
-              <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" />
-              {modelsError}
-              <button type="button" onClick={() => setModelsRetry((k) => k + 1)} className="font-bold underline underline-offset-2">
-                Retry
-              </button>
-            </p>
-          ) : null}
-        </div>
-
-        <FormField label="IMEI / Serial Number">
-          <input className={COMPACT_INPUT_CLS} value={form.imei} onChange={(e) => set('imei', e.target.value)} placeholder="Optional" />
-        </FormField>
-
-        {modelVariants.length > 0 ? (
-          <FormField label="RAM / Storage">
-            <select className={COMPACT_INPUT_CLS} value={form.variant} onChange={(e) => set('variant', e.target.value)}>
-              <option value="">Select variant</option>
-              {modelVariants.map((v) => (
-                <option key={v} value={v}>
-                  {v}
-                </option>
-              ))}
-            </select>
-          </FormField>
-        ) : null}
-      </div>
-
-      {selectedModel ? (
-        <div className="mt-3">
-          <p className="mb-2 text-[0.7rem] font-semibold uppercase tracking-wide text-[#667085]">Color</p>
-          {modelColors.length === 0 ? (
-            <p className="text-sm text-[#98A2B3]">No colors available</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {modelColors.map((name) => {
-                const isSel = form.color === name;
-                return (
-                  <button
-                    key={name}
-                    type="button"
-                    onClick={() => set('color', name)}
-                    aria-pressed={isSel}
-                    className={cx(
-                      'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition',
-                      isSel ? 'border-[#15803D] bg-[#F0FDF4] text-[#15803D]' : 'border-[#D0D5DD] bg-white text-[#344054] hover:border-[#86EFAC]',
-                    )}
-                  >
-                    <ColorSwatch hex={hexOfColor(name)} size="h-4 w-4" />
-                    {name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {selectedBrand && selectedModel ? (
-        <button
-          type="button"
-          onClick={openDevicePreview}
-          aria-label={`Preview ${selectedBrand.name} ${selectedModel.name}`}
-          className="mt-3 flex w-full items-center gap-3 rounded-xl border border-[#EAECF0] bg-[#F9FAFB] p-3 text-left transition hover:border-[#86EFAC] hover:bg-[#F0FDF4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2"
-        >
-          <Thumb url={selectedModel.imageUrl} name={selectedModel.name} size="h-14 w-14" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <Thumb url={selectedBrand.imageUrl} name={selectedBrand.name} size="h-4 w-4" />
-              <span className="truncate text-xs font-semibold text-[#667085]">{selectedBrand.name}</span>
-            </div>
-            <p className="truncate text-sm font-bold text-[#101828]">{selectedModel.name}</p>
-            {form.color || form.variant ? (
-              <p className="flex items-center gap-1.5 truncate text-xs text-[#667085]">
-                {form.color ? <ColorSwatch hex={hexOfColor(form.color)} size="h-3 w-3" /> : null}
-                {[form.color, form.variant].filter(Boolean).join(' · ')}
-              </p>
-            ) : null}
-          </div>
-        </button>
-      ) : null}
-
-      {devicePreviewOpen && selectedBrand && selectedModel ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${selectedBrand.name} ${selectedModel.name} — preview`}
-          onClick={closeDevicePreview}
-          className={cx(
-            'fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 transition-opacity duration-200',
-            devicePreviewVisible ? 'opacity-100' : 'opacity-0',
-          )}
-        >
-          <button
-            type="button"
-            onClick={closeDevicePreview}
-            aria-label="Close preview"
-            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className={cx(
-              'relative overflow-hidden rounded-2xl bg-white shadow-2xl transition-transform duration-200',
-              devicePreviewVisible ? 'scale-100' : 'scale-95',
-            )}
-          >
-            <div
-              ref={previewImgWrapRef}
-              onMouseDown={startPreviewDrag}
-              className="h-[min(500px,85vh)] w-[min(500px,90vw)] overflow-hidden"
-              style={{ cursor: selectedModel.imageUrl && previewZoom > PREVIEW_MIN_ZOOM ? (previewDragging ? 'grabbing' : 'grab') : 'default' }}
+        {/* Category › Brand › Model trail + Back (hidden on the first level) */}
+        {deviceStep !== 'category' ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={deviceStepBack}
+              className={cx('inline-flex h-9 items-center gap-1.5 rounded-full border border-[#E5E7EB] bg-white px-3.5 text-[13px] font-semibold text-[#111111] transition hover:border-[#09AD2A] hover:text-[#09AD2A]', FOCUS_RING)}
             >
-              {selectedModel.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- master-data model image, remote S3 URL, needs a live zoom/pan transform.
-                <img
-                  src={selectedModel.imageUrl}
-                  alt={selectedModel.name}
-                  draggable={false}
-                  className="h-full w-full select-none object-contain"
-                  style={{
-                    transform: `translate(${previewPan.x}px, ${previewPan.y}px) scale(${previewZoom})`,
-                    transition: previewDragging ? 'none' : 'transform 150ms ease-out',
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Back
+            </button>
+            <nav aria-label="Device selection" className="flex min-w-0 flex-wrap items-center gap-1 text-[13.5px]">
+              {[
+                { key: 'category', label: categoryOptions.find((c) => c.id === form.categoryCode)?.name || 'Category' },
+                form.categoryCode ? { key: 'brand', label: form.brandName || 'Brand' } : null,
+                form.brandId ? { key: 'model', label: form.modelName || 'Model' } : null,
+              ]
+                .filter(Boolean)
+                .map((crumb, idx, arr) => {
+                  const current = crumb.key === deviceStep || (deviceStep === 'done' && idx === arr.length - 1);
+                  return (
+                    <span key={crumb.key} className="flex items-center gap-1">
+                      {idx > 0 ? <ChevronRight className="h-3.5 w-3.5 text-[#98A2B3]" aria-hidden="true" /> : null}
+                      <button
+                        type="button"
+                        onClick={() => setDeviceView(crumb.key)}
+                        aria-current={current ? 'step' : undefined}
+                        className={cx('rounded-md px-1.5 py-0.5 font-semibold transition hover:text-[#09AD2A]', current ? 'text-[#0B6B3A]' : 'text-[#666666]', FOCUS_RING)}
+                      >
+                        {crumb.label}
+                      </button>
+                    </span>
+                  );
+                })}
+            </nav>
+          </div>
+        ) : null}
+
+        {/* STEP 1 — Device category */}
+        {deviceStep === 'category' ? (
+          <div>
+            <h3 className="text-[15px] font-bold text-[#111111]">
+              Choose Device Category <span className="text-red-500">*</span>
+            </h3>
+            {categoriesLoading ? (
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div key={i} className="h-[112px] animate-pulse rounded-2xl border border-[#E5E7EB] bg-white" />
+                ))}
+              </div>
+            ) : categoriesError ? (
+              <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-[0.75rem] text-red-600">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                {categoriesError}
+                <button type="button" onClick={() => setCategoriesRetry((k) => k + 1)} className="font-bold underline underline-offset-2">
+                  Retry
+                </button>
+              </p>
+            ) : categoryOptions.length === 0 ? (
+              <p className="mt-2 text-sm text-[#98A2B3]">No categories available.</p>
+            ) : (
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {categoryOptions.map((cat) => {
+                  const on = form.categoryCode === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        if (on) {
+                        setDeviceView('brand');
+                        return;
+                      }
+                      setDeviceView(null);
+                        setForm((fm) => ({ ...fm, categoryCode: cat.id || '', categoryId: cat.categoryId || '', brandId: '', brandName: '', modelId: '', modelName: '', color: '', variant: '' }));
+                        setFieldErrors((prev) => (prev.categoryId || prev.brandId || prev.modelId ? { ...prev, categoryId: undefined, brandId: undefined, modelId: undefined } : prev));
+                      }}
+                      className={cx(
+                        'flex min-w-0 flex-col items-center gap-2 rounded-2xl border p-3 text-center transition',
+                        FOCUS_RING,
+                        on ? 'border-[#09AD2A] bg-[#F2FBF4] ring-1 ring-[#09AD2A]' : 'border-[#E5E7EB] bg-white hover:border-[#09AD2A]/50',
+                      )}
+                    >
+                      <PickImage url={cat.imageUrl} name={cat.name} className="h-14 w-14" />
+                      <span className={cx('line-clamp-2 break-words text-[13.5px] font-semibold', on ? 'text-[#0B6B3A]' : 'text-[#111111]')}>{cat.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* STEP 2 — Brand */}
+        {deviceStep === 'brand' ? (
+          <div>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-[15px] font-bold text-[#111111]">
+                  Select a brand <span className="text-red-500">*</span>
+                </h3>
+                <p className="mt-0.5 text-[13px] text-[#666666]">Choose the brand of your {categoryOptions.find((c) => c.id === form.categoryCode)?.name || 'device'}.</p>
+              </div>
+              <label className="flex h-10 w-full items-center gap-2 rounded-full border border-[#E5E7EB] bg-white px-3.5 focus-within:border-[#09AD2A] sm:w-64">
+                <Search className="h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+                <input value={brandQuery} onChange={(e) => setBrandQuery(e.target.value)} placeholder="Search brand" aria-label="Search brand" className="min-w-0 flex-1 bg-transparent text-base text-[#111111] outline-none placeholder:text-[#98A2B3] sm:text-sm" />
+              </label>
+            </div>
+            {brandsLoading ? (
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => (
+                  <div key={i} className="h-[104px] animate-pulse rounded-2xl border border-[#E5E7EB] bg-white" />
+                ))}
+              </div>
+            ) : brandsError ? (
+              <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-[0.75rem] text-red-600">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                {brandsError}
+                <button type="button" onClick={() => setBrandsRetry((k) => k + 1)} className="font-bold underline underline-offset-2">
+                  Retry
+                </button>
+              </p>
+            ) : visibleBrands.length === 0 ? (
+              <p className="mt-3 text-sm text-[#98A2B3]">{brandQuery ? 'No brand matches your search.' : 'No brands available for this category.'}</p>
+            ) : (
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {visibleBrands.map((brand) => {
+                  const on = form.brandId === brand.id;
+                  return (
+                    <button
+                      key={brand.id}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        if (on) {
+                          setDeviceView('model');
+                          return;
+                        }
+                        setDeviceView(null);
+                        setForm((fm) => ({ ...fm, brandId: brand.id || '', brandName: brand.name || '', modelId: '', modelName: '', color: '', variant: '' }));
+                        setFieldErrors((prev) => (prev.categoryId || prev.brandId || prev.modelId ? { ...prev, categoryId: undefined, brandId: undefined, modelId: undefined } : prev));
+                      }}
+                      className={cx(
+                        'flex min-w-0 flex-col items-center gap-2 rounded-2xl border px-3 py-4 text-center transition',
+                        FOCUS_RING,
+                        on ? 'border-[#09AD2A] bg-[#F2FBF4] ring-1 ring-[#09AD2A]' : 'border-[#E5E7EB] bg-white hover:border-[#09AD2A]/50',
+                      )}
+                    >
+                      <PickImage url={brand.imageUrl} name={brand.name} className="h-12 w-28 max-w-full" />
+                      <span className={cx('line-clamp-2 break-words text-[13.5px] font-semibold', on ? 'text-[#0B6B3A]' : 'text-[#111111]')}>{brand.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* STEP 3 — Model / product */}
+        {deviceStep === 'model' ? (
+          <div>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h3 className="text-[15px] font-bold text-[#111111]">
+                  Select your {form.brandName || 'device'} product <span className="text-red-500">*</span>
+                </h3>
+                <p className="mt-0.5 text-[13px] text-[#666666]">Pick the exact model so the shop knows what it is working on.</p>
+              </div>
+              <label className="flex h-10 w-full items-center gap-2 rounded-full border border-[#E5E7EB] bg-white px-3.5 focus-within:border-[#09AD2A] sm:w-64">
+                <Search className="h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+                <input
+                  value={modelQuery}
+                  onChange={(e) => {
+                    setModelQuery(e.target.value);
+                    setModelLimit(24);
                   }}
+                  placeholder="Search model"
+                  aria-label="Search model"
+                  className="min-w-0 flex-1 bg-transparent text-base text-[#111111] outline-none placeholder:text-[#98A2B3] sm:text-sm"
                 />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-3xl font-bold text-[#15803D]">{initials(selectedModel.name)}</div>
-              )}
+              </label>
             </div>
 
-            {selectedModel.imageUrl ? (
-              <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 px-2 py-1.5 backdrop-blur">
-                <button
-                  type="button"
-                  onClick={zoomPreviewOut}
-                  disabled={previewZoom <= PREVIEW_MIN_ZOOM}
-                  aria-label="Zoom out"
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Minus className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={resetPreviewZoom}
-                  aria-label="Reset zoom"
-                  className="min-w-[3rem] rounded-full px-2 py-1 text-center text-xs font-semibold text-white transition hover:bg-white/20"
-                >
-                  {Math.round(previewZoom * 100)}%
-                </button>
-                <button
-                  type="button"
-                  onClick={zoomPreviewIn}
-                  disabled={previewZoom >= PREVIEW_MAX_ZOOM}
-                  aria-label="Zoom in"
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                </button>
+            {seriesChips.length > 1 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[{ id: '', name: 'All' }, ...seriesChips].map((sr) => {
+                  const on = seriesFilter === sr.id;
+                  return (
+                    <button
+                      key={sr.id || 'all'}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => {
+                        setSeriesFilter(sr.id);
+                        setModelLimit(24);
+                      }}
+                      className={cx(
+                        'rounded-full border px-3.5 py-1.5 text-[13px] font-semibold transition',
+                        FOCUS_RING,
+                        on ? 'border-[#09AD2A] bg-[#F2FBF4] text-[#0B6B3A]' : 'border-[#E5E7EB] bg-white text-[#344054] hover:border-[#09AD2A]/50',
+                      )}
+                    >
+                      {sr.name}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
+
+            {modelsLoading ? (
+              <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+                  <div key={i} className="h-[160px] animate-pulse sm:h-[200px] rounded-2xl border border-[#E5E7EB] bg-white" />
+                ))}
+              </div>
+            ) : modelsError ? (
+              <p className="mt-2 flex flex-wrap items-center gap-x-1.5 text-[0.75rem] text-red-600">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                {modelsError}
+                <button type="button" onClick={() => setModelsRetry((k) => k + 1)} className="font-bold underline underline-offset-2">
+                  Retry
+                </button>
+              </p>
+            ) : visibleModels.length === 0 ? (
+              <p className="mt-3 text-sm text-[#98A2B3]">{modelQuery || seriesFilter ? 'No model matches your search.' : 'No models available for this brand.'}</p>
+            ) : (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+                  {visibleModels.slice(0, modelLimit).map((model) => {
+                    const on = form.modelId === model.id;
+                    return (
+                      <div
+                        key={model.id}
+                        className={cx(
+                          'relative flex min-w-0 flex-col items-center gap-3 rounded-2xl border p-3 text-center transition sm:p-4',
+                          on ? 'border-[#09AD2A] bg-[#F2FBF4] ring-1 ring-[#09AD2A]' : 'border-[#E5E7EB] bg-white hover:-translate-y-0.5 hover:border-[#09AD2A]/50',
+                        )}
+                      >
+                        {/* Whole card selects (stretched button); the image sits above it and opens the full-screen preview. */}
+                        <button
+                          type="button"
+                          aria-pressed={on}
+                          aria-label={deviceTitle(form.brandName, model.name)}
+                          onClick={() => selectModel(model)}
+                          className={cx('absolute inset-0 rounded-2xl', FOCUS_RING)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => openDevicePreview(model.id)}
+                          aria-label={`Preview ${deviceTitle(form.brandName, model.name)}`}
+                          className={cx('relative z-10 w-full cursor-zoom-in rounded-xl', FOCUS_RING)}
+                        >
+                          <PickImage url={model.imageUrl} name={model.name} className="h-24 w-full sm:h-32" />
+                        </button>
+                        <span className={cx('pointer-events-none relative line-clamp-2 break-words text-[13.5px] font-semibold', on ? 'text-[#0B6B3A]' : 'text-[#111111]')}>{deviceTitle(form.brandName, model.name)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {visibleModels.length > modelLimit ? (
+                  <div className="mt-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setModelLimit((n) => n + 24)}
+                      className={cx('rounded-full border border-[#E5E7EB] bg-white px-5 py-2 text-[13px] font-semibold text-[#111111] transition hover:border-[#09AD2A] hover:text-[#09AD2A]', FOCUS_RING)}
+                    >
+                      Show more models ({visibleModels.length - modelLimit} more)
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
-        </div>
-      ) : null}
+        ) : null}
+
+        {/* STEP 4 — Selected device summary + colour + storage/RAM */}
+        {deviceStep === 'done' && selectedBrand && selectedModel ? (
+          <div>
+            <h3 className="text-[15px] font-bold text-[#111111]">Your device</h3>
+            <p className="mt-0.5 text-[13px] text-[#666666]">Book the repair in the GGFIX app, or find a shop near you to take it in.</p>
+            {/* Image + name on the left, colour/storage pickers on the right; stacks on small screens. */}
+            <div className="mt-3 flex flex-col gap-5 rounded-2xl border border-[#E5E7EB] bg-white p-4 sm:p-5 md:flex-row md:gap-8">
+              <div className="mx-auto flex min-w-0 max-w-full shrink-0 flex-col items-center gap-3 rounded-2xl p-2 text-center md:mx-0 md:w-64">
+                <PickImage url={selectedModel.imageUrl || selectedBrand.imageUrl} name={selectedModel.name} className="h-44 w-44" />
+                <span>
+                  <span className="block break-words text-[18px] font-extrabold text-[#111111]">{deviceTitle(selectedBrand.name, selectedModel.name)}</span>
+                  <span className="mt-0.5 block text-[13.5px] text-[#666666]">
+                    {[selectedBrand.name, categoryOptions.find((c) => c.id === form.categoryCode)?.name].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+              </div>
+
+              <div className="flex min-w-0 flex-1 flex-col justify-center border-t border-[#F3F3F3] pt-4 md:border-l md:border-t-0 md:pl-8 md:pt-0">
+                <div>
+                  <p className="text-[12px] font-bold uppercase tracking-wide text-[#666666]">Colour</p>
+                  {modelColors.length === 0 ? (
+                    <p className="mt-2 text-sm text-[#98A2B3]">No colours listed for this model.</p>
+                  ) : (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {modelColors.map((name) => {
+                        const on = form.color === name;
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => set('color', on ? '' : name)}
+                            aria-pressed={on}
+                            className={cx(
+                              'flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[13.5px] font-medium transition',
+                              FOCUS_RING,
+                              on ? 'border-[#09AD2A] bg-[#F2FBF4] text-[#0B6B3A]' : 'border-[#E5E7EB] bg-white text-[#344054] hover:border-[#09AD2A]/50',
+                            )}
+                          >
+                            <ColorSwatch hex={hexOfColor(name)} size="h-3.5 w-3.5" />
+                            {name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+  
+                {modelVariants.length > 0 ? (
+                  <div className="mt-4">
+                    <p className="text-[12px] font-bold uppercase tracking-wide text-[#666666]">Storage &amp; RAM</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {modelVariants.map((v) => {
+                        const on = form.variant === v;
+                        return (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => set('variant', on ? '' : v)}
+                            aria-pressed={on}
+                            className={cx(
+                              'rounded-full border px-3.5 py-1.5 text-[13.5px] font-semibold transition',
+                              FOCUS_RING,
+                              on ? 'border-[#09AD2A] bg-[#F2FBF4] text-[#0B6B3A]' : 'border-[#E5E7EB] bg-white text-[#344054] hover:border-[#09AD2A]/50',
+                            )}
+                          >
+                            {v}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+      </div>
+
+      {devicePreviewOpen && previewModel
+        ? createPortal(
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${deviceTitle(form.brandName, previewModel.name)} — preview`}
+              onClick={closeDevicePreview}
+              // Opaque backdrop: at /95 the page behind (title, product grid)
+              // bled through and collided with the header/footer text on phones.
+              // Safe-area padding keeps controls clear of the iPhone notch/home bar.
+              style={{
+                paddingTop: 'env(safe-area-inset-top)',
+                paddingRight: 'env(safe-area-inset-right)',
+                paddingBottom: 'env(safe-area-inset-bottom)',
+                paddingLeft: 'env(safe-area-inset-left)',
+              }}
+              className={cx(
+                'fixed inset-0 z-[100] flex flex-col overscroll-contain bg-[#1F2A22] text-white transition-opacity duration-200',
+                devicePreviewVisible ? 'opacity-100' : 'opacity-0',
+              )}
+            >
+              <header className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 sm:px-7 sm:py-4 [@media(max-height:480px)]:py-1.5">
+                <p className="min-w-0 truncate text-xs font-semibold text-white/80 sm:text-sm">
+                  <span aria-hidden="true">🤏 </span>
+                  <span className="[@media(pointer:coarse)]:hidden">Scroll · double-click · drag</span>
+                  <span className="hidden [@media(pointer:coarse)]:inline">Pinch · double-tap · drag</span>
+                  {previewIndex >= 0 ? ' · swipe' : ''}
+                </p>
+                <button
+                  type="button"
+                  onClick={closeDevicePreview}
+                  aria-label="Close preview"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:h-12 sm:w-12 [@media(max-height:480px)]:h-9 [@media(max-height:480px)]:w-9"
+                >
+                  <X className="h-6 w-6" aria-hidden="true" />
+                </button>
+              </header>
+
+              <div className="relative flex min-h-0 flex-1 items-center justify-center px-3 py-2 sm:px-20">
+                {previewIndex > 0 ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      stepPreview(-1);
+                    }}
+                    aria-label="Previous model"
+                    className="absolute left-3 top-1/2 z-10 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:left-6 sm:flex"
+                  >
+                    <ChevronLeft className="h-6 w-6" aria-hidden="true" />
+                  </button>
+                ) : null}
+
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className={cx(
+                    // Square card that fits whatever space the header/footer
+                    // leave — portrait phone, landscape phone, tablet, desktop.
+                    'relative aspect-square h-full max-h-[640px] max-w-full overflow-hidden rounded-2xl bg-white transition-transform duration-200',
+                    devicePreviewVisible ? 'scale-100' : 'scale-95',
+                  )}
+                >
+                  <div
+                    ref={previewImgWrapRef}
+                    onPointerDown={onPreviewPointerDown}
+                    onPointerMove={onPreviewPointerMove}
+                    onPointerUp={onPreviewPointerEnd}
+                    onPointerCancel={onPreviewPointerEnd}
+                    onDoubleClick={() => {
+                      if (previewLastPointerTypeRef.current === 'mouse') togglePreviewZoom();
+                    }}
+                    className="h-full w-full touch-none select-none overflow-hidden"
+                    style={{ cursor: previewModel.imageUrl && previewZoom > PREVIEW_MIN_ZOOM ? (previewDragging ? 'grabbing' : 'grab') : 'zoom-in' }}
+                  >
+                    {previewModel.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- master-data model image, remote S3 URL, needs a live zoom/pan transform.
+                      <img
+                        src={previewModel.imageUrl}
+                        alt={previewModel.name}
+                        draggable={false}
+                        className="h-full w-full select-none object-contain"
+                        style={{
+                          transform: `translate(${previewPan.x}px, ${previewPan.y}px) scale(${previewZoom})`,
+                          transition: previewDragging ? 'none' : 'transform 150ms ease-out',
+                        }}
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-3xl font-bold text-[#09AD2A]">{initials(previewModel.name)}</div>
+                    )}
+                  </div>
+
+                  {previewModel.imageUrl ? (
+                    <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-black/60 px-2 py-1.5 backdrop-blur">
+                      <button
+                        type="button"
+                        onClick={zoomPreviewOut}
+                        disabled={previewZoom <= PREVIEW_MIN_ZOOM}
+                        aria-label="Zoom out"
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Minus className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={resetPreviewZoom}
+                        aria-label="Reset zoom"
+                        className="min-w-[3rem] rounded-full px-2 py-1 text-center text-xs font-semibold text-white transition hover:bg-white/20"
+                      >
+                        {Math.round(previewZoom * 100)}%
+                      </button>
+                      <button
+                        type="button"
+                        onClick={zoomPreviewIn}
+                        disabled={previewZoom >= PREVIEW_MAX_ZOOM}
+                        aria-label="Zoom in"
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Plus className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {previewIndex >= 0 && previewIndex < visibleModels.length - 1 ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      stepPreview(1);
+                    }}
+                    aria-label="Next model"
+                    className="absolute right-3 top-1/2 z-10 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:right-6 sm:flex"
+                  >
+                    <ChevronRight className="h-6 w-6" aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+
+              <footer onClick={(e) => e.stopPropagation()} className="shrink-0 px-4 pb-4 pt-3 sm:px-7 sm:pb-7 sm:pt-4 [@media(max-height:480px)]:pb-2 [@media(max-height:480px)]:pt-1">
+                <p className="line-clamp-2 text-center text-base font-extrabold text-white sm:text-lg">{deviceTitle(form.brandName, previewModel.name)}</p>
+                {previewIndex >= 0 ? (
+                  <>
+                    {visibleModels.length > 1 ? (
+                      <p className="mt-0.5 text-center text-xs font-medium text-white/55">
+                        {previewIndex + 1} of {visibleModels.length}
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        selectModel(previewModel);
+                        closeDevicePreview();
+                      }}
+                      className="mx-auto mt-3 flex w-full max-w-xl items-center justify-center rounded-full bg-[#09AD2A] px-5 py-3.5 text-base font-semibold text-white transition hover:bg-[#08961F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:mt-4 sm:py-4 [@media(max-height:480px)]:mt-2 [@media(max-height:480px)]:py-2.5"
+                    >
+                      Select this product
+                    </button>
+                  </>
+                ) : null}
+              </footer>
+            </div>,
+            document.body,
+          )
+        : null}
     </Section>
   );
 
   /**
-   * Device Information — its own top-nav tab (SECTIONS, above), the last of
-   * 5. Per request, this tab now also carries a full copy of Service Price
-   * & Issue Estimate's content and a rebuilt Device Photos card (see
-   * sectionContent.deviceInfo below) — the SAME pickupSection element is
-   * rendered again here rather than duplicated, so both tabs stay backed by
-   * one implementation and one set of form state; only one of the two tabs
-   * is ever mounted at a time, so there's no double-instance conflict.
-   *
-   * This section itself: a product preview (real selectedModel/
-   * selectedBrand image) plus a read-only Brand/Model recap — reuses
-   * form.brandName/modelName, not a second editable control for the same
-   * value (those are picked via the ImageSelect pickers on Device Details).
-   * Model Number, Storage and Color are real, reusing the exact same
-   * selectedModel-derived data (modelNumbers/modelVariants/modelColors) and
-   * form.variant/form.color state as Device Details — not a second,
-   * independent field.
+   * Device Information — its own top-nav tab (SECTIONS, above). Display
+   * only: the identity card (the real selectedModel/selectedBrand image)
+   * plus Device / Brand / Model / Model Number / Color / Storage, all read
+   * from the same form state and selectedModel the Device Details tab
+   * fills in — that tab is where any of them gets picked or changed.
+   * Below it, sectionContent.deviceInfo renders pickupSummarySection, a
+   * read-only view of the Service Price & Issue Estimate tab.
    */
+  const deviceCategoryName = categoryOptions.find((c) => c.id === form.categoryCode)?.name || '';
+  const deviceInfoDetails = [
+    { label: 'Device', value: deviceCategoryName },
+    { label: 'Brand', value: form.brandName },
+    { label: 'Model', value: form.modelName },
+    { label: 'Model Number', value: modelNumbers.join(' / '), empty: 'Not available' },
+    { label: 'Color', value: form.color, swatch: form.color ? hexOfColor(form.color) : null },
+    { label: 'Storage', value: form.variant },
+  ];
   const deviceInfoSection = (
     <Section title="Device Information" icon={Info}>
-      {/* Product preview — real selectedModel/selectedBrand imageUrl (the
-          same master-data fields the Device Details preview button already
-          reads), model image preferred over brand image, Thumb's own
-          initials fallback when neither exists. Never a hardcoded sample
-          image. */}
+      {/* Device identity card — selectedDeviceImage (model photo, brand logo
+          only as fallback, device icon last) in a fixed 56px box. Never a
+          hardcoded sample. */}
       {form.brandName || form.modelName ? (
-        <div className="mb-4 flex items-center gap-3 rounded-xl border border-[#EAECF0] bg-white p-3">
-          <Thumb url={selectedModel?.imageUrl || selectedBrand?.imageUrl} name={form.modelName || form.brandName} size="h-14 w-14" />
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-[#101828]">{form.brandName || 'Brand not selected'}</p>
-            <p className="truncate text-xs text-[#667085]">{form.modelName || 'Model not selected'}</p>
+        <div className="rounded-xl border border-[#ECECEC] bg-white p-4">
+          <div className="flex items-center gap-3 border-b border-dashed border-[#ECECEC] pb-4">
+            <Thumb url={selectedDeviceImage} name={[form.brandName, form.modelName].filter(Boolean).join(' ')} size="h-14 w-14" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-semibold text-[#666666]">{[deviceCategoryName, form.brandName].filter(Boolean).join(' · ') || 'Device'}</p>
+              <p className="truncate text-sm font-bold text-[#111111]">{form.modelName || 'Model not selected'}</p>
+            </div>
           </div>
+          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-6">
+            {deviceInfoDetails.map((row) => (
+              <div key={row.label} className="min-w-0">
+                <dt className="text-[0.7rem] font-semibold uppercase tracking-wide text-[#666666]">{row.label}</dt>
+                <dd className={cx('mt-1 flex items-center gap-1.5 text-sm font-bold', row.value ? 'text-[#111111]' : 'text-[#98A2B3]')}>
+                  {row.swatch ? (
+                    <span className="h-3 w-3 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: row.swatch }} aria-hidden="true" />
+                  ) : null}
+                  <span className="truncate">{row.value || row.empty || 'Not selected'}</span>
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
       ) : (
-        <div className="mb-4 flex items-center gap-3 rounded-xl border border-dashed border-[#D0D5DD] bg-[#F9FAFB] p-3">
-          <Thumb url={null} name="?" size="h-14 w-14" />
+        <div className="flex items-center gap-3 rounded-xl border border-dashed border-[#D0D5DD] bg-[#F3F3F3] p-3">
+          <Thumb url={null} name="" size="h-14 w-14" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-[#98A2B3]">No device selected yet</p>
             <p className="text-xs text-[#98A2B3]">Pick a brand and model on the Device Details tab.</p>
           </div>
         </div>
       )}
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FormField label="Brand">
-          <input className={COMPACT_INPUT_CLS} value={form.brandName || 'Not selected yet'} disabled />
-        </FormField>
-
-        <FormField label="Model">
-          <input className={COMPACT_INPUT_CLS} value={form.modelName || 'Not selected yet'} disabled />
-        </FormField>
-
-        <FormField label="Model Number" className="sm:col-span-2">
-          <input className={COMPACT_INPUT_CLS} value={modelNumbers.join(' / ') || 'Not available'} disabled />
-        </FormField>
-
-        <FormField label="Device Color">
-          <select
-            className={COMPACT_INPUT_CLS}
-            value={form.color}
-            onChange={(e) => set('color', e.target.value)}
-            disabled={modelColors.length === 0}
-          >
-            <option value="">{modelColors.length ? 'Select color' : 'Select a model first'}</option>
-            {modelColors.map((name) => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </FormField>
-
-        <FormField label="Storage / Variant">
-          <select
-            className={COMPACT_INPUT_CLS}
-            value={form.variant}
-            onChange={(e) => set('variant', e.target.value)}
-            disabled={modelVariants.length === 0}
-          >
-            <option value="">{modelVariants.length ? 'Select storage' : 'Select a model first'}</option>
-            {modelVariants.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
-        </FormField>
-      </div>
     </Section>
   );
 
@@ -2983,31 +3540,31 @@ export default function BookServicePage() {
    */
   const deviceSecuritySection = (
     <Section title="Device Security Lock" icon={Lock}>
-      <p className="-mt-1 mb-4 text-xs text-[#667085]">Protect the device while it is being serviced.</p>
+      <p className="-mt-1 mb-4 text-xs text-[#666666]">Protect the device while it is being serviced.</p>
 
       <div
         className={cx(
           'flex items-center gap-3 rounded-xl border p-3.5',
-          deviceLockStatus.chip === 'SECURED' ? 'border-[#15803D] bg-[#F0FDF4]' : 'border-[#EAECF0] bg-white',
+          deviceLockStatus.chip === 'SECURED' ? 'border-[#09AD2A] bg-[#F8F8F8]' : 'border-[#ECECEC] bg-white',
         )}
       >
         <span
           className={cx(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-full',
-            deviceLockStatus.chip === 'SECURED' ? 'bg-[#15803D] text-white' : 'bg-[#F0FDF4] text-[#15803D]',
+            deviceLockStatus.chip === 'SECURED' ? 'bg-[#09AD2A] text-white' : 'bg-[#F8F8F8] text-[#09AD2A]',
           )}
         >
           <Lock className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Current Security</p>
-          <p className="text-sm font-bold text-[#101828]">{deviceLockStatus.label}</p>
-          <p className="text-xs text-[#667085]">{deviceLockStatus.description}</p>
+          <p className="text-sm font-bold text-[#111111]">{deviceLockStatus.label}</p>
+          <p className="text-xs text-[#666666]">{deviceLockStatus.description}</p>
         </div>
         <span
           className={cx(
             'shrink-0 rounded-full px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wide',
-            deviceLockStatus.chip === 'SECURED' ? 'bg-[#15803D] text-white' : 'bg-[#DCFCE7] text-[#15803D]',
+            deviceLockStatus.chip === 'SECURED' ? 'bg-[#09AD2A] text-white' : 'bg-[#F3F3F3] text-[#09AD2A]',
           )}
         >
           {deviceLockStatus.chip}
@@ -3015,11 +3572,11 @@ export default function BookServicePage() {
       </div>
 
       <div ref={registerField(fieldRefs, 'deviceSecurityType')} className="mt-5">
-        <p className="text-sm font-bold text-[#101828]">Choose Device Lock</p>
-        <p className="text-xs text-[#667085]">Select the lock currently used on this device.</p>
+        <p className="text-sm font-bold text-[#111111]">Choose Device Lock</p>
+        <p className="text-xs text-[#666666]">Select the lock currently used on this device.</p>
         {fieldErrors.deviceSecurityType ? <p className="mt-1 text-xs text-red-600">{fieldErrors.deviceSecurityType}</p> : null}
 
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
           {LOCK_OPTIONS.map((opt) => {
             const selected = form.deviceSecurityType === opt.key;
             return (
@@ -3027,29 +3584,41 @@ export default function BookServicePage() {
                 key={opt.title}
                 type="button"
                 onClick={() => {
-                  selectLockType(opt.key);
+                  // Re-picking the current type just reopens the popup (keeps what was entered).
+                  if (opt.key !== form.deviceSecurityType) selectLockType(opt.key);
+                  if (opt.key !== 'NONE') setLockModalOpen(true);
                   if (fieldErrors.deviceSecurityType) setFieldErrors((prev) => ({ ...prev, deviceSecurityType: undefined }));
                 }}
                 aria-pressed={selected}
                 className={cx(
-                  'flex w-full items-start gap-3 rounded-xl border p-3.5 text-left transition',
-                  selected ? 'border-[#15803D] bg-[#F0FDF4]' : 'border-[#EAECF0] bg-white hover:border-[#86EFAC]',
+                  'flex h-full w-full flex-col items-start gap-2.5 rounded-xl border p-3.5 text-left transition',
+                  selected ? 'border-[#09AD2A] bg-[#F8F8F8]' : 'border-[#ECECEC] bg-white hover:border-[#ECECEC]',
                 )}
               >
-                <span
-                  className={cx(
-                    'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
-                    selected ? 'bg-[#15803D] text-white' : 'bg-[#F0FDF4] text-[#15803D]',
-                  )}
-                >
-                  <opt.icon className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-[#101828]">{opt.title}</p>
-                  <p className="text-xs text-[#667085]">{opt.subtitle}</p>
+                <div className="flex w-full items-start justify-between gap-2">
+                  <span
+                    className={cx(
+                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+                      selected ? 'bg-[#09AD2A] text-white' : 'bg-[#F8F8F8] text-[#09AD2A]',
+                    )}
+                  >
+                    <opt.icon className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <span
+                    className={cx(
+                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2',
+                      selected ? 'border-[#09AD2A] bg-[#09AD2A]' : 'border-[#D0D5DD]',
+                    )}
+                  >
+                    {selected ? <Check className="h-3 w-3 text-white" aria-hidden="true" /> : null}
+                  </span>
+                </div>
+                <div className="w-full min-w-0 break-words">
+                  <p className="text-sm font-bold text-[#111111]">{opt.title}</p>
+                  <p className="text-xs text-[#666666]">{opt.subtitle}</p>
                   {opt.example ? <p className="mt-1 text-[0.7rem] text-[#98A2B3]">{opt.example}</p> : null}
                   {opt.badge ? (
-                    <span className="mt-1 inline-block rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[#15803D]">
+                    <span className="mt-1 inline-block rounded-full bg-[#F3F3F3] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[#09AD2A]">
                       {opt.badge}
                     </span>
                   ) : null}
@@ -3061,173 +3630,214 @@ export default function BookServicePage() {
                     </div>
                   ) : null}
                 </div>
-                <span
-                  className={cx(
-                    'mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2',
-                    selected ? 'border-[#15803D] bg-[#15803D]' : 'border-[#D0D5DD]',
-                  )}
-                >
-                  {selected ? <Check className="h-3 w-3 text-white" aria-hidden="true" /> : null}
-                </span>
               </button>
             );
           })}
         </div>
 
-        {form.deviceSecurityType === 'PIN' ? (
-          <div ref={registerField(fieldRefs, 'devicePin')} className="mt-3 rounded-xl border border-[#EAECF0] bg-white p-4">
-            <FormField label="Enter PIN">
-              <div className="flex items-center gap-2">
-                <input
-                  type={showSecret ? 'text' : 'password'}
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  value={form.devicePin}
-                  onChange={(e) => {
-                    set('devicePin', e.target.value.replace(/\D/g, '').slice(0, 6));
-                    if (fieldErrors.devicePin) setFieldErrors((prev) => ({ ...prev, devicePin: undefined }));
-                  }}
-                  placeholder="4–6 digit PIN"
-                  className={cx(COMPACT_INPUT_CLS, 'flex-1 tracking-widest')}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((v) => !v)}
-                  aria-label={showSecret ? 'Hide PIN' : 'Show PIN'}
-                  className="shrink-0 rounded-lg border border-[#D0D5DD] p-2.5 text-[#667085] transition hover:bg-[#F9FAFB]"
-                >
-                  {showSecret ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-                </button>
-              </div>
-            </FormField>
-            {form.devicePin && form.devicePin.length < 4 ? (
-              <p className="mt-1.5 text-xs text-red-600">PIN must contain at least 4 digits.</p>
-            ) : fieldErrors.devicePin ? (
-              <p className="mt-1.5 text-xs text-red-600">{fieldErrors.devicePin}</p>
-            ) : null}
-          </div>
-        ) : form.deviceSecurityType === 'Password' ? (
-          <div ref={registerField(fieldRefs, 'devicePin')} className="mt-3 rounded-xl border border-[#EAECF0] bg-white p-4">
-            <FormField label="Enter Password">
-              <div className="flex items-center gap-2">
-                <input
-                  type={showSecret ? 'text' : 'password'}
-                  value={form.devicePin}
-                  onChange={(e) => {
-                    set('devicePin', e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
-                    if (fieldErrors.devicePin) setFieldErrors((prev) => ({ ...prev, devicePin: undefined }));
-                  }}
-                  placeholder="4–16 letters & numbers"
-                  className={cx(COMPACT_INPUT_CLS, 'flex-1')}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((v) => !v)}
-                  aria-label={showSecret ? 'Hide password' : 'Show password'}
-                  className="shrink-0 rounded-lg border border-[#D0D5DD] p-2.5 text-[#667085] transition hover:bg-[#F9FAFB]"
-                >
-                  {showSecret ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-                </button>
-              </div>
-            </FormField>
-            {form.devicePin && form.devicePin.length < 4 ? (
-              <p className="mt-1.5 text-xs text-red-600">Password must be at least 4 characters.</p>
-            ) : fieldErrors.devicePin ? (
-              <p className="mt-1.5 text-xs text-red-600">{fieldErrors.devicePin}</p>
-            ) : null}
-          </div>
-        ) : form.deviceSecurityType === 'Pattern' ? (
-          <div ref={registerField(fieldRefs, 'devicePin')} className="mt-3 rounded-xl border border-[#EAECF0] bg-white p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[#667085]">Draw Pattern</p>
-              <button type="button" onClick={clearPattern} className="text-xs font-bold text-[#15803D]">
-                Clear pattern
-              </button>
+        {/* Selected lock: a compact status row; the entry itself is in the popup below. */}
+        {form.deviceSecurityType && form.deviceSecurityType !== 'NONE' ? (
+          <div
+            ref={registerField(fieldRefs, 'devicePin')}
+            className={cx(
+              'mt-3 flex items-center justify-between gap-3 rounded-xl border p-3.5',
+              fieldErrors.devicePin ? 'border-red-300 bg-red-50/40' : lockValueValid ? 'border-[#09AD2A] bg-[#F8F8F8]' : 'border-[#ECECEC] bg-white',
+            )}
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-[#111111]">
+                {lockValueValid ? `${lockLabel} saved` : `No ${lockLabel.toLowerCase()} entered yet`}
+              </p>
+              {fieldErrors.devicePin ? <p className="text-xs text-red-600">{fieldErrors.devicePin}</p> : null}
             </div>
-            {/* Real drag input, not decorative: pointer capture on the grid
-                itself (set on pointerdown) keeps every subsequent
-                pointermove routed here even as the finger/cursor crosses
-                onto other dots' own elements; elementFromPoint then finds
-                which dot is currently under the pointer. Works for touch
-                and mouse alike since Pointer Events unify both. A plain
-                tap still works too — each dot's own onClick calls the same
-                togglePatternDot, which is a no-op if the drag already
-                added that dot. */}
-            <div
-              className="mx-auto grid w-fit touch-none select-none grid-cols-3 gap-4 py-2"
-              onPointerDown={(e) => {
-                const dotEl = e.target.closest('[data-pattern-dot]');
-                if (!dotEl) return;
-                e.currentTarget.setPointerCapture(e.pointerId);
-                patternDragging.current = true;
-                togglePatternDot(Number(dotEl.dataset.patternDot));
-              }}
-              onPointerMove={(e) => {
-                if (!patternDragging.current) return;
-                const el = document.elementFromPoint(e.clientX, e.clientY);
-                const dotEl = el?.closest('[data-pattern-dot]');
-                if (dotEl) togglePatternDot(Number(dotEl.dataset.patternDot));
-              }}
-              onPointerUp={() => {
-                patternDragging.current = false;
-              }}
-              onPointerCancel={() => {
-                patternDragging.current = false;
-              }}
+            <button
+              type="button"
+              onClick={() => setLockModalOpen(true)}
+              className="shrink-0 rounded-lg border border-[#09AD2A] px-3 py-1.5 text-xs font-bold text-[#09AD2A] transition hover:bg-[#F8F8F8]"
             >
-              {Array.from({ length: 9 }).map((_, i) => {
-                const dot = i + 1;
-                const active = patternDots.includes(dot);
-                return (
-                  <button
-                    key={dot}
-                    type="button"
-                    data-pattern-dot={dot}
-                    onClick={() => togglePatternDot(dot)}
-                    aria-pressed={active}
-                    aria-label={`Pattern dot ${dot}`}
-                    className={cx(
-                      'flex h-10 w-10 items-center justify-center rounded-full border-2 transition',
-                      active ? 'border-[#15803D] bg-[#15803D]' : 'border-[#D0D5DD] bg-white hover:border-[#86EFAC]',
-                    )}
-                  >
-                    <span className={cx('h-2.5 w-2.5 rounded-full', active ? 'bg-white' : 'bg-[#D0D5DD]')} />
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-center text-xs text-[#667085]">
-              {patternDots.length ? `Pattern: ${patternDots.join(' → ')}` : 'Drag or tap at least 4 dots in sequence.'}
-            </p>
-            {patternDots.length > 0 && patternDots.length < 4 ? (
-              <p className="text-center text-xs text-red-600">Connect at least 4 dots.</p>
-            ) : fieldErrors.devicePin ? (
-              <p className="text-center text-xs text-red-600">{fieldErrors.devicePin}</p>
-            ) : null}
+              {lockValueValid ? 'Change' : `Enter ${lockLabel}`}
+            </button>
           </div>
         ) : null}
+
+        {lockModalOpen && form.deviceSecurityType && form.deviceSecurityType !== 'NONE' && typeof document !== 'undefined'
+          ? createPortal(
+              <div className="fixed inset-0 z-[80] flex items-end justify-center bg-[#1E1E1E]/50 p-0 backdrop-blur-[2px] sm:items-center sm:p-4" onMouseDown={() => setLockModalOpen(false)}>
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={`Enter ${lockLabel}`}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="max-h-[90dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-[22px] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[0_24px_60px_rgba(30,30,30,0.25)] sm:rounded-[22px]"
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-[17px] font-extrabold text-[#111111]">{`Enter ${lockLabel}`}</p>
+                    <button type="button" onClick={() => setLockModalOpen(false)} aria-label="Close" className="rounded-full p-2 text-[#98A2B3] hover:bg-[#F3F3F3] hover:text-[#111111] sm:p-1.5">
+                      <X className="h-5 w-5" aria-hidden="true" />
+                    </button>
+                  </div>
+              {form.deviceSecurityType === 'PIN' ? (
+                <div>
+                  <FormField label="Enter PIN">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type={showSecret ? 'text' : 'password'}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={form.devicePin}
+                        onChange={(e) => {
+                          set('devicePin', e.target.value.replace(/\D/g, '').slice(0, 6));
+                          if (fieldErrors.devicePin) setFieldErrors((prev) => ({ ...prev, devicePin: undefined }));
+                        }}
+                        placeholder="4–6 digit PIN"
+                        className={cx(COMPACT_INPUT_CLS, 'flex-1 tracking-widest')}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret((v) => !v)}
+                        aria-label={showSecret ? 'Hide PIN' : 'Show PIN'}
+                        className="shrink-0 rounded-lg border border-[#D0D5DD] p-2.5 text-[#666666] transition hover:bg-[#F3F3F3]"
+                      >
+                        {showSecret ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                      </button>
+                    </div>
+                  </FormField>
+                  {form.devicePin && form.devicePin.length < 4 ? (
+                    <p className="mt-1.5 text-xs text-red-600">PIN must contain at least 4 digits.</p>
+                  ) : fieldErrors.devicePin ? (
+                    <p className="mt-1.5 text-xs text-red-600">{fieldErrors.devicePin}</p>
+                  ) : null}
+                </div>
+              ) : form.deviceSecurityType === 'Password' ? (
+                <div>
+                  <FormField label="Enter Password">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type={showSecret ? 'text' : 'password'}
+                        value={form.devicePin}
+                        onChange={(e) => {
+                          set('devicePin', e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16));
+                          if (fieldErrors.devicePin) setFieldErrors((prev) => ({ ...prev, devicePin: undefined }));
+                        }}
+                        placeholder="4–16 letters & numbers"
+                        className={cx(COMPACT_INPUT_CLS, 'flex-1')}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret((v) => !v)}
+                        aria-label={showSecret ? 'Hide password' : 'Show password'}
+                        className="shrink-0 rounded-lg border border-[#D0D5DD] p-2.5 text-[#666666] transition hover:bg-[#F3F3F3]"
+                      >
+                        {showSecret ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                      </button>
+                    </div>
+                  </FormField>
+                  {form.devicePin && form.devicePin.length < 4 ? (
+                    <p className="mt-1.5 text-xs text-red-600">Password must be at least 4 characters.</p>
+                  ) : fieldErrors.devicePin ? (
+                    <p className="mt-1.5 text-xs text-red-600">{fieldErrors.devicePin}</p>
+                  ) : null}
+                </div>
+              ) : form.deviceSecurityType === 'Pattern' ? (
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-[0.7rem] font-semibold uppercase tracking-wide text-[#666666]">Draw Pattern</p>
+                    <button type="button" onClick={clearPattern} className="text-xs font-bold text-[#09AD2A]">
+                      Clear pattern
+                    </button>
+                  </div>
+                  {/* Real drag input, not decorative: pointer capture on the grid
+                      itself (set on pointerdown) keeps every subsequent
+                      pointermove routed here even as the finger/cursor crosses
+                      onto other dots' own elements; elementFromPoint then finds
+                      which dot is currently under the pointer. Works for touch
+                      and mouse alike since Pointer Events unify both. A plain
+                      tap still works too — each dot's own onClick calls the same
+                      togglePatternDot, which is a no-op if the drag already
+                      added that dot. */}
+                  <div
+                    className="mx-auto grid w-fit touch-none select-none grid-cols-3 gap-4 py-2"
+                    onPointerDown={(e) => {
+                      const dotEl = e.target.closest('[data-pattern-dot]');
+                      if (!dotEl) return;
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      patternDragging.current = true;
+                      togglePatternDot(Number(dotEl.dataset.patternDot));
+                    }}
+                    onPointerMove={(e) => {
+                      if (!patternDragging.current) return;
+                      const el = document.elementFromPoint(e.clientX, e.clientY);
+                      const dotEl = el?.closest('[data-pattern-dot]');
+                      if (dotEl) togglePatternDot(Number(dotEl.dataset.patternDot));
+                    }}
+                    onPointerUp={() => {
+                      patternDragging.current = false;
+                    }}
+                    onPointerCancel={() => {
+                      patternDragging.current = false;
+                    }}
+                  >
+                    {Array.from({ length: 9 }).map((_, i) => {
+                      const dot = i + 1;
+                      const active = patternDots.includes(dot);
+                      return (
+                        <button
+                          key={dot}
+                          type="button"
+                          data-pattern-dot={dot}
+                          onClick={() => togglePatternDot(dot)}
+                          aria-pressed={active}
+                          aria-label={`Pattern dot ${dot}`}
+                          className={cx(
+                            'flex h-10 w-10 items-center justify-center rounded-full border-2 transition',
+                            active ? 'border-[#09AD2A] bg-[#09AD2A]' : 'border-[#D0D5DD] bg-white hover:border-[#ECECEC]',
+                          )}
+                        >
+                          <span className={cx('h-2.5 w-2.5 rounded-full', active ? 'bg-white' : 'bg-[#D0D5DD]')} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-center text-xs text-[#666666]">
+                    {patternDots.length ? `Pattern: ${patternDots.join(' → ')}` : 'Drag or tap at least 4 dots in sequence.'}
+                  </p>
+                  {patternDots.length > 0 && patternDots.length < 4 ? (
+                    <p className="text-center text-xs text-red-600">Connect at least 4 dots.</p>
+                  ) : fieldErrors.devicePin ? (
+                    <p className="text-center text-xs text-red-600">{fieldErrors.devicePin}</p>
+                  ) : null}
+                </div>
+              ) : null}
+                  <div className="mt-4 flex gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setLockModalOpen(false)}
+                      className="h-11 flex-1 rounded-xl border border-[#D0D5DD] bg-white text-sm font-bold text-[#344054] transition hover:bg-[#F3F3F3]"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!lockValueValid}
+                      onClick={() => {
+                        setLockModalOpen(false);
+                        if (fieldErrors.devicePin) setFieldErrors((prev) => ({ ...prev, devicePin: undefined }));
+                      }}
+                      className="h-11 flex-1 rounded-xl bg-[#F3BF23] text-sm font-bold text-[#111111] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
       </div>
 
-      <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-[#F0FDF4] px-4 py-3">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#15803D]" aria-hidden="true" />
-        <div>
-          <p className="text-sm font-bold text-[#15803D]">Why we need this</p>
-          <p className="mt-0.5 text-xs text-[#3F6C55]">
-            This helps the service team verify the device status and avoid delays during testing and delivery.
-          </p>
-        </div>
-      </div>
 
-      <button
-        type="button"
-        onClick={goNext}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-[#14532D] px-5 py-3.5 text-sm font-bold text-white transition hover:bg-[#166534]"
-      >
-        Continue
-        <ArrowRight className="h-4 w-4" aria-hidden="true" />
-      </button>
       <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-[#98A2B3]">
-        <ShieldCheck className="h-3.5 w-3.5 text-[#15803D]" aria-hidden="true" />
+        <ShieldCheck className="h-3.5 w-3.5 text-[#09AD2A]" aria-hidden="true" />
         Encrypted &amp; Secure
       </p>
     </Section>
@@ -3242,50 +3852,53 @@ export default function BookServicePage() {
    */
   const missingPartsSection = (
     <Section title="Device Missing Parts" icon={ListChecks}>
-      <p className="-mt-1 mb-4 text-xs text-[#667085]">Inspect and flag the device condition.</p>
+      <p className="-mt-1 mb-4 text-xs text-[#666666]">Inspect and flag the device condition.</p>
 
       <div className="mb-4 grid grid-cols-2 gap-3">
-        <div className="rounded-xl border border-[#EAECF0] bg-white p-3 text-center">
-          <p className="text-lg font-extrabold text-[#101828]">{flaggedPartsCount}</p>
-          <p className="text-xs text-[#667085]">Parts Flagged</p>
+        <div className="rounded-xl border border-[#ECECEC] bg-white p-3 text-center">
+          <p className="text-lg font-extrabold text-[#111111]">{flaggedPartsCount}</p>
+          <p className="text-xs text-[#666666]">Parts Flagged</p>
         </div>
-        <div className="flex flex-col items-center justify-center rounded-xl border border-[#EAECF0] bg-[#F0FDF4] p-3 text-center">
-          <p className="text-xs font-bold text-[#15803D]">Inspection in progress</p>
+        <div className="flex flex-col items-center justify-center rounded-xl border border-[#ECECEC] bg-[#F8F8F8] p-3 text-center">
+          <p className="text-xs font-bold text-[#09AD2A]">Inspection in progress</p>
         </div>
       </div>
 
-      <div className="space-y-2">
+      {/* 4 cards per row on desktop (2 on tablets, 1 on phones); each card is
+          a flex column so its Missing/Damaged buttons line up at the bottom
+          across a row even when a subtitle wraps. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {MISSING_PART_ITEMS.map((item) => {
           const status = missingParts[item.key];
           const flagged = Boolean(status);
           return (
             <div
               key={item.key}
-              className={cx('rounded-xl border p-3.5 transition', flagged ? 'border-[#15803D] bg-[#F0FDF4]' : 'border-[#EAECF0] bg-white')}
+              className={cx('flex flex-col rounded-xl border p-3.5 transition', flagged ? 'border-[#09AD2A] bg-[#F8F8F8]' : 'border-[#ECECEC] bg-white')}
             >
               <div className="flex items-center gap-3">
                 <span
                   className={cx(
                     'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
-                    flagged ? 'bg-[#15803D] text-white' : 'bg-[#F0FDF4] text-[#15803D]',
+                    flagged ? 'bg-[#09AD2A] text-white' : 'bg-[#F8F8F8] text-[#09AD2A]',
                   )}
                 >
                   <item.icon className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-[#101828]">{item.title}</p>
-                  <p className="text-xs text-[#667085]">{item.subtitle}</p>
+                  <p className="text-sm font-bold text-[#111111]">{item.title}</p>
+                  <p className="text-xs text-[#666666]">{item.subtitle}</p>
                 </div>
-                <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', flagged ? 'bg-[#15803D]' : 'bg-[#D0D5DD]')} aria-hidden="true" />
+                <span className={cx('h-2.5 w-2.5 shrink-0 rounded-full', flagged ? 'bg-[#09AD2A]' : 'bg-[#D0D5DD]')} aria-hidden="true" />
               </div>
-              <div className="mt-2.5 grid grid-cols-2 gap-2">
+              <div className="mt-auto grid grid-cols-2 gap-2 pt-3">
                 <button
                   type="button"
                   onClick={() => setPartStatus(item.key, 'missing')}
                   aria-pressed={status === 'missing'}
                   className={cx(
                     'rounded-full border px-3 py-1.5 text-xs font-bold transition',
-                    status === 'missing' ? 'border-[#15803D] bg-[#15803D] text-white' : 'border-[#D0D5DD] bg-white text-[#344054] hover:border-[#86EFAC]',
+                    status === 'missing' ? 'border-[#09AD2A] bg-[#09AD2A] text-white' : 'border-[#D0D5DD] bg-white text-[#344054] hover:border-[#ECECEC]',
                   )}
                 >
                   Missing
@@ -3296,7 +3909,7 @@ export default function BookServicePage() {
                   aria-pressed={status === 'damaged'}
                   className={cx(
                     'rounded-full border px-3 py-1.5 text-xs font-bold transition',
-                    status === 'damaged' ? 'border-[#15803D] bg-[#15803D] text-white' : 'border-[#D0D5DD] bg-white text-[#344054] hover:border-[#86EFAC]',
+                    status === 'damaged' ? 'border-[#09AD2A] bg-[#09AD2A] text-white' : 'border-[#D0D5DD] bg-white text-[#344054] hover:border-[#ECECEC]',
                   )}
                 >
                   Damaged
@@ -3307,97 +3920,229 @@ export default function BookServicePage() {
         })}
       </div>
 
-      {/* Recap bar, not a second position:sticky element — the shared
-          Previous/Next/Confirm footer at the bottom of this page is
-          already sticky; stacking a second independent sticky bar at the
-          same bottom offset would overlap it rather than stack cleanly.
-          This still shows the live count and advances via the same
-          goNext() the footer's own Next button uses. */}
+    </Section>
+  );
+
+  // "Others" accordion — the Partner app's custom-issue card (see addCustomIssue).
+  const othersOpen = expandedIssueCategories.includes(OTHERS_KEY);
+  const customIssueName = customIssueDraft.name.trim();
+  const customIssuesCard = (
+    <div className="overflow-hidden rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] transition">
       <button
         type="button"
-        onClick={goNext}
-        className="mt-4 flex w-full items-center justify-between gap-3 rounded-xl bg-[#14532D] px-5 py-3.5 text-left text-white transition hover:bg-[#166534]"
+        onClick={() => toggleIssueCategory(OTHERS_KEY)}
+        aria-expanded={othersOpen}
+        className={cx('flex w-full items-center gap-3 px-3.5 py-3.5 text-left transition', othersOpen ? 'bg-[#F3F3F3]' : 'hover:bg-[#F3F3F3]')}
       >
-        <span>
-          <span className="block text-[0.65rem] font-bold uppercase tracking-wide text-[#DCFCE7]">
-            {flaggedPartsCount} Part{flaggedPartsCount === 1 ? '' : 's'} Flagged
+        <span
+          className={cx(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition',
+            form.customIssues.length ? 'bg-[#09AD2A] text-white' : 'bg-[#F8F8F8] text-[#09AD2A]',
+          )}
+        >
+          <Sparkles className="h-5 w-5" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-bold text-[#111111]">Others</span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[#666666]">
+            Add a custom issue
+            {form.customIssues.length ? (
+              <span className="inline-flex items-center rounded-full bg-[#F8F8F8] px-2 py-0.5 text-[0.68rem] font-bold text-[#09AD2A]">
+                {form.customIssues.length} added
+              </span>
+            ) : null}
           </span>
-          <span className="block text-sm font-bold">Review &amp; Submit</span>
         </span>
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15">
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </span>
+        <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform duration-200', othersOpen && 'rotate-180')} aria-hidden="true" />
       </button>
-    </Section>
+
+      <div className={cx('grid transition-all duration-200 ease-out', othersOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="overflow-hidden">
+          <div className="space-y-2 border-t border-dashed border-[#ECECEC] px-3 py-3">
+            {form.customIssues.map((c) => (
+              <div key={c.id} className="flex items-center gap-3 rounded-xl border border-[#09AD2A] bg-white px-3.5 py-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#09AD2A] text-white">
+                  <Sparkles className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-[#111111]">{c.name}</p>
+                  <p className="truncate text-xs text-[#666666]">
+                    {repairCategoryNames.get(c.categoryId) || 'Others'} ·{' '}
+                    {Number(draftServicePrices[c.id]) > 0 ? money(draftServicePrices[c.id]) : 'Price TBD'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeCustomIssue(c.id)}
+                  className={cx(
+                    'inline-flex shrink-0 items-center gap-1 rounded-full border border-[#D0D5DD] bg-white px-3 py-1.5 text-xs font-bold text-[#666666] transition hover:border-red-300 hover:bg-red-50 hover:text-red-600',
+                    FOCUS_RING,
+                  )}
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" /> Remove
+                </button>
+              </div>
+            ))}
+
+            <div className="space-y-3 rounded-xl border border-[#ECECEC] bg-white p-3.5">
+              <div>
+                <label className="mb-1.5 block text-[0.7rem] font-bold uppercase tracking-wide text-[#666666]" htmlFor="custom-issue-name">
+                  Issue
+                </label>
+                <input
+                  id="custom-issue-name"
+                  type="text"
+                  value={customIssueDraft.name}
+                  onChange={(e) => setCustomIssueField('name', e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCustomIssue();
+                    }
+                  }}
+                  placeholder="Describe the issue (e.g. Face ID not working)"
+                  className={cx(COMPACT_INPUT_CLS, 'h-10 text-sm')}
+                />
+              </div>
+
+              {relevantRepairCategories.length ? (
+                <div>
+                  <p className="mb-1.5 text-[0.7rem] font-bold uppercase tracking-wide text-[#666666]">Condition Category</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {relevantRepairCategories.map((c) => {
+                      const active = customIssueDraft.categoryId === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setCustomIssueField('categoryId', active ? '' : c.id)}
+                          aria-pressed={active}
+                          className={cx(
+                            'rounded-full border px-3 py-1.5 text-xs font-bold transition',
+                            active ? 'border-[#09AD2A] bg-[#09AD2A] text-white' : 'border-[#D0D5DD] bg-white text-[#344054] hover:border-[#09AD2A]',
+                          )}
+                        >
+                          {c.displayName || c.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              <div>
+                <label className="mb-1.5 block text-[0.7rem] font-bold uppercase tracking-wide text-[#666666]" htmlFor="custom-issue-price">
+                  Price (₹)
+                </label>
+                <div className="relative sm:max-w-xs">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#98A2B3]">₹</span>
+                  <input
+                    id="custom-issue-price"
+                    type="number"
+                    min="0"
+                    inputMode="decimal"
+                    value={customIssueDraft.price}
+                    onChange={(e) => setCustomIssueField('price', e.target.value)}
+                    placeholder="0 (leave blank if price is not decided yet)"
+                    className={cx(COMPACT_INPUT_CLS, 'h-10 pl-7 text-sm font-semibold text-[#111111]')}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={addCustomIssue}
+                disabled={!customIssueName}
+                className={cx(
+                  'flex w-full items-center justify-center gap-1.5 rounded-full bg-[#09AD2A] py-2.5 text-sm font-bold uppercase tracking-wide text-white transition hover:bg-[#078F22] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#09AD2A]',
+                  FOCUS_RING,
+                )}
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" /> Add Issue
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 
   const problemSection = (
     <Section title="Add Issue / Service" icon={Wrench}>
       <div className="space-y-3">
-        <p className="-mt-1 text-xs text-[#667085]">Select the repair issues or services required for this device.</p>
+        <p className="-mt-1 text-xs text-[#666666]">Select the repair issues or services required for this device.</p>
 
         {!form.categoryId ? (
-          <p className="rounded-lg border border-dashed border-[#D0D5DD] bg-[#F9FAFB] px-3 py-4 text-center text-xs text-[#98A2B3]">
+          <p className="rounded-lg border border-dashed border-[#D0D5DD] bg-[#F3F3F3] px-3 py-4 text-center text-xs text-[#98A2B3]">
             Select a Device Category on the Device Details tab to see the relevant repair options.
           </p>
-        ) : relevantRepairCategories.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-[#D0D5DD] bg-[#F9FAFB] px-3 py-4 text-center text-xs text-[#98A2B3]">
-            No repair categories are set up for this device category yet.
-          </p>
         ) : (
-          <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2 lg:gap-4">
-            {relevantRepairCategories.map((c) => (
-              <IssueCategoryRow
-                key={c.id}
-                category={c}
-                services={servicesByCategoryId.get(c.id) || []}
-                expanded={expandedIssueCategories.includes(c.id)}
-                onToggleExpand={() => toggleIssueCategory(c.id)}
-                selectedIds={form.serviceIds}
-                onToggleService={toggleService}
-                isOther={isOtherIssueCategory(c)}
-                otherValue={form.issueDescription}
-                onOtherChange={(e) => set('issueDescription', e.target.value)}
-                draftPrices={draftServicePrices}
-                draftWarranty={draftServiceWarranty}
-                onDraftPriceChange={setDraftServicePrice}
-                onDraftWarrantyChange={setDraftServiceWarrantyMonths}
-              />
-            ))}
-          </div>
+          <>
+            {relevantRepairCategories.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-[#D0D5DD] bg-[#F3F3F3] px-3 py-4 text-center text-xs text-[#98A2B3]">
+                No repair categories are set up for this device category yet — add a custom issue under Others below.
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-2 lg:gap-4">
+                {relevantRepairCategories.map((c) => (
+                  <IssueCategoryRow
+                    key={c.id}
+                    category={c}
+                    services={servicesByCategoryId.get(c.id) || []}
+                    expanded={expandedIssueCategories.includes(c.id)}
+                    onToggleExpand={() => toggleIssueCategory(c.id)}
+                    selectedIds={form.serviceIds}
+                    onToggleService={toggleService}
+                    draftPrices={draftServicePrices}
+                    draftWarranty={draftServiceWarranty}
+                    onDraftPriceChange={setDraftServicePrice}
+                    onDraftWarrantyChange={setDraftServiceWarrantyMonths}
+                  />
+                ))}
+              </div>
+            )}
+            <div className="mt-5 border-t border-dashed border-[#ECECEC] pt-4">
+              <p className="mb-2.5 text-xs font-bold uppercase tracking-wider text-[#666666]">Others</p>
+              {customIssuesCard}
+            </div>
+          </>
         )}
 
         {chosenServices.length > 0 ? (
-          <div className="rounded-xl border border-[#EAECF0] bg-[#F9FAFB] p-3.5">
+          <div className="rounded-xl border border-[#ECECEC] bg-[#F3F3F3] p-3.5">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5">
-              <p className="text-xs font-bold text-[#101828]">
-                Selected Services <span className="text-[#15803D]">({chosenServices.length})</span>
+              <p className="text-xs font-bold text-[#111111]">
+                Selected Services <span className="text-[#09AD2A]">({chosenServices.length})</span>
               </p>
               {draftServicesSubtotal > 0 ? (
-                <p className="text-[0.7rem] text-[#667085]">
-                  Services subtotal: <span className="font-bold text-[#101828]">{money(draftServicesSubtotal)}</span>
+                <p className="text-[0.7rem] text-[#666666]">
+                  Services subtotal: <span className="font-bold text-[#111111]">{money(draftServicesSubtotal)}</span>
                 </p>
               ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
-              {chosenServices.map((s) => (
-                <span
-                  key={s.id}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-[#15803D] bg-white py-1 pl-3 pr-1.5 text-xs font-semibold text-[#15803D]"
-                >
-                  {s.name}
-                  {draftServicePrices[s.id] ? <span className="font-normal text-[#667085]">· ₹{draftServicePrices[s.id]}</span> : null}
-                  {draftServiceWarranty[s.id] ? <span className="font-normal text-[#667085]">· {draftServiceWarranty[s.id]}mo warranty</span> : null}
-                  <button
-                    type="button"
-                    onClick={() => toggleService(s.id)}
-                    aria-label={`Remove ${s.name}`}
-                    className="flex h-4 w-4 items-center justify-center rounded-full transition hover:bg-[#F0FDF4]"
+              {chosenServices.map((s) => {
+                const ServiceIcon = iconForRepairService(s.name, repairCategoryNames.get(s.categoryId));
+                return (
+                  <span
+                    key={s.id}
+                    className="inline-flex max-w-full items-center gap-1.5 break-words rounded-full border border-[#09AD2A] bg-white py-1 pl-2.5 pr-1.5 text-xs font-semibold text-[#09AD2A]"
                   >
-                    <X className="h-3 w-3" aria-hidden="true" />
-                  </button>
-                </span>
-              ))}
+                    <ServiceIcon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    {s.name}
+                    {draftServicePrices[s.id] ? <span className="font-normal text-[#666666]">· ₹{draftServicePrices[s.id]}</span> : null}
+                    {draftServiceWarranty[s.id] ? <span className="font-normal text-[#666666]">· {draftServiceWarranty[s.id]}mo warranty</span> : null}
+                    <button
+                      type="button"
+                      onClick={() => removeChosenService(s)}
+                      aria-label={`Remove ${s.name}`}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition hover:bg-[#F8F8F8] sm:h-4 sm:w-4"
+                    >
+                      <X className="h-3 w-3" aria-hidden="true" />
+                    </button>
+                  </span>
+                );
+              })}
             </div>
           </div>
         ) : null}
@@ -3405,212 +4150,289 @@ export default function BookServicePage() {
     </Section>
   );
 
+  /**
+   * Device Files — the Partner app's DeviceInformationScreen card: Front Side
+   * and Back Side photos (required, see SECTION_VALIDATORS) plus an optional
+   * Full Coverage video, one tile per DEVICE_FILE_SLOTS entry. Rendered beside
+   * Estimated Delivery inside pickupSection (Device Information shows the
+   * same files view-only, in pickupSummarySection). Every upload is a real call to
+   * shop media storage with the shop's own bearer token (uploadShopDevicePhoto,
+   * the same endpoint the public /repair flow's photo picker uses), and the
+   * URLs are saved on the ticket as devicePhotosJson {front, back, video}.
+   */
+  const deviceFilesAdded = DEVICE_FILE_SLOTS.filter((slot) => form[slot.field]).length;
+  const deviceFilesError = fieldErrors.frontImageUrl || fieldErrors.backImageUrl;
+  const devicePhotosCard = (
+    <div className="min-w-0 rounded-xl border border-[#ECECEC] bg-white p-4">
+      <div className="mb-3 flex items-center gap-2.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[#09AD2A]">
+          <Camera className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-[#111111]">Device Files</p>
+          <p className="text-xs text-[#666666]">
+            Front + Back required · Coverage video optional
+            {deviceFilesAdded ? ` · ${deviceFilesAdded}/${DEVICE_FILE_SLOTS.length} added` : ''}
+          </p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {DEVICE_FILE_SLOTS.map((slot) => (
+          <PhotoTile
+            key={slot.key}
+            slot={slot}
+            url={form[slot.field]}
+            uploading={Boolean(photoUploading[slot.key])}
+            invalid={Boolean(fieldErrors[slot.field])}
+            fieldRef={slot.required ? registerField(fieldRefs, slot.field) : undefined}
+            onUpload={(file) => handlePhotoUpload(slot, file)}
+            onRemove={() => removePhoto(slot)}
+          />
+        ))}
+      </div>
+      {deviceFilesError ? <p className="mt-2 text-xs text-red-600">{deviceFilesError}</p> : null}
+
+      <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-[#F8F8F8] px-3 py-2 text-xs text-[#666666]">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#09AD2A]" aria-hidden="true" />
+        Photos help the customer verify the device&apos;s condition before and after repair.
+      </p>
+    </div>
+  );
+
   const pickupSection = (
     <Section title="Service Price & Issue Estimate" icon={Receipt} className="space-y-4">
-      {/* Bill Details — same real chosenServices/draftServicePrices/toggleService
-          this page already collects, restyled as an itemized bill. Each line
-          price is entered on the Add Issue / Service tab and summed into the
-          real, submitted form.serviceCharge (see the sync effect near
-          draftServicesSubtotal); the Estimated Total banner below is that
-          same real, submitted totals.total from estimateTotal(). */}
-      <div className="overflow-hidden rounded-xl border border-[#EAECF0] bg-white">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EAECF0] bg-[#F9FAFB] px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] text-[#15803D]">
-              <ClipboardList className="h-4 w-4" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-sm font-bold text-[#101828]">Bill Details</p>
-              <p className="text-xs text-[#667085]">Services selected for this device</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-[#D0D5DD] bg-white px-2.5 py-1 text-xs font-semibold text-[#344054]">
-              {chosenServices.length} item{chosenServices.length === 1 ? '' : 's'}
-            </span>
-            <button
-              type="button"
-              onClick={() => setActiveSection('problem')}
-              className="inline-flex items-center gap-1 rounded-full bg-[#15803D] px-3 py-1.5 text-xs font-bold text-white transition hover:bg-[#166534]"
-            >
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add Service
-            </button>
-          </div>
-        </div>
-
-        {chosenServices.length === 0 ? (
-          <p className="px-4 py-6 text-center text-sm text-[#98A2B3]">No services selected yet — add one from the Add Issue / Service tab.</p>
-        ) : (
-          <div className="divide-y divide-dashed divide-[#EAECF0]">
-            {chosenServices.map((s, idx) => (
-              <div key={s.id} className="flex items-center gap-3 px-4 py-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] text-xs font-bold text-[#15803D]">{idx + 1}</span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-[#101828]">{s.name}</p>
-                  {draftServiceWarranty[s.id] ? <p className="text-xs text-[#667085]">{draftServiceWarranty[s.id]} months warranty (draft)</p> : null}
+      {/* Two columns from md up — Bill Details + IMEI on the left, Issue
+          Description & Voice Note on the right; on phones they stack in
+          that same order, with Delivery + Photos and approval below. Both
+          columns stretch to the taller one so their bottoms line up: the
+          Bill Details list and the Issue Description textarea take up the slack. */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
+          {/* Bill Details — same real chosenServices/draftServicePrices/toggleService
+              this page already collects, restyled as an itemized bill. Each line
+              price is entered on the Add Issue / Service tab and summed into the
+              real, submitted form.serviceCharge (see the sync effect near
+              draftServicesSubtotal); the Estimated Total banner below is that
+              same real, submitted totals.total from estimateTotal(). */}
+          <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-[#ECECEC] bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ECECEC] bg-[#F3F3F3] px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[#09AD2A]">
+                  <ClipboardList className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-[#111111]">Bill Details</p>
+                  <p className="text-xs text-[#666666]">Services selected for this device</p>
                 </div>
-                <span className="shrink-0 text-sm font-semibold text-[#344054]">{draftServicePrices[s.id] ? money(draftServicePrices[s.id]) : '₹0'}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border border-[#D0D5DD] bg-white px-2.5 py-1 text-xs font-semibold text-[#344054]">
+                  {chosenServices.length} item{chosenServices.length === 1 ? '' : 's'}
+                </span>
                 <button
                   type="button"
-                  onClick={() => toggleService(s.id)}
-                  aria-label={`Remove ${s.name}`}
-                  className="shrink-0 rounded-lg p-1.5 text-[#98A2B3] transition hover:bg-red-50 hover:text-red-600"
+                  onClick={() => setActiveSection('problem')}
+                  className="inline-flex items-center gap-1 rounded-full bg-[#F3BF23] px-3 py-1.5 text-xs font-bold text-[#111111] transition hover:bg-[#E5B11A]"
                 >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" /> Add Service
                 </button>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
 
-        <div className="flex items-center justify-between gap-3 bg-[#F0FDF4] px-4 py-3.5">
-          <div className="flex items-center gap-2">
-            <Tag className="h-4 w-4 shrink-0 text-[#15803D]" aria-hidden="true" />
-            <div>
-              <p className="text-sm font-bold text-[#101828]">Estimated Total</p>
-              <p className="text-[0.7rem] text-[#667085]">Final amount may vary based on parts availability.</p>
+            {chosenServices.length === 0 ? (
+              <p className="flex-1 px-4 py-6 text-center text-sm text-[#98A2B3]">No services selected yet — add one from the Add Issue / Service tab.</p>
+            ) : (
+              <div className="flex-1 divide-y divide-dashed divide-[#ECECEC]">
+                {chosenServices.map((s, idx) => (
+                  <div key={s.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-xs font-bold text-[#09AD2A]">{idx + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-[#111111]">{s.name}</p>
+                      {draftServiceWarranty[s.id] ? <p className="text-xs text-[#666666]">{draftServiceWarranty[s.id]} months warranty (draft)</p> : null}
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold text-[#344054]">{draftServicePrices[s.id] ? money(draftServicePrices[s.id]) : '₹0'}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeChosenService(s)}
+                      aria-label={`Remove ${s.name}`}
+                      className="shrink-0 rounded-lg p-1.5 text-[#98A2B3] transition hover:bg-red-50 hover:text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 bg-[#F8F8F8] px-4 py-3.5">
+              <div className="flex items-center gap-2">
+                <Tag className="h-4 w-4 shrink-0 text-[#09AD2A]" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-bold text-[#111111]">Estimated Total</p>
+                  <p className="text-[0.7rem] text-[#666666]">Final amount may vary based on parts availability.</p>
+                </div>
+              </div>
+              <span className="shrink-0 text-lg font-extrabold text-[#111111]">{money(totals.total)}</span>
             </div>
           </div>
-          <span className="shrink-0 text-lg font-extrabold text-[#101828]">{money(totals.total)}</span>
-        </div>
-      </div>
 
-      {/* Device IMEI — same real form.imei field as Device Details; shown
-          again here since this tab is now the estimate/summary step. The
-          tip below is just real, static help text (dialing *#06# is a
-          genuine phone feature). The "Scan" button is disabled — there's no
-          camera/OCR capability anywhere in this app to back it; it's shown
-          for layout parity with the reference design, not as a working
-          feature (same treatment as Assign/Receipt/Barcode elsewhere in the
-          shop dashboard before those got real pages). */}
-      <div className="rounded-xl border border-[#EAECF0] bg-white p-4">
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <FormField label="Device IMEI / Serial Number">
-              <input
-                className={COMPACT_INPUT_CLS}
-                value={form.imei}
-                onChange={(e) => set('imei', e.target.value)}
-                placeholder="Enter 15-digit IMEI"
-              />
-            </FormField>
+          {/* Device IMEI — same real form.imei field as Device Details; shown
+              again here since this tab is now the estimate/summary step. The
+              tip below is just real, static help text (dialing *#06# is a
+              genuine phone feature). The "Scan" button is disabled — there's no
+              camera/OCR capability anywhere in this app to back it; it's shown
+              for layout parity with the reference design, not as a working
+              feature (same treatment as Assign/Receipt/Barcode elsewhere in the
+              shop dashboard before those got real pages). */}
+          <div className="rounded-xl border border-[#ECECEC] bg-white p-4">
+            <div className="flex items-end gap-2">
+              <div className="min-w-0 flex-1">
+                <FormField label="Device IMEI / Serial Number">
+                  <input
+                    className={COMPACT_INPUT_CLS}
+                    value={form.imei}
+                    onChange={(e) => set('imei', e.target.value)}
+                    placeholder="Enter 15-digit IMEI"
+                  />
+                </FormField>
+              </div>
+              <button
+                type="button"
+                disabled
+                title="Camera IMEI scanning isn't available in the shop portal yet"
+                className="mb-[3px] inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-lg bg-[#F3F3F3] px-3.5 py-2.5 text-sm font-bold text-[#98A2B3]"
+              >
+                <ScanLine className="h-4 w-4" aria-hidden="true" />
+                Scan
+              </button>
+            </div>
+            <p className="mt-2.5 flex items-start gap-1.5 rounded-lg bg-[#F8F8F8] px-3 py-2 text-xs text-[#09AD2A]">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              Tip: dial *#06# on the device to display the IMEI as a barcode.
+            </p>
           </div>
-          <button
-            type="button"
-            disabled
-            title="Camera IMEI scanning isn't available in the shop portal yet"
-            className="mb-[3px] inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-lg bg-[#F9FAFB] px-3.5 py-2.5 text-sm font-bold text-[#98A2B3]"
-          >
-            <ScanLine className="h-4 w-4" aria-hidden="true" />
-            Scan
-          </button>
-        </div>
-        <p className="mt-2.5 flex items-start gap-1.5 rounded-lg bg-[#F0FDF4] px-3 py-2 text-xs text-[#15803D]">
-          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          Tip: dial *#06# on the device to display the IMEI as a barcode.
-        </p>
-      </div>
 
-      {/* Issue Description — the same real form.issueDescription field
-          this page has always had (previously only reachable through the
-          "Other" repair category's textarea on the Add Issue / Service
-          tab); given its own card here too, per request, with a 500-char
-          counter. Still the one real field, still optional. */}
-      <div ref={registerField(fieldRefs, 'issueDescription')} className="rounded-xl border border-[#EAECF0] bg-white p-4">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="flex items-center gap-2 text-sm font-bold text-[#101828]">
-            <Pencil className="h-4 w-4 text-[#15803D]" aria-hidden="true" />
-            Issue Description
+        </div>
+
+        {/* Issue Description & Voice Note — one card. Issue Description is
+            the real form.issueDescription field and is
+            required here (SECTION_VALIDATORS.pickup). The voice note is
+            independent of the text: recording never touches the textarea, and
+            its state lives on this page (useVoiceNote) so it survives step
+            changes. */}
+        <div className="flex min-w-0 flex-col rounded-xl border border-[#ECECEC] bg-white p-4">
+          <p className="mb-3 flex items-center gap-2 text-sm font-bold text-[#111111]">
+            <Pencil className="h-4 w-4 text-[#09AD2A]" aria-hidden="true" />
+            Issue Description &amp; Voice Note
           </p>
-          <span className="shrink-0 text-xs text-[#98A2B3]">{form.issueDescription.length}/500</span>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <label htmlFor="issue-description" className="text-[0.7rem] font-semibold uppercase tracking-wide text-[#666666]">
+              Issue Description <span className="text-red-500">*</span>
+            </label>
+            <span className="shrink-0 text-xs text-[#98A2B3]">{form.issueDescription.length}/500</span>
+          </div>
+          <textarea
+            id="issue-description"
+            ref={registerField(fieldRefs, 'issueDescription')}
+            className={cx(COMPACT_INPUT_CLS, 'min-h-[110px] grow resize-y', fieldErrors.issueDescription && 'border-red-300 focus:border-red-400')}
+            value={form.issueDescription}
+            maxLength={500}
+            required
+            aria-required="true"
+            aria-invalid={fieldErrors.issueDescription ? 'true' : undefined}
+            onChange={(e) => {
+              set('issueDescription', e.target.value.slice(0, 500));
+              if (fieldErrors.issueDescription) setFieldErrors((prev) => ({ ...prev, issueDescription: undefined }));
+            }}
+            placeholder="What's wrong with the device? e.g. Screen cracked, battery drains fast…"
+          />
+          {fieldErrors.issueDescription ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.issueDescription}</p> : null}
+
+          <div className="mt-4 border-t border-dashed border-[#ECECEC] pt-3">
+            <p className="mb-2 text-[0.7rem] font-semibold uppercase tracking-wide text-[#666666]">Voice Note</p>
+            <VoiceNoteCard voice={voiceNote} />
+          </div>
         </div>
-        <textarea
-          className={cx(COMPACT_INPUT_CLS, 'min-h-[90px] resize-y')}
-          value={form.issueDescription}
-          maxLength={500}
-          onChange={(e) => {
-            set('issueDescription', e.target.value.slice(0, 500));
-            if (fieldErrors.issueDescription) setFieldErrors((prev) => ({ ...prev, issueDescription: undefined }));
-          }}
-          placeholder="What's wrong with the device? e.g. Screen cracked, battery drains fast…"
-        />
-        {fieldErrors.issueDescription ? <p className="mt-1.5 text-xs text-red-600">{fieldErrors.issueDescription}</p> : null}
       </div>
 
-      {/* Record Voice Note — a real recorder (see VoiceNoteCard below); no
-          fake button any more. */}
-      <VoiceNoteCard />
-
-      {/* Estimated Delivery — local planning aid only, see the ReadyByPicker
-          doc comment near the top of this file for why it's never
-          submitted with the booking. Ready By is now a pure derived value
-          (Received + Duration, recomputed on every render — no state of its
-          own), so there's no separate "Edit" affordance for it any more:
-          Received and Duration are each directly clickable instead. */}
-      <div className="rounded-xl border border-[#EAECF0] bg-white p-4">
-        <p className="mb-3 flex items-center gap-2 text-sm font-bold text-[#101828]">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] text-[#15803D]">
-            <Truck className="h-4 w-4" aria-hidden="true" />
-          </span>
-          Estimated Delivery
-        </p>
-
-        <div className="flex items-stretch gap-1.5 overflow-x-auto pb-1">
-          <button
-            type="button"
-            onClick={() => setReceivedPickerOpen(true)}
-            className={cx('min-w-[108px] shrink-0 rounded-xl bg-[#F0FDF4] px-3 py-2.5 text-left transition hover:bg-[#DCFCE7]', FOCUS_RING)}
-          >
-            <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#667085]">
-              <Calendar className="h-3 w-3" aria-hidden="true" /> Received
-            </p>
-            <p className="mt-1 text-sm font-bold text-[#101828]">{fmtChipDate(draftReceivedAt)}</p>
-            <p className="text-xs text-[#667085]">{fmtChipTime(draftReceivedAt)}</p>
-          </button>
-
-          <ChevronRight className="my-auto h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
-
-          <button
-            type="button"
-            onClick={() => setDurationPickerOpen(true)}
-            className={cx('min-w-[108px] shrink-0 rounded-xl bg-[#F0FDF4] px-3 py-2.5 text-left transition hover:bg-[#DCFCE7]', FOCUS_RING)}
-          >
-            <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#667085]">
-              <Timer className="h-3 w-3" aria-hidden="true" /> Duration
-            </p>
-            <span className="mt-1 flex items-center gap-1 text-sm font-bold text-[#101828]">
-              {durationLabel(draftDurationMinutes)}
-              <ChevronDown className="h-3 w-3 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+      {/* Estimated Delivery (left) and Device Photos (right) — two columns
+          from md up, stacked on phones. mt-4 because Section's className lands
+          on the <section>, not on this content wrapper, so rows need their own gap. */}
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* Estimated Delivery — local planning aid only, see the ReadyByPicker
+            doc comment near the top of this file for why it's never
+            submitted with the booking. Ready By is now a pure derived value
+            (Received + Duration, recomputed on every render — no state of its
+            own), so there's no separate "Edit" affordance for it any more:
+            Received and Duration are each directly clickable instead. */}
+        <div className="min-w-0 rounded-xl border border-[#ECECEC] bg-white p-4">
+          <p className="mb-3 flex items-center gap-2 text-sm font-bold text-[#111111]">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[#09AD2A]">
+              <Truck className="h-4 w-4" aria-hidden="true" />
             </span>
-          </button>
+            Estimated Delivery
+          </p>
 
-          <ChevronRight className="my-auto h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+          <div className="flex items-stretch gap-1.5 overflow-x-auto pb-1">
+            <button
+              type="button"
+              onClick={() => setReceivedPickerOpen(true)}
+              className={cx('min-w-[108px] shrink-0 rounded-xl bg-[#F8F8F8] px-3 py-2.5 text-left transition hover:bg-[#F3F3F3]', FOCUS_RING)}
+            >
+              <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#666666]">
+                <Calendar className="h-3 w-3" aria-hidden="true" /> Received
+              </p>
+              <p className="mt-1 text-sm font-bold text-[#111111]">{fmtChipDate(draftReceivedAt)}</p>
+              <p className="text-xs text-[#666666]">{fmtChipTime(draftReceivedAt)}</p>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setReadyByPickerOpen(true)}
-            className={cx(
-              'min-w-[108px] shrink-0 cursor-pointer rounded-xl bg-[#15803D] px-3 py-2.5 text-left text-white transition hover:bg-[#166534]',
-              FOCUS_RING,
-            )}
-          >
-            <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#DCFCE7]">
-              <ShieldCheck className="h-3 w-3" aria-hidden="true" /> Ready By
-            </p>
-            <p className="mt-1 text-sm font-bold">{fmtChipDate(draftReadyBy)}</p>
-            <p className="text-xs text-[#DCFCE7]">{fmtChipTime(draftReadyBy)}</p>
-          </button>
+            <ChevronRight className="my-auto h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={() => setDurationPickerOpen(true)}
+              className={cx('min-w-[108px] shrink-0 rounded-xl bg-[#F8F8F8] px-3 py-2.5 text-left transition hover:bg-[#F3F3F3]', FOCUS_RING)}
+            >
+              <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#666666]">
+                <Timer className="h-3 w-3" aria-hidden="true" /> Duration
+              </p>
+              <span className="mt-1 flex items-center gap-1 text-sm font-bold text-[#111111]">
+                {durationLabel(draftDurationMinutes)}
+                <ChevronDown className="h-3 w-3 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+              </span>
+            </button>
+
+            <ChevronRight className="my-auto h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={() => setReadyByPickerOpen(true)}
+              className={cx(
+                'min-w-[108px] shrink-0 cursor-pointer rounded-xl bg-[#F3BF23] px-3 py-2.5 text-left text-[#1E1E1E] transition hover:bg-[#E5B11A]',
+                FOCUS_RING,
+              )}
+            >
+              <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#DCFCE7]">
+                <ShieldCheck className="h-3 w-3" aria-hidden="true" /> Ready By
+              </p>
+              <p className="mt-1 text-sm font-bold">{fmtChipDate(draftReadyBy)}</p>
+              <p className="text-xs text-[#DCFCE7]">{fmtChipTime(draftReadyBy)}</p>
+            </button>
+          </div>
+
+          <div className="mt-3">
+            <span className="inline-flex items-center gap-1 rounded-full bg-[#F8F8F8] px-2.5 py-1 text-xs font-bold text-[#09AD2A]">
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> On time
+            </span>
+          </div>
+
+          <p className="mt-2.5 flex items-center gap-1.5 text-[0.7rem] text-[#98A2B3]">
+            <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /> Estimate only — not saved with this booking.
+          </p>
         </div>
 
-        <div className="mt-3">
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#F0FDF4] px-2.5 py-1 text-xs font-bold text-[#15803D]">
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" /> On time
-          </span>
-        </div>
-
-        <p className="mt-2.5 flex items-center gap-1.5 text-[0.7rem] text-[#98A2B3]">
-          <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /> Estimate only — not saved with this booking.
-        </p>
+        {devicePhotosCard}
       </div>
 
       {receivedPickerOpen ? (
@@ -3652,88 +4474,239 @@ export default function BookServicePage() {
         />
       ) : null}
 
-      {/* Customer repair approval — local-only reminder checkbox, see the
-          customerApproved state declaration above for why it's never
-          submitted. */}
-      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#EAECF0] bg-white p-4">
+      {/* Customer Booking approval — required (see SECTION_VALIDATORS). */}
+      <label
+        ref={registerField(fieldRefs, 'customerApproved')}
+        className={cx(
+          'mt-4 flex cursor-pointer items-start gap-3 rounded-xl border bg-white p-4',
+          fieldErrors.customerApproved ? 'border-red-300 bg-red-50/40' : customerApproved ? 'border-[#09AD2A] bg-[#F8F8F8]' : 'border-[#ECECEC]',
+        )}
+      >
         <input
           type="checkbox"
           checked={customerApproved}
-          onChange={(e) => setCustomerApproved(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#D0D5DD] text-[#15803D] focus:ring-[#15803D]"
+          onChange={(e) => {
+            setCustomerApproved(e.target.checked);
+            if (fieldErrors.customerApproved) setFieldErrors((prev) => ({ ...prev, customerApproved: undefined }));
+          }}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-[#D0D5DD] text-[#09AD2A] focus:ring-[#09AD2A]"
         />
         <span>
-          <span className="block text-sm font-bold text-[#101828]">Customer repair approval</span>
-          <span className="block text-xs text-[#667085]">Customer agreed to the estimated price &amp; timing.</span>
+          <span className="block text-sm font-bold text-[#111111]">
+            Customer Booking approval <span className="text-red-500">*</span>
+          </span>
+          <span className="block text-xs text-[#666666]">Customer agreed to proceed with the service booking</span>
+          {fieldErrors.customerApproved ? <span className="mt-1 block text-xs font-semibold text-red-600">{fieldErrors.customerApproved}</span> : null}
         </span>
       </label>
     </Section>
   );
 
   /**
-   * Device Photos — rebuilt on the Device Information tab per request
-   * (a prior redesign removed the old version of this card entirely, but
-   * left uploadShopDevicePhoto() in src/lib/shopBooking.js in place for
-   * exactly this reason). Front/Back/Damage are single-photo slots;
-   * Additional accepts any number. Every upload is a real call to shop
-   * media storage with the shop's own bearer token, the same endpoint the
-   * public /repair flow's customer-facing photo picker uses — not a mock.
+   * Service Price & Issue Estimate, display only — what the Device Info tab
+   * shows under Device Information. Same real state as pickupSection
+   * (services and prices, totals, IMEI, issue description, voice note,
+   * delivery estimate, device files, approval) with every edit control left
+   * out: no Add Service / remove, no inputs, no pickers or uploads. Changes
+   * are made on the Price & Estimate tab itself.
    */
-  const devicePhotosSection = (
-    <Section title="Device Photos" icon={Camera}>
-      <p className="-mt-1 mb-3 text-xs text-[#667085]">Document the device&apos;s condition at intake.</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <PhotoTile
-          label="Front"
-          url={form.frontImageUrl}
-          uploading={Boolean(photoUploading.front)}
-          error={photoError.front}
-          onUpload={(file) => handlePhotoUpload('front', file)}
-          onRemove={() => removePhoto('front')}
-        />
-        <PhotoTile
-          label="Back"
-          url={form.backImageUrl}
-          uploading={Boolean(photoUploading.back)}
-          error={photoError.back}
-          onUpload={(file) => handlePhotoUpload('back', file)}
-          onRemove={() => removePhoto('back')}
-        />
-        <PhotoTile
-          label="Damage"
-          url={form.damageImageUrl}
-          uploading={Boolean(photoUploading.damage)}
-          error={photoError.damage}
-          onUpload={(file) => handlePhotoUpload('damage', file)}
-          onRemove={() => removePhoto('damage')}
-        />
-        <PhotoTile
-          label={`Additional${form.additionalImageUrls.length ? ` (${form.additionalImageUrls.length})` : ''}`}
-          url={null}
-          uploading={Boolean(photoUploading.additional)}
-          error={photoError.additional}
-          onUpload={(file) => handlePhotoUpload('additional', file)}
-        />
+  const issueDescriptionText = form.issueDescription.trim();
+  const pickupSummarySection = (
+    <Section title="Service Price & Issue Estimate" subtitle="View only — make changes on the Price & Estimate tab." icon={Receipt}>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex flex-1 flex-col overflow-hidden rounded-xl border border-[#ECECEC] bg-white">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#ECECEC] bg-[#F3F3F3] px-4 py-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[#09AD2A]">
+                  <ClipboardList className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <div>
+                  <p className="text-sm font-bold text-[#111111]">Bill Details</p>
+                  <p className="text-xs text-[#666666]">Services selected for this device</p>
+                </div>
+              </div>
+              <span className="rounded-full border border-[#D0D5DD] bg-white px-2.5 py-1 text-xs font-semibold text-[#344054]">
+                {chosenServices.length} item{chosenServices.length === 1 ? '' : 's'}
+              </span>
+            </div>
+
+            {chosenServices.length === 0 ? (
+              <p className="flex-1 px-4 py-6 text-center text-sm text-[#98A2B3]">No services selected.</p>
+            ) : (
+              <div className="flex-1 divide-y divide-dashed divide-[#ECECEC]">
+                {chosenServices.map((s, idx) => (
+                  <div key={s.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-xs font-bold text-[#09AD2A]">{idx + 1}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-[#111111]">{s.name}</p>
+                      {draftServiceWarranty[s.id] ? <p className="text-xs text-[#666666]">{draftServiceWarranty[s.id]} months warranty (draft)</p> : null}
+                    </div>
+                    <span className="shrink-0 text-sm font-semibold text-[#344054]">{draftServicePrices[s.id] ? money(draftServicePrices[s.id]) : '₹0'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3 bg-[#F8F8F8] px-4 py-3.5">
+              <div className="flex items-center gap-2">
+                <Tag className="h-4 w-4 shrink-0 text-[#09AD2A]" aria-hidden="true" />
+                <div>
+                  <p className="text-sm font-bold text-[#111111]">Estimated Total</p>
+                  <p className="text-[0.7rem] text-[#666666]">Final amount may vary based on parts availability.</p>
+                </div>
+              </div>
+              <span className="shrink-0 text-lg font-extrabold text-[#111111]">{money(totals.total)}</span>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-[#ECECEC] bg-white p-4">
+            <p className="mb-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-[#666666]">Device IMEI / Serial Number</p>
+            <p className={cx('break-all rounded-lg bg-[#F8F8F8] px-3 py-2.5 text-sm font-semibold', form.imei.trim() ? 'text-[#111111]' : 'text-[#98A2B3]')}>
+              {form.imei.trim() || 'Not provided'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col rounded-xl border border-[#ECECEC] bg-white p-4">
+          <p className="mb-3 flex items-center gap-2 text-sm font-bold text-[#111111]">
+            <Wrench className="h-4 w-4 text-[#09AD2A]" aria-hidden="true" />
+            Issue Description &amp; Voice Note
+          </p>
+          <p className="mb-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-[#666666]">Issue Description</p>
+          <p
+            className={cx(
+              'min-h-[110px] grow whitespace-pre-wrap break-words rounded-lg bg-[#F8F8F8] px-3 py-2.5 text-sm',
+              issueDescriptionText ? 'text-[#111111]' : 'text-[#98A2B3]',
+            )}
+          >
+            {issueDescriptionText || 'Not provided'}
+          </p>
+
+          <div className="mt-4 border-t border-dashed border-[#ECECEC] pt-3">
+            <p className="mb-2 text-[0.7rem] font-semibold uppercase tracking-wide text-[#666666]">Voice Note</p>
+            <VoiceNoteCard voice={voiceNote} readOnly />
+          </div>
+        </div>
       </div>
 
-      {form.additionalImageUrls.length ? (
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {form.additionalImageUrls.map((url) => (
-            <div key={url} className="relative overflow-hidden rounded-xl border border-[#EAECF0]">
-              {/* eslint-disable-next-line @next/next/no-img-element -- shop-uploaded device photo, remote media URL. */}
-              <img src={url} alt="Additional device photo" className="h-24 w-full object-cover" />
-              <button
-                type="button"
-                onClick={() => removeAdditionalPhoto(url)}
-                aria-label="Remove additional photo"
-                className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white transition hover:bg-black/80"
-              >
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
+      <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="min-w-0 rounded-xl border border-[#ECECEC] bg-white p-4">
+          <p className="mb-3 flex items-center gap-2 text-sm font-bold text-[#111111]">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[#09AD2A]">
+              <Truck className="h-4 w-4" aria-hidden="true" />
+            </span>
+            Estimated Delivery
+          </p>
+
+          <div className="flex items-stretch gap-1.5 overflow-x-auto pb-1">
+            <div className="min-w-[108px] shrink-0 rounded-xl bg-[#F8F8F8] px-3 py-2.5">
+              <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#666666]">
+                <Calendar className="h-3 w-3" aria-hidden="true" /> Received
+              </p>
+              <p className="mt-1 text-sm font-bold text-[#111111]">{fmtChipDate(draftReceivedAt)}</p>
+              <p className="text-xs text-[#666666]">{fmtChipTime(draftReceivedAt)}</p>
             </div>
-          ))}
+
+            <ChevronRight className="my-auto h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+
+            <div className="min-w-[108px] shrink-0 rounded-xl bg-[#F8F8F8] px-3 py-2.5">
+              <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#666666]">
+                <Timer className="h-3 w-3" aria-hidden="true" /> Duration
+              </p>
+              <p className="mt-1 text-sm font-bold text-[#111111]">{durationLabel(draftDurationMinutes)}</p>
+            </div>
+
+            <ChevronRight className="my-auto h-4 w-4 shrink-0 text-[#98A2B3]" aria-hidden="true" />
+
+            <div className="min-w-[108px] shrink-0 rounded-xl bg-[#F3BF23] px-3 py-2.5 text-[#1E1E1E]">
+              <p className="flex items-center gap-1 text-[0.6rem] font-bold uppercase tracking-wide">
+                <ShieldCheck className="h-3 w-3" aria-hidden="true" /> Ready By
+              </p>
+              <p className="mt-1 text-sm font-bold">{fmtChipDate(draftReadyBy)}</p>
+              <p className="text-xs">{fmtChipTime(draftReadyBy)}</p>
+            </div>
+          </div>
+
+          <p className="mt-2.5 flex items-center gap-1.5 text-[0.7rem] text-[#98A2B3]">
+            <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden="true" /> Estimate only — not saved with this booking.
+          </p>
         </div>
-      ) : null}
+
+        <div className="min-w-0 rounded-xl border border-[#ECECEC] bg-white p-4">
+          <div className="mb-3 flex items-center gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[#09AD2A]">
+              <Camera className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-[#111111]">Device Files</p>
+              <p className="text-xs text-[#666666]">
+                {deviceFilesAdded}/{DEVICE_FILE_SLOTS.length} added
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            {DEVICE_FILE_SLOTS.map((slot) => {
+              const url = form[slot.field];
+              const SlotIcon = slot.video ? Video : ImageIcon;
+              return (
+                <div key={slot.key} className="flex min-w-0 flex-col items-center">
+                  {url ? (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`View ${slot.label}`}
+                      className={cx('relative block h-28 w-full overflow-hidden rounded-2xl border-2 border-[#09AD2A] bg-[#F2FBF4]', FOCUS_RING)}
+                    >
+                      {slot.video ? (
+                        <>
+                          <video src={`${url}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/45 text-white">
+                            <Video className="h-6 w-6" aria-hidden="true" />
+                          </span>
+                        </>
+                      ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element -- shop-uploaded device photo, remote media URL. */
+                        <img src={url} alt={slot.label} className="h-full w-full object-cover" />
+                      )}
+                    </a>
+                  ) : (
+                    <div className="flex h-28 w-full flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#D0D5DD] bg-[#F8F8F8] text-[#98A2B3]">
+                      <SlotIcon className="h-5 w-5" aria-hidden="true" />
+                      <span className="mt-2 text-xs font-semibold">Not added</span>
+                    </div>
+                  )}
+                  <p className="mt-1.5 text-center text-[13px] font-bold text-[#111111]">{slot.label}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div
+        className={cx(
+          'mt-4 flex items-start gap-3 rounded-xl border p-4',
+          customerApproved ? 'border-[#09AD2A] bg-[#F8F8F8]' : 'border-[#ECECEC] bg-white',
+        )}
+      >
+        <span
+          className={cx(
+            'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full',
+            customerApproved ? 'bg-[#09AD2A] text-white' : 'bg-[#F3F3F3] text-[#98A2B3]',
+          )}
+        >
+          {customerApproved ? <Check className="h-3 w-3" aria-hidden="true" /> : <X className="h-3 w-3" aria-hidden="true" />}
+        </span>
+        <span>
+          <span className="block text-sm font-bold text-[#111111]">Customer Booking approval</span>
+          <span className="block text-xs text-[#666666]">
+            {customerApproved ? 'Customer agreed to proceed with the service booking' : 'Not approved yet'}
+          </span>
+        </span>
+      </div>
     </Section>
   );
 
@@ -3752,154 +4725,158 @@ export default function BookServicePage() {
    * confirmation tab on success.
    */
   const bookingDevicesSection = (
-    <Section title="Service Booking Devices List" icon={ClipboardList}>
-      <p className="-mt-1 mb-4 text-xs text-[#667085]">Review customer devices and services.</p>
+    <Section
+      title="Service Booking Devices List"
+      icon={ClipboardList}
+      action={
+        isEditing ? null : (
+        <button
+          type="button"
+          onClick={addAnotherDevice}
+          className="flex items-center gap-2.5 rounded-xl border-2 border-dashed border-[#ECECEC] bg-white px-3 py-2 text-left transition hover:border-[#09AD2A] hover:bg-[#F8F8F8]"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[#09AD2A]">
+            <Plus className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-bold text-[#09AD2A]">Add another device</span>
+          </span>
+        </button>
+        )
+      }
+    >
+      <p className="-mt-1 mb-4 text-xs text-[#666666]">Review customer devices and services.</p>
 
-      <div className="mb-5 flex items-center gap-3 rounded-xl border border-[#EAECF0] bg-white p-3.5">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] text-[#15803D]">
-          <User className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Customer</p>
-          <p className="truncate text-sm font-bold text-[#101828]">{form.customerName || 'Not provided'}</p>
-          <p className="truncate text-xs text-[#667085]">{form.customerMobile || 'Not provided'}</p>
-        </div>
-        <span className="shrink-0 rounded-full bg-[#DCFCE7] px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#15803D]">Verified</span>
-      </div>
+      {/* Left: customer + devices. Right: bill summary + payment (stacks on mobile). "Add another device" lives in the Section header. */}
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-5">
+        <div className="min-w-0 lg:col-span-3">
+          <div className="mb-5 flex items-center gap-3 rounded-xl border border-[#ECECEC] bg-white p-3.5">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[#09AD2A]">
+              <User className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Customer</p>
+              <p className="truncate text-sm font-bold text-[#111111]">{form.customerName || 'Not provided'}</p>
+              <p className="truncate text-xs text-[#666666]">{form.customerMobile || 'Not provided'}</p>
+            </div>
+            <span className="shrink-0 rounded-full bg-[#F3F3F3] px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#09AD2A]">Verified</span>
+          </div>
 
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-[0.7rem] font-bold uppercase tracking-wide text-[#667085]">Devices in this Booking</p>
-        <span className="shrink-0 rounded-full bg-[#F0FDF4] px-2.5 py-1 text-xs font-bold text-[#15803D]">
-          {bookingDevices.length} Device{bookingDevices.length === 1 ? '' : 's'}
-        </span>
-      </div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-[0.7rem] font-bold uppercase tracking-wide text-[#666666]">Devices in this Booking</p>
+            <span className="shrink-0 rounded-full bg-[#F8F8F8] px-2.5 py-1 text-xs font-bold text-[#09AD2A]">
+              {bookingDevices.length} Device{bookingDevices.length === 1 ? '' : 's'}
+            </span>
+          </div>
 
-      <div className="space-y-3">
-        {bookingDevices.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-[#D0D5DD] bg-[#F9FAFB] px-3 py-6 text-center text-xs text-[#98A2B3]">
-            No device selected yet — pick a brand and model on the Device Details tab.
-          </p>
-        ) : (
-          bookingDevices.map((d, idx) => (
-            <div key={idx} className="rounded-xl border border-[#EAECF0] bg-white p-3.5">
-              <div className="flex items-start gap-3">
-                <Thumb url={d.image} name={d.model || d.brand} size="h-14 w-14" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-[#101828]">
-                    {[d.brand, d.model].filter(Boolean).join(' ') || 'Device not specified'}
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {d.brand ? (
-                      <span className="rounded-full bg-[#F0FDF4] px-2 py-0.5 text-[0.65rem] font-bold text-[#15803D]">{d.brand}</span>
-                    ) : null}
-                    {d.modelCode ? (
-                      <span className="rounded-full bg-[#F9FAFB] px-2 py-0.5 text-[0.65rem] font-bold text-[#344054] ring-1 ring-[#EAECF0]">
-                        {d.modelCode}
-                      </span>
-                    ) : null}
-                    {d.isPrimary ? (
-                      <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[0.65rem] font-bold text-[#15803D]">Primary Device</span>
+          <div className="space-y-3">
+            {bookingDevices.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-[#D0D5DD] bg-[#F3F3F3] px-3 py-6 text-center text-xs text-[#98A2B3]">
+                No device selected yet — pick a brand and model on the Device Details tab.
+              </p>
+            ) : (
+              bookingDevices.map((d, idx) => (
+                <div key={idx} className="rounded-xl border border-[#ECECEC] bg-white p-3.5">
+                  <div className="flex items-start gap-3">
+                    <Thumb url={d.image} name={d.model || d.brand} size="h-14 w-14" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-[#111111]">
+                        {deviceTitle(d.brand, d.model) || 'Device not specified'}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {d.brand ? (
+                          <span className="rounded-full bg-[#F8F8F8] px-2 py-0.5 text-[0.65rem] font-bold text-[#09AD2A]">{d.brand}</span>
+                        ) : null}
+                        {d.modelCode ? (
+                          <span className="rounded-full bg-[#F3F3F3] px-2 py-0.5 text-[0.65rem] font-bold text-[#344054] ring-1 ring-[#ECECEC]">
+                            {d.modelCode}
+                          </span>
+                        ) : null}
+                        {d.isPrimary ? (
+                          <span className="rounded-full bg-[#F3F3F3] px-2 py-0.5 text-[0.65rem] font-bold text-[#09AD2A]">Primary Device</span>
+                        ) : null}
+                      </div>
+                    </div>
+                    {d.queuedIndex !== undefined ? (
+                      <button
+                        type="button"
+                        onClick={() => removeQueuedDevice(d.queuedIndex)}
+                        className="shrink-0 rounded-lg border border-[#ECECEC] px-2.5 py-1 text-xs font-bold text-[#666666] transition hover:border-red-300 hover:text-red-600"
+                      >
+                        Remove
+                      </button>
                     ) : null}
                   </div>
+
+                  <div className="mt-3 border-t border-dashed border-[#ECECEC] pt-3">
+                    <p className="mb-1.5 text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">
+                      Repair Services ({d.selectedServices.length})
+                    </p>
+                    {d.selectedServices.length ? (
+                      <ul className="space-y-1">
+                        {d.selectedServices.map((s, i) => (
+                          <li key={s.id || i} className="flex min-w-0 items-center gap-2 break-words text-sm text-[#344054]">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-[0.6rem] font-bold text-[#09AD2A]">
+                              {i + 1}
+                            </span>
+                            {s.name}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-xs text-[#98A2B3]">No services selected yet.</p>
+                    )}
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-[#F8F8F8] px-3 py-2.5">
+                    <span className="text-xs font-bold text-[#09AD2A]">Estimated repair amount</span>
+                    <span className="text-sm font-extrabold text-[#111111]">{money(d.estimatedAmount)}</span>
+                  </div>
                 </div>
-              </div>
-
-              <div className="mt-3 border-t border-dashed border-[#EAECF0] pt-3">
-                <p className="mb-1.5 text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">
-                  Repair Services ({d.selectedServices.length})
-                </p>
-                {d.selectedServices.length ? (
-                  <ul className="space-y-1">
-                    {d.selectedServices.map((s, i) => (
-                      <li key={s.id || i} className="flex items-center gap-2 text-sm text-[#344054]">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] text-[0.6rem] font-bold text-[#15803D]">
-                          {i + 1}
-                        </span>
-                        {s.name}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-xs text-[#98A2B3]">No services selected yet.</p>
-                )}
-              </div>
-
-              <div className="mt-3 flex items-center justify-between rounded-xl bg-[#F0FDF4] px-3 py-2.5">
-                <span className="text-xs font-bold text-[#15803D]">Estimated repair amount</span>
-                <span className="text-sm font-extrabold text-[#101828]">{money(d.estimatedAmount)}</span>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      <button
-        type="button"
-        disabled
-        title="Multiple devices per booking aren't supported in the shop portal yet"
-        className="mt-3 flex w-full cursor-not-allowed flex-col items-center gap-1 rounded-xl border-2 border-dashed border-[#D0D5DD] bg-[#F9FAFB] px-4 py-4 text-center"
-      >
-        <span className="flex items-center gap-1.5 text-sm font-bold text-[#98A2B3]">
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Add another device
-        </span>
-        <span className="text-xs text-[#98A2B3]">Same customer? Book multiple devices under one go.</span>
-      </button>
-
-      <div className="mt-5 rounded-xl border border-[#EAECF0] bg-white p-4">
-        <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-wide text-[#667085]">Bill Summary</p>
-        <div className="space-y-2">
-          {bookingDevices.map((d, idx) => (
-            <div key={idx} className="flex items-center justify-between text-sm">
-              <span className="text-[#344054]">
-                {[d.brand, d.model].filter(Boolean).join(' ') || 'Device'}
-                <span className="ml-1.5 text-xs text-[#98A2B3]">
-                  ({d.selectedServices.length} service{d.selectedServices.length === 1 ? '' : 's'})
-                </span>
-              </span>
-              <span className="font-bold text-[#101828]">{money(d.estimatedAmount)}</span>
-            </div>
-          ))}
+              ))
+            )}
+          </div>
         </div>
-        <div className="mt-3 flex items-center justify-between border-t border-dashed border-[#EAECF0] pt-3">
-          <span className="text-sm font-bold text-[#101828]">Grand Total</span>
-          <span className="text-lg font-extrabold text-[#15803D]">{money(grandTotal)}</span>
+
+        <div className="min-w-0 space-y-5 lg:sticky lg:top-4 lg:col-span-2">
+          <div className="rounded-xl border border-[#ECECEC] bg-white p-4">
+            <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-wide text-[#666666]">Bill Summary</p>
+            <div className="space-y-2">
+              {bookingDevices.map((d, idx) => (
+                <div key={idx} className="flex items-start justify-between gap-3 text-sm">
+                  <span className="min-w-0 break-words text-[#344054]">
+                    {deviceTitle(d.brand, d.model) || 'Device'}
+                    <span className="ml-1.5 text-xs text-[#98A2B3]">
+                      ({d.selectedServices.length} service{d.selectedServices.length === 1 ? '' : 's'})
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-bold text-[#111111]">{money(d.estimatedAmount)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-dashed border-[#ECECEC] pt-3">
+              <span className="text-sm font-bold text-[#111111]">Grand Total</span>
+              <span className="text-lg font-extrabold text-[#09AD2A]">{money(grandTotal)}</span>
+            </div>
+            <p className="mt-2 text-[0.7rem] text-[#98A2B3]">Final amount may vary slightly based on parts availability and inspection.</p>
+          </div>
+
+          <div className="rounded-xl border border-[#ECECEC] bg-white p-4">
+            <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-wide text-[#666666]">Payment</p>
+            <FormField label="Payment Mode">
+              <select className={COMPACT_INPUT_CLS} value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
+                <option value="">Select payment mode</option>
+                {PAYMENT_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <p className="mt-2 text-xs text-[#98A2B3]">Pick a mode to record money collected now. Leave it blank if the customer pays on delivery.</p>
+          </div>
         </div>
-        <p className="mt-2 text-[0.7rem] text-[#98A2B3]">Final amount may vary slightly based on parts availability and inspection.</p>
       </div>
-
-      <div className="mt-5 rounded-xl border border-[#EAECF0] bg-white p-4">
-        <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-wide text-[#667085]">Payment</p>
-        <FormField label="Payment Mode">
-          <select className={COMPACT_INPUT_CLS} value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
-            <option value="">Select payment mode</option>
-            {PAYMENT_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </FormField>
-        <p className="mt-2 text-xs text-[#98A2B3]">Pick a mode to record money collected now. Leave it blank if the customer pays on delivery.</p>
-      </div>
-
-      <button
-        type="button"
-        onClick={submit}
-        disabled={submitting}
-        className="mt-5 flex w-full items-center justify-between gap-3 rounded-xl bg-[#14532D] px-5 py-3.5 text-left text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-70"
-      >
-        <span>
-          <span className="block text-[0.65rem] font-bold uppercase tracking-wide text-[#DCFCE7]">
-            Grand Total · {bookingDevices.length} Device{bookingDevices.length === 1 ? '' : 's'}
-          </span>
-          <span className="block text-lg font-extrabold">{money(grandTotal)}</span>
-        </span>
-        <span className="flex items-center gap-1.5 rounded-full bg-white/15 px-4 py-2 text-sm font-bold">
-          {submitting ? 'Submitting…' : 'Submit Booking'}
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
-        </span>
-      </button>
     </Section>
   );
 
@@ -3909,19 +4886,16 @@ export default function BookServicePage() {
    * before that it shows a plain "nothing submitted yet" state rather than
    * a fake success screen, even if someone taps straight to this tab.
    * "Share Receipt"/"Barcode Print" link to the real, already-built
-   * Receipt/QR pages for this booking id — genuinely reused, not
-   * reimplemented — but createShopBooking() is still a stub (see
-   * shopBooking.js), so confirmed.id is a locally-generated placeholder,
-   * not a real backend id yet; those links will 404 gracefully (both pages
-   * already handle a missing booking) until a real create-booking endpoint
-   * replaces the stub. "Assign Technician" is disabled — no technician-
-   * assignment endpoint exists anywhere in this client either, same as
-   * every other "Assign" button already in this codebase.
+   * Receipt/QR pages for this booking id. "Assign Technician" opens the
+   * shared AssignTechnicianModal (PATCH {TICKET_BASE}/tickets/{ticketId}),
+   * with a per-device picker when several devices were booked.
    */
+  const confirmedBookings = confirmed ? (confirmed.allBookings?.length ? confirmed.allBookings : [confirmed]) : [];
+
   const confirmationSection = (
     <Section title="Booking Confirmation" icon={CheckCircle2}>
       {!confirmed ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-[#D0D5DD] bg-[#F9FAFB] px-4 py-10 text-center">
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-[#D0D5DD] bg-[#F3F3F3] px-4 py-10 text-center">
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-[#98A2B3]">
             <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
           </span>
@@ -3933,173 +4907,237 @@ export default function BookServicePage() {
       ) : (
         <div className="space-y-5">
           {/* Top success area — visual only, same data/handler as before */}
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-b from-[#DCFCE7] via-[#F0FDF4] to-white px-6 py-9 text-center">
-            <span className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full bg-[#86EFAC]/40 blur-2xl" aria-hidden="true" />
-            <span className="pointer-events-none absolute -bottom-12 -left-12 h-40 w-40 rounded-full bg-[#BBF7D0]/40 blur-2xl" aria-hidden="true" />
-            <span className="relative mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white shadow-[0_10px_28px_rgba(21,128,61,0.25)] ring-4 ring-white">
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#15803D] text-white">
+          <div className="relative overflow-hidden rounded-3xl bg-[#F8F8F8] px-4 py-8 text-center sm:px-6 sm:py-9">
+            <span className="relative mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-white ring-4 ring-white">
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[#09AD2A] text-white">
                 <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
               </span>
             </span>
-            <h3 className="relative text-2xl font-extrabold text-[#101828]">Thank You!</h3>
-            <p className="relative mt-1 text-sm font-medium text-[#3F6C55]">Your booking has been placed.</p>
+            <h3 className="relative text-2xl font-extrabold text-[#111111]">Thank You!</h3>
+            <p className="relative mt-1 text-sm font-medium text-[#666666]">Your booking has been placed.</p>
             <button
               type="button"
               onClick={copyTrackingId}
-              className="relative mx-auto mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold uppercase tracking-wide text-[#15803D] shadow-[0_2px_10px_rgba(21,128,61,0.18)] ring-1 ring-[#DCFCE7] transition hover:shadow-[0_4px_16px_rgba(21,128,61,0.28)]"
+              className="relative mx-auto mt-4 inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold uppercase tracking-wide text-[#09AD2A] ring-1 ring-[#ECECEC] transition"
             >
               #{confirmed.bookingNumber}
               <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-              {trackingCopied ? 'Copied' : ''}
             </button>
           </div>
 
-          {/* Customer Details — same fields/values, richer card chrome */}
-          <div className="overflow-hidden rounded-2xl border border-[#EAECF0] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.06)]">
-            <div className="flex items-center gap-2.5 border-b border-[#EAECF0] bg-[#F7FDFA] px-4 py-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#DCFCE7] text-[#15803D]">
-                <User className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <p className="text-sm font-bold text-[#101828]">Customer Details</p>
-            </div>
-            <div className="grid grid-cols-1 gap-4 p-4 text-sm sm:grid-cols-2">
-              <div>
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Shop Name</p>
-                <p className="mt-0.5 font-bold text-[#101828]">{shopLocation?.name || profile?.name || 'Not available'}</p>
-              </div>
-              <div>
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Shop Number</p>
-                <p className="mt-0.5 font-bold text-[#101828]">{profile?.phone || 'Not available'}</p>
-              </div>
-              <div>
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Customer Name</p>
-                <p className="mt-0.5 font-bold text-[#101828]">{confirmed.customerName || 'Not available'}</p>
-              </div>
-              <div>
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Mobile Number</p>
-                <p className="mt-0.5 font-bold text-[#101828]">{confirmed.customerMobile || 'Not available'}</p>
-              </div>
-              <div className="sm:col-span-2">
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Address</p>
-                <p className="mt-0.5 font-bold text-[#101828]">{shopAddress || 'Not available'}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Device & Repair Details — same data, styled image box + tag pills for services */}
-          <div className="overflow-hidden rounded-2xl border border-[#EAECF0] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.06)]">
-            <div className="flex items-center gap-2.5 border-b border-[#EAECF0] bg-[#F7FDFA] px-4 py-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#DCFCE7] text-[#15803D]">
-                <Smartphone className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <p className="text-sm font-bold text-[#101828]">Device &amp; Repair Details</p>
-            </div>
-            <div className="flex items-start gap-4 p-4">
-              <span className="shrink-0 overflow-hidden rounded-2xl border border-[#DCFCE7] bg-[#F7FDFA] p-1.5">
-                <Thumb url={selectedModel?.imageUrl || selectedBrand?.imageUrl} name={confirmed.modelName} size="h-14 w-14" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Device</p>
-                <p className="text-base font-extrabold text-[#101828]">
-                  {[confirmed.brandName, confirmed.modelName].filter(Boolean).join(' ') || 'Not specified'}
-                </p>
-                <p className="mt-2.5 text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Repair Services</p>
-                {chosenServices.length ? (
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {chosenServices.map((s) => (
-                      <span
-                        key={s.id}
-                        className="rounded-full bg-[#F0FDF4] px-2.5 py-1 text-xs font-bold text-[#15803D] ring-1 ring-[#DCFCE7]"
-                      >
-                        {s.name}
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-1 text-sm text-[#98A2B3]">Not specified</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Service Information — same 4 values, shown as colored stat tiles */}
-          <div className="overflow-hidden rounded-2xl border border-[#EAECF0] bg-white shadow-[0_2px_12px_rgba(16,24,40,0.06)]">
-            <div className="flex items-center gap-2.5 border-b border-[#EAECF0] bg-[#F7FDFA] px-4 py-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#DCFCE7] text-[#15803D]">
-                <Receipt className="h-4 w-4" aria-hidden="true" />
-              </span>
-              <p className="text-sm font-bold text-[#101828]">Service Information</p>
-            </div>
-            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-              <div className="rounded-xl bg-[#F9FAFB] p-3">
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Tracking ID</p>
-                <p className="mt-1 text-sm font-extrabold text-[#101828]">#{confirmed.bookingNumber}</p>
-              </div>
-              <div className="rounded-xl bg-[#F9FAFB] p-3">
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Status</p>
-                <span className="mt-1 inline-block rounded-full bg-[#DCFCE7] px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-[#15803D]">
-                  {{ CREATED: 'Order Placed' }[confirmed.status] || confirmed.status}
+          {/* Customer / Device & Repair / Service Information — three columns
+              from xl up (equal height via grid stretch), stacked below that. */}
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            {/* Customer Details — same fields/values, richer card chrome */}
+            <div className="overflow-hidden rounded-2xl border border-[#ECECEC] bg-[#F8F8F8]">
+              <div className="flex items-center gap-2.5 border-b border-[#ECECEC] bg-[#F8F8F8] px-4 py-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#09AD2A]">
+                  <User className="h-4 w-4" aria-hidden="true" />
                 </span>
+                <p className="text-sm font-bold text-[#111111]">Customer Details</p>
               </div>
-              <div className="rounded-xl bg-[#F0FDF4] p-3 ring-1 ring-[#DCFCE7]">
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#15803D]">Estimated Repair Price</p>
-                <p className="mt-1 text-lg font-extrabold text-[#101828]">{money(confirmed.pricing?.estimatedAmount)}</p>
+              <div className="grid grid-cols-1 gap-4 break-words p-4 text-sm sm:grid-cols-2">
+                <div>
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Shop Name</p>
+                  <p className="mt-0.5 font-bold text-[#111111]">{shopLocation?.name || 'Not available'}</p>
+                </div>
+                <div>
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Shop Number</p>
+                  <p className="mt-0.5 font-bold text-[#111111]">{profile?.mobile || 'Not available'}</p>
+                </div>
+                <div>
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Customer Name</p>
+                  <p className="mt-0.5 font-bold text-[#111111]">{confirmed.customerName || 'Not available'}</p>
+                </div>
+                <div>
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Mobile Number</p>
+                  <p className="mt-0.5 font-bold text-[#111111]">{confirmed.customerMobile || 'Not available'}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Address</p>
+                  <p className="mt-0.5 font-bold text-[#111111]">{shopAddress || 'Not available'}</p>
+                </div>
               </div>
-              <div className="rounded-xl bg-[#F0FDF4] p-3 ring-1 ring-[#DCFCE7]">
-                <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#15803D]">Estimated Delivery</p>
-                <p className="mt-1 text-sm font-extrabold text-[#101828]">
-                  {fmtChipDate(draftReadyBy)} · {fmtChipTime(draftReadyBy)}
-                </p>
+            </div>
+
+            {/* Device & Repair Details — same data, styled image box + tag pills for services */}
+            <div className="overflow-hidden rounded-2xl border border-[#ECECEC] bg-[#F8F8F8]">
+              <div className="flex items-center gap-2.5 border-b border-[#ECECEC] bg-[#F8F8F8] px-4 py-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#09AD2A]">
+                  <Smartphone className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <p className="text-sm font-bold text-[#111111]">Device &amp; Repair Details</p>
+              </div>
+              <div className="flex items-start gap-4 p-4">
+                <span className="inline-flex shrink-0 overflow-hidden rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-1.5">
+                  <Thumb url={confirmed.deviceImage} name={confirmed.modelName} size="h-14 w-14" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Device</p>
+                  <p className="break-words text-base font-extrabold text-[#111111]">
+                    {[confirmed.brandName, confirmed.modelName].filter(Boolean).join(' ') || 'Not specified'}
+                  </p>
+                  <p className="mt-2.5 text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Repair Services</p>
+                  {confirmed.services?.length ? (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {confirmed.services.map((s) => (
+                        <span
+                          key={s.repairServiceId || s.serviceCode || s.serviceName}
+                          className="rounded-full bg-[#F8F8F8] px-2.5 py-1 text-xs font-bold text-[#09AD2A] ring-1 ring-[#ECECEC]"
+                        >
+                          {s.serviceName || s.serviceCode}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-sm text-[#98A2B3]">Not specified</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Service Information — same 4 values, shown as colored stat tiles */}
+            <div className="overflow-hidden rounded-2xl border border-[#ECECEC] bg-[#F8F8F8]">
+              <div className="flex items-center gap-2.5 border-b border-[#ECECEC] bg-[#F8F8F8] px-4 py-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#09AD2A]">
+                  <Receipt className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <p className="text-sm font-bold text-[#111111]">Service Information</p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+                <div className="rounded-xl bg-[#F3F3F3] p-3">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Tracking ID</p>
+                  <p className="mt-1 text-sm font-extrabold text-[#111111]">#{confirmed.bookingNumber}</p>
+                </div>
+                <div className="rounded-xl bg-[#F3F3F3] p-3">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Status</p>
+                  <span className="mt-1 inline-block rounded-full bg-[#F3F3F3] px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-[#09AD2A]">
+                    {{ CREATED: 'Order Placed' }[confirmed.status] || confirmed.status}
+                  </span>
+                </div>
+                <div className="rounded-xl bg-[#F8F8F8] p-3 ring-1 ring-[#ECECEC]">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#09AD2A]">Estimated Repair Price</p>
+                  <p className="mt-1 text-lg font-extrabold text-[#111111]">{money(confirmed.pricing?.estimatedAmount)}</p>
+                </div>
+                <div className="rounded-xl bg-[#F8F8F8] p-3 ring-1 ring-[#ECECEC]">
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#09AD2A]">Estimated Delivery</p>
+                  <p className="mt-1 text-sm font-extrabold text-[#111111]">
+                    {fmtChipDate(draftReadyBy)} · {fmtChipTime(draftReadyBy)}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
 
           {/* Booking confirmed status banner */}
-          <div className="flex items-center gap-3 rounded-2xl border border-[#86EFAC] bg-gradient-to-r from-[#F0FDF4] to-[#DCFCE7] p-4 shadow-[0_2px_12px_rgba(21,128,61,0.12)]">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#15803D] text-white shadow-[0_4px_12px_rgba(21,128,61,0.35)]">
+          <div className="flex items-center gap-3 rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] p-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#09AD2A] text-white">
               <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
             </span>
             <div>
-              <p className="text-base font-extrabold text-[#15803D]">Booking confirmed!</p>
-              <p className="text-xs font-medium text-[#3F6C55]">Your request is ready for technician assignment.</p>
+              <p className="text-base font-extrabold text-[#09AD2A]">Booking confirmed!</p>
+              <p className="text-xs font-medium text-[#666666]">Your request is ready for technician assignment.</p>
             </div>
           </div>
 
-          {/* Action cards — same 3 actions/links, premium tile styling */}
+          {/* Action cards — same 3 actions/links, as compact white rows
+              (icon chip + title/subtitle + chevron) instead of tall yellow tiles. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button
               type="button"
-              disabled
-              title="Technician assignment isn't available in the shop portal yet"
-              className="flex cursor-not-allowed flex-col items-center gap-2 rounded-2xl border border-dashed border-[#D0D5DD] bg-[#F9FAFB] p-4 text-center opacity-80"
+              disabled={!confirmedBookings.some((b) => b.ticketId)}
+              onClick={() => {
+                if (confirmedBookings.length > 1) setAssignPickerOpen((v) => !v);
+                else setAssignTarget(confirmedBookings[0]);
+              }}
+              className={cx(CONFIRM_ACTION_CLS, 'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-[#ECECEC]')}
             >
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#98A2B3] shadow-sm">
+              <span className={CONFIRM_ACTION_ICON_CLS}>
                 <UserCog className="h-5 w-5" aria-hidden="true" />
               </span>
-              <span className="text-sm font-bold text-[#98A2B3]">Assign Technician</span>
-              <span className="text-xs text-[#98A2B3]">Assign technician to repair</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-bold text-[#111111]">
+                  {confirmedBookings.length === 1 && assignedTechs[confirmedBookings[0].ticketId] ? 'Reassign Technician' : 'Assign Technician'}
+                </span>
+                <span className="block truncate text-xs text-[#666666]">
+                  {confirmedBookings.length === 1 && assignedTechs[confirmedBookings[0].ticketId]
+                    ? `Assigned to ${assignedTechs[confirmedBookings[0].ticketId]}`
+                    : confirmedBookings.length > 1
+                      ? `Choose a device (${confirmedBookings.length})`
+                      : 'Assign technician to repair'}
+                </span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-[#98A2B3] transition group-hover:text-[#09AD2A]" aria-hidden="true" />
             </button>
             <Link
               href={`/shop-home/services/bookings/view/receipt/?id=${encodeURIComponent(confirmed.id)}`}
-              className="group flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-[#166534] to-[#14532D] p-4 text-center text-white shadow-[0_6px_16px_rgba(20,83,45,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(20,83,45,0.4)]"
+              className={CONFIRM_ACTION_CLS}
             >
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 transition group-hover:bg-white/25">
+              <span className={CONFIRM_ACTION_ICON_CLS}>
                 <Share2 className="h-5 w-5" aria-hidden="true" />
               </span>
-              <span className="text-sm font-bold">Share Receipt</span>
-              <span className="text-xs text-white/75">Share booking details</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-bold text-[#111111]">Share Receipt</span>
+                <span className="block truncate text-xs text-[#666666]">Share booking details</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-[#98A2B3] transition group-hover:text-[#09AD2A]" aria-hidden="true" />
             </Link>
             <Link
               href={`/shop-home/services/bookings/view/qr/?id=${encodeURIComponent(confirmed.id)}`}
-              className="group flex flex-col items-center gap-2 rounded-2xl bg-gradient-to-br from-[#166534] to-[#14532D] p-4 text-center text-white shadow-[0_6px_16px_rgba(20,83,45,0.3)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_22px_rgba(20,83,45,0.4)]"
+              className={CONFIRM_ACTION_CLS}
             >
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 transition group-hover:bg-white/25">
+              <span className={CONFIRM_ACTION_ICON_CLS}>
                 <QrCode className="h-5 w-5" aria-hidden="true" />
               </span>
-              <span className="text-sm font-bold">Barcode Print</span>
-              <span className="text-xs text-white/75">Print booking label</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-bold text-[#111111]">Barcode Print</span>
+                <span className="block truncate text-xs text-[#666666]">Print booking label</span>
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-[#98A2B3] transition group-hover:text-[#09AD2A]" aria-hidden="true" />
             </Link>
           </div>
+
+          {/* Several devices booked: pick which one to assign */}
+          {assignPickerOpen && confirmedBookings.length > 1 ? (
+            <div className="overflow-hidden rounded-2xl border border-[#ECECEC] bg-[#F8F8F8]">
+              {confirmedBookings.map((b) => (
+                <div key={b.ticketId || b.bookingNumber} className="flex items-center justify-between gap-3 border-b border-[#ECECEC] px-4 py-3 last:border-b-0">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-[#111111]">{deviceTitle(b.brandName, b.modelName) || 'Device'}</p>
+                    <p className="text-xs text-[#666666]">
+                      #{b.bookingNumber}
+                      {assignedTechs[b.ticketId] ? ` · Assigned to ${assignedTechs[b.ticketId]}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!b.ticketId}
+                    onClick={() => setAssignTarget(b)}
+                    className="shrink-0 rounded-lg bg-[#F3BF23] px-3 py-1.5 text-xs font-bold text-[#111111] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {assignedTechs[b.ticketId] ? 'Reassign' : 'Assign'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <AssignTechnicianModal
+            open={Boolean(assignTarget)}
+            ticketId={assignTarget?.ticketId}
+            currentTechnicianId={assignTarget ? assignedTechs[`${assignTarget.ticketId}:id`] : null}
+            bookingLabel={assignTarget ? [`#${assignTarget.bookingNumber}`, deviceTitle(assignTarget.brandName, assignTarget.modelName)].filter(Boolean).join(' · ') : ''}
+            onClose={() => setAssignTarget(null)}
+            onAssigned={(ticket) => {
+              const key = assignTarget?.ticketId;
+              if (!key) return;
+              setAssignedTechs((prev) => ({
+                ...prev,
+                [key]: ticket?.assignedTechnicianName || 'technician',
+                [`${key}:id`]: ticket?.assignedTechnicianId || null,
+              }));
+            }}
+          />
 
           {/* Bottom buttons — same actions/hrefs, pill hierarchy */}
           <div className="flex flex-wrap justify-center gap-3 pt-2">
@@ -4107,7 +5145,7 @@ export default function BookServicePage() {
               type="button"
               onClick={resetForm}
               className={cx(
-                'rounded-full border-2 border-[#D0D5DD] bg-white px-6 py-2.5 text-sm font-bold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
+                'rounded-full border-2 border-[#D0D5DD] bg-white px-6 py-2.5 text-sm font-bold text-[#344054] transition hover:border-[#09AD2A] hover:text-[#09AD2A]',
                 FOCUS_RING,
               )}
             >
@@ -4116,7 +5154,7 @@ export default function BookServicePage() {
             <Link
               href="/shop-home/services/bookings"
               className={cx(
-                'rounded-full bg-[#15803D] px-6 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(21,128,61,0.35)] transition hover:bg-[#166534]',
+                'rounded-full bg-[#F3BF23] px-6 py-2.5 text-sm font-bold text-[#111111] transition hover:bg-[#E5B11A]',
                 FOCUS_RING,
               )}
             >
@@ -4141,8 +5179,7 @@ export default function BookServicePage() {
     deviceInfo: (
       <>
         {deviceInfoSection}
-        {pickupSection}
-        {devicePhotosSection}
+        {pickupSummarySection}
       </>
     ),
     deviceSecurity: deviceSecuritySection,
@@ -4151,58 +5188,85 @@ export default function BookServicePage() {
     confirmation: confirmationSection,
   };
 
+  if (isEditing && !editTicket) {
+    return (
+      <div className="flex min-h-[320px] w-full flex-col items-center justify-center gap-3 rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-8 text-center">
+        {editError ? (
+          <>
+            <AlertTriangle className="h-8 w-8 text-red-500" aria-hidden="true" />
+            <p className="text-sm font-semibold text-[#111111]">{editError}</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setEditRetry((k) => k + 1)}
+                className={cx('rounded-xl bg-[#09AD2A] px-4 py-2 text-sm font-bold text-white transition hover:bg-[#08961F]', FOCUS_RING)}
+              >
+                Retry
+              </button>
+              <Link href="/shop-home/services/requote" className={cx('rounded-xl border border-[#ECECEC] bg-white px-4 py-2 text-sm font-bold text-[#111111]', FOCUS_RING)}>
+                Back to Requote
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <Loader2 className="h-8 w-8 animate-spin text-[#09AD2A]" aria-hidden="true" />
+            <p className="text-sm font-semibold text-[#666666]">Loading booking for re-estimate…</p>
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-[1180px] space-y-5">
-      {/* Hero — soft mint gradient banner with abstract waves + a decorative
-          device/repair-tools illustration on the far right, matching a
-          reference design's "Book Service" header. Purely visual; the title,
-          subtitle and both action buttons are the exact same content/
-          handlers this page always had. */}
-      <div className="relative overflow-hidden rounded-3xl border border-[#E4EFEB] bg-gradient-to-br from-[#F0FBF5] via-white to-[#EAF5FF] p-5 shadow-[0_12px_32px_rgba(20,80,55,0.07),0_3px_10px_rgba(20,80,55,0.04)] sm:p-7">
-        <span className="pointer-events-none absolute -right-14 -top-14 h-44 w-44 rounded-full bg-[#86EFAC]/25 blur-3xl" aria-hidden="true" />
-        <span className="pointer-events-none absolute -bottom-16 right-24 h-36 w-36 rounded-full bg-[#93C5FD]/20 blur-3xl" aria-hidden="true" />
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-14 w-full text-[#E4F8EC]/60"
-          viewBox="0 0 500 80"
-          preserveAspectRatio="none"
-          aria-hidden="true"
+    <div className="w-full space-y-5">
+      {isEditing ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-[#09AD2A]/30 bg-[#F2FBF4] px-4 py-3.5 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <Icon3D flat icon={Pencil} tone="green" size="md" />
+            <div className="min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-[#0B6B3A]">Re-Estimate</p>
+              <p className="break-words text-base font-extrabold text-[#111111]">
+                Editing {editTicket.trackingId ? `#${editTicket.trackingId}` : 'booking'}
+                {form.customerName ? ` · ${form.customerName}` : ''}
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/shop-home/services/requote"
+            className={cx(
+              'inline-flex items-center gap-1.5 rounded-full border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#111111] transition hover:border-[#09AD2A] hover:text-[#09AD2A]',
+              FOCUS_RING,
+            )}
+          >
+            <X className="h-4 w-4 text-[#09AD2A]" aria-hidden="true" />
+            Cancel
+          </Link>
+        </div>
+      ) : null}
+      {/* Page actions (the header banner was removed; the page title lives in the top bar). */}
+      <div className={cx('flex flex-wrap items-center justify-end gap-2', isEditing && 'hidden')}>
+        <Link
+          href="/shop-home/services/customers"
+          className={cx(
+            'inline-flex items-center gap-1.5 rounded-full border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#111111] transition hover:border-[#09AD2A] hover:text-[#09AD2A]',
+            FOCUS_RING,
+          )}
         >
-          <path fill="currentColor" d="M0,40 C120,90 280,0 500,50 L500,80 L0,80 Z" />
-        </svg>
-
-        <div className="relative flex flex-wrap items-start justify-between gap-4 md:pr-[160px]">
-          <div className="min-w-0">
-            <h1 className="text-[28px] font-extrabold tracking-tight text-[#10213D] sm:text-[34px]">Book Service</h1>
-            <p className="mt-1 text-sm text-[#6B7890]">Create a new repair or service booking.</p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              href="/shop-home/services/customers"
-              className={cx(
-                'inline-flex items-center gap-1.5 rounded-full border border-[#E4EFEB] bg-white px-4 py-2.5 text-sm font-semibold text-[#10213D] shadow-sm transition hover:border-[#0A8F4B] hover:text-[#0A8F4B]',
-                FOCUS_RING,
-              )}
-            >
-              <History className="h-4 w-4 text-[#0A8F4B]" aria-hidden="true" />
-              Customer History
-            </Link>
-            <button
-              type="button"
-              onClick={resetForm}
-              className={cx(
-                'inline-flex items-center gap-1.5 rounded-full border border-[#E4EFEB] bg-white px-4 py-2.5 text-sm font-semibold text-[#10213D] shadow-sm transition hover:border-[#0A8F4B] hover:text-[#0A8F4B]',
-                FOCUS_RING,
-              )}
-            >
-              <RotateCcw className="h-4 w-4 text-[#0A8F4B]" aria-hidden="true" />
-              Reset
-            </button>
-          </div>
-        </div>
-
-        <div className="pointer-events-none absolute bottom-0 right-4 hidden h-[130px] w-[170px] md:block lg:right-8 lg:h-[150px] lg:w-[200px]">
-          <BookServiceIllustration />
-        </div>
+          <History className="h-4 w-4 text-[#09AD2A]" aria-hidden="true" />
+          Customer History
+        </Link>
+        <button
+          type="button"
+          onClick={resetForm}
+          className={cx(
+            'inline-flex items-center gap-1.5 rounded-full border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#111111] transition hover:border-[#09AD2A] hover:text-[#09AD2A]',
+            FOCUS_RING,
+          )}
+        >
+          <RotateCcw className="h-4 w-4 text-[#09AD2A]" aria-hidden="true" />
+          Reset
+        </button>
       </div>
 
       {profileError ? (
@@ -4218,9 +5282,9 @@ export default function BookServicePage() {
           steps here (not 4 — every existing tab is kept, none removed), so
           the row scrolls horizontally with a hidden scrollbar past the
           viewport width, same technique as before this redesign. */}
-      <div className="rounded-[22px] border border-[#E4EFEB] bg-white p-3 shadow-[0_12px_32px_rgba(20,80,55,0.07),0_3px_10px_rgba(20,80,55,0.04)]">
+      <div className="overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F3F3F3] px-1.5 sm:px-3">
         <div
-          className="flex flex-nowrap items-center gap-1.5 overflow-x-auto overflow-y-hidden whitespace-nowrap scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex flex-nowrap items-stretch justify-between gap-0 overflow-x-auto overflow-y-hidden whitespace-nowrap scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           onWheel={(e) => {
             // Lets a plain (non-Shift) mouse wheel scroll this row
             // horizontally too, not just Shift+wheel/trackpad — only when
@@ -4235,8 +5299,11 @@ export default function BookServicePage() {
             }
           }}
         >
-          {SECTIONS.map((s, i) => {
+          {SECTIONS.map((s) => {
             const active = activeSection === s.key;
+            // Not `disabled` — the click still runs handleTabClick so the user
+            // gets sent to Devices List with a hint instead of a dead button.
+            const locked = s.key === 'confirmation' && !confirmed;
             return (
               <div key={s.key} className="flex shrink-0 items-center">
                 <button
@@ -4246,29 +5313,26 @@ export default function BookServicePage() {
                   type="button"
                   onClick={() => handleTabClick(s.key)}
                   aria-current={active ? 'step' : undefined}
+                  aria-disabled={locked || undefined}
+                  title={locked ? 'Submit the booking from Devices List first' : s.label}
                   className={cx(
-                    'flex h-[64px] w-[15.5rem] shrink-0 items-center gap-3 rounded-2xl px-3.5 text-left transition',
+                    // Shorter/narrower tiles on phones so more steps fit before the row scrolls.
+                    'relative flex h-[76px] min-w-[92px] flex-1 shrink-0 flex-col items-center justify-center gap-1.5 px-2 text-center transition sm:h-[92px] sm:min-w-[112px] sm:gap-2 sm:px-3',
                     FOCUS_RING,
-                    active
-                      ? 'bg-gradient-to-br from-[#E4F8EC] to-[#F0FBF5] shadow-[inset_0_0_0_1px_rgba(10,143,75,0.15)]'
-                      : 'bg-white hover:bg-[#F8FBFA]',
+                    active ? 'text-[#09AD2A]' : locked ? 'cursor-not-allowed text-[#111111]/35' : 'text-[#111111]/70 hover:text-[#111111]',
                   )}
                 >
                   <span
                     className={cx(
-                      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                      active ? 'bg-[#066837] text-white' : 'bg-[#F0F4F2] text-[#98A2B3]',
+                      'flex h-9 w-9 items-center justify-center rounded-full transition sm:h-10 sm:w-10',
+                      active ? 'bg-[#09AD2A] text-white' : locked ? 'text-[#111111]/35' : 'text-[#111111]',
                     )}
                   >
-                    {i + 1}
+                    <MaterialIcon name={s.ms} filled className="h-[22px] w-[22px]" />
                   </span>
-                  {active ? <Icon3D icon={s.icon} tone="green" size="sm" /> : <s.icon className="h-5 w-5 shrink-0 text-[#10213D]" aria-hidden="true" />}
-                  <span className="min-w-0">
-                    <span className={cx('block truncate text-sm font-bold', active ? 'text-[#10213D]' : 'text-[#344054]')}>{s.label}</span>
-                    <span className={cx('block truncate text-xs', active ? 'text-[#0A8F4B]' : 'text-[#98A2B3]')}>{s.subtitle}</span>
-                  </span>
+                  <span className={cx('whitespace-nowrap text-[13px] sm:text-[14px]', active ? 'font-semibold' : 'font-medium')}>{s.short}</span>
+                  {active ? <span className="absolute inset-x-0 bottom-0 h-[3px] bg-[#09AD2A]" aria-hidden="true" /> : null}
                 </button>
-                {i < SECTIONS.length - 1 ? <ChevronRight className="mx-1 h-4 w-4 shrink-0 text-[#D0D5DD]" aria-hidden="true" /> : null}
               </div>
             );
           })}
@@ -4278,40 +5342,34 @@ export default function BookServicePage() {
       {/* Active tab content */}
       <div className="space-y-4">
         {sectionContent[activeSection]}
-
-        {submitError ? (
-          <div role="alert" className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>{submitError}</span>
-          </div>
-        ) : null}
       </div>
 
-      {/* Step footer — Previous / Next, or Confirm Booking on the last tab */}
-      <div className="sticky bottom-4 z-10 overflow-hidden rounded-[20px] border border-[#E4EFEB] bg-white/95 p-4 shadow-[0_12px_32px_rgba(20,80,55,0.1),0_3px_10px_rgba(20,80,55,0.05)] backdrop-blur">
-        <svg
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-8 w-full text-[#E4F8EC]/60"
-          viewBox="0 0 500 40"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path fill="currentColor" d="M0,20 C120,40 280,0 500,25 L500,40 L0,40 Z" />
-        </svg>
+      {/* Step footer — Previous / Next, or Confirm Booking on the last tab.
+          Hidden once a booking is confirmed: nothing is left to estimate, and
+          going back would only re-open the submitted form. The confirmation's
+          own bottom buttons take over from there. */}
+      <div
+        className={cx(
+          // Clears the iOS home indicator; on phones the buttons drop to a full-width row under the total.
+          'sticky bottom-[max(1rem,env(safe-area-inset-bottom))] z-10 overflow-hidden rounded-[20px] border border-[#ECECEC] bg-[#F3F3F3]/95 p-3 backdrop-blur sm:p-4',
+          activeSection === 'confirmation' && confirmed && 'hidden',
+        )}
+      >
         <div className="relative flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Icon3D icon={Receipt} tone="green" size="md" />
+            <Icon3D flat icon={Receipt} tone="green" size="md" />
             <div>
-              <p className="text-xs font-semibold text-[#6B7890]">Estimated Total</p>
-              <p className="text-lg font-extrabold text-[#10213D]">{money(totals.total)}</p>
+              <p className="text-xs font-semibold text-[#666666]">Estimated Total</p>
+              <p className="text-lg font-extrabold text-[#111111]">{money(totals.total)}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             {activeIndex > 0 ? (
               <button
                 type="button"
                 onClick={goPrev}
                 className={cx(
-                  'rounded-xl border border-[#DFE9E5] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F9FAFB]',
+                  'flex-1 rounded-xl border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:bg-[#F3F3F3] sm:flex-none',
                   FOCUS_RING,
                 )}
               >
@@ -4329,19 +5387,19 @@ export default function BookServicePage() {
                 onClick={submit}
                 disabled={submitting}
                 className={cx(
-                  'inline-flex items-center gap-2 rounded-2xl bg-gradient-to-br from-[#16B45F] to-[#087A3E] px-5 py-2.5 text-sm font-bold text-white shadow-[0_6px_16px_rgba(8,122,62,0.3)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60',
+                  'inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-[#F3BF23] px-5 py-2.5 text-sm font-bold text-[#111111] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none',
                   FOCUS_RING,
                 )}
               >
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-                {submitting ? 'Creating booking…' : 'Confirm Booking'}
+                {isEditing ? (submitting ? 'Saving…' : 'Save Re-Estimate') : submitting ? 'Creating booking…' : 'Confirm Booking'}
               </button>
             ) : (
               <button
                 type="button"
                 onClick={goNext}
                 className={cx(
-                  'inline-flex items-center gap-1.5 rounded-2xl bg-gradient-to-br from-[#16B45F] to-[#087A3E] px-5 py-2.5 text-sm font-bold text-white shadow-[0_6px_16px_rgba(8,122,62,0.3)] transition hover:brightness-105',
+                  'inline-flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-[#F3BF23] px-5 py-2.5 text-sm font-bold text-[#111111] transition hover:bg-[#E5B11A] sm:flex-none',
                   FOCUS_RING,
                 )}
               >

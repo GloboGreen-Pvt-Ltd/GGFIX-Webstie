@@ -127,6 +127,24 @@ export function cx(...parts) {
   return parts.filter(Boolean).join(' ');
 }
 
+/**
+ * Desktop header menu item (SiteHeader's menu card, CategoryNavMenu triggers):
+ * text only, with a green underline that grows in on hover. `open` keeps it
+ * green and underlined while that item's dropdown is showing. No separate
+ * "active page" style — the menu card stays calm, and the underline already
+ * says where the pointer is.
+ */
+export function desktopNavItemClass(open = false) {
+  return cx(
+    'relative inline-flex items-center whitespace-nowrap rounded-lg px-2.5 py-2.5 text-sm font-semibold transition xl:px-3.5 xl:text-[15px]',
+    'after:absolute after:inset-x-2.5 xl:after:inset-x-3.5 after:bottom-1 after:h-0.5 after:origin-left after:rounded-full after:bg-brand-600 after:transition-transform',
+    open
+      ? 'text-brand-700 after:scale-x-100'
+      : 'text-brand-ink after:scale-x-0 hover:text-brand-700 hover:after:scale-x-100',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2',
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Layout primitives                                                           */
 /* -------------------------------------------------------------------------- */
@@ -585,7 +603,7 @@ export function Prose({ className, children }) {
         '[&_ol]:mt-4 [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pl-6',
         '[&_li]:pl-1',
         '[&_strong]:font-semibold [&_strong]:text-brand-ink',
-        '[&_a]:font-medium [&_a]:text-brand-700 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-brand-800',
+        '[&_a]:break-words [&_a]:font-medium [&_a]:text-brand-700 [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-brand-800',
         className
       )}
     >

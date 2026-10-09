@@ -45,6 +45,7 @@ import {
   AccountPageHeader,
   Panel,
 } from '@/components/site/account/ui';
+import { notifyError } from '@/lib/toast';
 
 function productOf(item) {
   return item.product || {};
@@ -125,7 +126,7 @@ function ProductImage({ src, alt }) {
           aria-label={`${alt || 'Product'} — image preview`}
           onClick={closeLightbox}
           className={cx(
-            'fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 transition-opacity duration-200',
+            'fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] transition-opacity duration-200',
             visible ? 'opacity-100' : 'opacity-0',
           )}
         >
@@ -133,7 +134,7 @@ function ProductImage({ src, alt }) {
             type="button"
             onClick={closeLightbox}
             aria-label="Close preview"
-            className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -143,7 +144,7 @@ function ProductImage({ src, alt }) {
             alt={alt || 'Product'}
             onClick={(e) => e.stopPropagation()}
             className={cx(
-              'max-h-[85vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl transition-transform duration-200 sm:max-w-[80vw]',
+              'max-h-[85dvh] max-w-[92vw] rounded-2xl object-contain shadow-2xl transition-transform duration-200 sm:max-w-[80vw]',
               visible ? 'scale-100' : 'scale-95',
             )}
           />
@@ -182,7 +183,7 @@ function CartRow({ item, onQty, onRemove, busy }) {
                 aria-label="Decrease quantity"
                 disabled={busy || item.quantity <= 1}
                 onClick={() => onQty(item, item.quantity - 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-brand-ink transition hover:bg-brand-soften disabled:opacity-40"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-brand-ink transition [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10 hover:bg-brand-soften disabled:opacity-40"
               >
                 <Minus className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -194,7 +195,7 @@ function CartRow({ item, onQty, onRemove, busy }) {
                 aria-label="Increase quantity"
                 disabled={busy}
                 onClick={() => onQty(item, item.quantity + 1)}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-brand-ink transition hover:bg-brand-soften disabled:opacity-40"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-brand-ink transition [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10 hover:bg-brand-soften disabled:opacity-40"
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -210,7 +211,7 @@ function CartRow({ item, onQty, onRemove, busy }) {
           type="button"
           onClick={() => onRemove(item)}
           disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-red-600 [@media(pointer:coarse)]:min-h-10 transition hover:bg-red-50 disabled:opacity-50"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
           Remove
@@ -256,7 +257,7 @@ export default function MyCartPage() {
     try {
       await updateCartItem(item.id, quantity);
     } catch (e) {
-      setError(e?.message || '');
+      notifyError(e, "Couldn't update the quantity. Please try again.");
       await load();
     } finally {
       setBusy(false);
@@ -269,7 +270,7 @@ export default function MyCartPage() {
       await removeCartItem(item.id);
       setItems((list) => list.filter((it) => it.id !== item.id));
     } catch (e) {
-      setError(e?.message || '');
+      notifyError(e, "Couldn't remove the item. Please try again.");
       await load();
     } finally {
       setBusy(false);
@@ -279,7 +280,6 @@ export default function MyCartPage() {
   const onCheckout = async () => {
     if (!items.length) return;
     setPlacing(true);
-    setError('');
     try {
       const payloadItems = items.map((it) => {
         const p = productOf(it);
@@ -290,7 +290,7 @@ export default function MyCartPage() {
       setItems([]);
       setPlaced(order || {});
     } catch (e) {
-      setError(e?.message || "Couldn't place your order. Please try again.");
+      notifyError(e, "Couldn't place your order. Please try again.");
     } finally {
       setPlacing(false);
     }
@@ -385,7 +385,6 @@ export default function MyCartPage() {
                 >
                   {placing ? 'Placing…' : 'Checkout'}
                 </Button>
-                {error ? <p className="mt-2 text-xs font-medium text-red-600">{error}</p> : null}
 
                 <div className="mt-4 flex flex-col gap-2 text-xs text-brand-muted">
                   <span className="inline-flex items-center gap-1.5">

@@ -46,19 +46,19 @@ const SERVICES_SECTION = PARTNER_NAV.find((s) => s.key === 'services');
 const EMPLOYEE_SECTION = PARTNER_NAV.find((s) => s.key === 'employee');
 const REPORTS_SECTION = PARTNER_NAV.find((s) => s.key === 'reports');
 
-// Exactly these 4 real report items, in this order — every other report
+// Exactly these 4 report items (same as the sidebar's Reports menu) — every other report
 // item that exists in PARTNER_NAV is intentionally excluded from this page.
-const REPORTS_VISIBLE_KEYS = ['overview', 'reports-service-report', 'profit-loss', 'cash-book'];
+const REPORTS_VISIBLE_KEYS = ['overview', 'revenue', 'reports-service-report', 'cash-book'];
 const REPORTS_VISIBLE_ITEMS = REPORTS_VISIBLE_KEYS.map((k) => REPORTS_SECTION.items.find((i) => i.key === k)).filter(Boolean);
 
 // Cycled per card, matching a reference design's mint/blue/violet/teal
 // tinted-card look — same cycling convention the Dashboard's Quick Nav
 // widget already uses for its own tiles.
 const REPORT_CARD_STYLES = [
-  { bg: 'bg-gradient-to-br from-[#EAFBF3] to-[#DAF5E7]', iconTone: 'green', arrow: 'bg-white/80 text-[#0BA65A] group-hover:bg-white' },
-  { bg: 'bg-gradient-to-br from-[#EEF7FF] to-[#DFEFFE]', iconTone: 'blue', arrow: 'bg-white/80 text-[#2196F3] group-hover:bg-white' },
-  { bg: 'bg-gradient-to-br from-[#F5F0FE] to-[#EBE1FD]', iconTone: 'violet', arrow: 'bg-white/80 text-[#8B5CF6] group-hover:bg-white' },
-  { bg: 'bg-gradient-to-br from-[#ECFEFF] to-[#CFFAFE]', iconTone: 'teal', arrow: 'bg-white/80 text-[#0D9488] group-hover:bg-white' },
+  { bg: 'bg-[#F3F3F3]', iconTone: 'green', arrow: 'bg-white/80 text-[#0BA65A] group-hover:bg-white' },
+  { bg: 'bg-[#F8F8F8]', iconTone: 'blue', arrow: 'bg-white/80 text-[#2196F3] group-hover:bg-white' },
+  { bg: 'bg-[#F8F8F8]', iconTone: 'violet', arrow: 'bg-white/80 text-[#8B5CF6] group-hover:bg-white' },
+  { bg: 'bg-[#F8F8F8]', iconTone: 'teal', arrow: 'bg-white/80 text-[#0D9488] group-hover:bg-white' },
 ];
 
 const PILLS = [
@@ -72,7 +72,7 @@ export default function ReportsLandingPage() {
     <div className="space-y-6">
       <PageHeader title="Reports" subtitle="Every report GGFIX tracks for your business, in one place." />
 
-      <div className="inline-flex items-center gap-1 rounded-full border border-[#EAECF0] bg-white p-1">
+      <div className="inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-full border border-[#ECECEC] bg-white p-1 [scrollbar-width:none]">
         {PILLS.map((pill) => {
           const Icon = pill.icon;
           const active = pill.key === 'reports';
@@ -82,9 +82,9 @@ export default function ReportsLandingPage() {
               href={pill.href}
               aria-current={active ? 'page' : undefined}
               className={cx(
-                'flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-bold transition',
+                'flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold transition sm:px-4',
                 FOCUS_RING,
-                active ? 'bg-[#15803D] text-white' : 'text-[#344054] hover:bg-[#F0FDF4]',
+                active ? 'bg-[#15803D] text-white' : 'text-[#344054] hover:bg-[#F8F8F8]',
               )}
             >
               <Icon className="h-4 w-4" aria-hidden="true" />
@@ -104,17 +104,17 @@ export default function ReportsLandingPage() {
               href={`/shop-home/${item.slug}`}
               title={item.description}
               className={cx(
-                'group flex min-h-[92px] items-center gap-3.5 rounded-2xl border border-[#E5ECE8] p-4 shadow-[0_6px_18px_rgba(20,80,55,0.06)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(20,80,55,0.1)]',
+                'group flex min-h-[92px] items-center gap-3.5 rounded-2xl border border-[#ECECEC] p-4 transition hover:-translate-y-0.5',
                 style.bg,
                 FOCUS_RING,
               )}
             >
               <Icon3D icon={Icon} tone={style.iconTone} size="lg" />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[15px] font-bold text-[#101828]">{item.label}</p>
-                <p className="mt-0.5 truncate text-xs text-[#667085]">{item.description}</p>
+                <p className="truncate text-[15px] font-bold text-[#111111]">{item.label}</p>
+                <p className="mt-0.5 truncate text-xs text-[#666666]">{item.description}</p>
               </div>
-              <span className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full shadow-sm transition', style.arrow)}>
+              <span className={cx('flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition', style.arrow)}>
                 <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
               </span>
             </Link>

@@ -177,7 +177,7 @@ export default function ShopMap({ shops, geo, className }) {
 
   return (
     <div className={cx('relative overflow-hidden rounded-3xl border border-brand-line shadow-soft', className)}>
-      <div ref={containerRef} className="h-[420px] w-full sm:h-[520px]" />
+      <div ref={containerRef} className="h-[420px] max-h-[75dvh] w-full sm:h-[520px] lg:max-h-none" />
       {state === 'loading' ? (
         <div className="absolute inset-0 flex items-center justify-center bg-white/70 text-sm text-brand-muted">
           Loading map…

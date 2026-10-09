@@ -12,12 +12,19 @@
  * referenced them before). Account list, Net Balance, and each row's
  * expandable statement below are all real, fetched data.
  *
- * Still NOT confirmed to exist: any create/write endpoint (add a
- * customer/supplier party, post a Received/Given entry), or a
- * date-filtered variant of either endpoint. So "Add Customer"/"Add
- * Supplier" stay honestly disabled with a tooltip, and the Today/This
- * Week/Month pills stay inert — inventing a POST call with no confirmed
- * endpoint would be fabricating functionality, not fixing it.
+ * "Add Customer"/"Add Supplier" open AddPartyModal, which creates the
+ * account via POST {TICKET_BASE}/ledger-parties (confirmed in the
+ * ticket-service source, ShopLedgerPartyController) and re-fetches the
+ * list. Posting a Received/Given entry and a date-filtered list are still
+ * not wired, so the Today/This Week/Month pills stay inert.
+ *
+ * Payment delay → "Defaulter", automatically (ledgerPaymentStatus in
+ * src/lib/cashBook.js): an account with money outstanding whose due date has
+ * passed — or, with no due date, that has received nothing for
+ * DEFAULT_CREDIT_DAYS — gets a red Defaulter tag on its name, sorts to the
+ * top, and is counted in the Net Balance card. The due date itself is the
+ * account's real dueDate (set when adding, or from the account's expanded
+ * row via PATCH /ledger-parties/{id}).
  *
  * The top 4 KPI cards (Cash In/Cash Out/Balance/Today's Entries) are a
  * DIFFERENT, still-unconfirmed aggregate — computing them for real would
@@ -28,9 +35,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import {
   AlertTriangle,
+  CalendarClock,
   ArrowLeft,
   ArrowUpDown,
   BookOpen,
@@ -39,6 +46,7 @@ import {
   Loader2,
   Phone,
   ShieldAlert,
+  X,
   TrendingDown,
   TrendingUp,
   UserPlus,
@@ -47,10 +55,20 @@ import {
 } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
 import EmptyState from '@/components/shop-dashboard/EmptyState';
 import ErrorBanner from '@/components/shop-dashboard/ErrorBanner';
 import { readShopOwner, subscribe } from '@/lib/shopAuth';
-import { fetchLedgerParties, fetchLedgerPartyStatement } from '@/lib/cashBook';
+import {
+  DEFAULT_CREDIT_DAYS,
+  createLedgerParty,
+  fetchLedgerParties,
+  fetchLedgerPartyStatement,
+  ledgerPaymentStatus,
+  normalizeLedgerPhone,
+  updateLedgerPartyDueDate,
+} from '@/lib/cashBook';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 const DASH = '—';
 
@@ -60,6 +78,12 @@ function formatShortDate(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return 'Not available';
   return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]}, ${d.getFullYear()}`;
+}
+/** Date -> YYYY-MM-DD (local) for a date input. */
+function toDateInput(value) {
+  const d = value instanceof Date ? value : value ? new Date(`${String(value).slice(0, 10)}T00:00:00`) : null;
+  if (!d || Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function inr(amount) {
   return `₹${Math.round(Number(amount) || 0).toLocaleString('en-IN')}`;
@@ -73,10 +97,10 @@ function directionLabel(direction) {
 // look, deliberately different from Profit & Loss/Service Report's own
 // card treatments.
 const CASH_CARD_STYLES = {
-  green: { card: 'bg-gradient-to-br from-[#EAFBF3] to-[#DAF5E7]', chip: 'bg-gradient-to-br from-[#22C55E] to-[#0BA65A]', watermark: 'text-[#0BA65A]' },
-  orange: { card: 'bg-gradient-to-br from-[#FFF3E4] to-[#FEE4C4]', chip: 'bg-gradient-to-br from-[#FFB35C] to-[#FF8F2C]', watermark: 'text-[#FF8F2C]' },
-  blue: { card: 'bg-gradient-to-br from-[#EEF7FF] to-[#DFEFFE]', chip: 'bg-gradient-to-br from-[#5EB6FA] to-[#2196F3]', watermark: 'text-[#2196F3]' },
-  violet: { card: 'bg-gradient-to-br from-[#F5F0FE] to-[#EBE1FD]', chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8B5CF6]', watermark: 'text-[#8B5CF6]' },
+  green: { card: 'bg-[#F3F3F3]', chip: 'bg-gradient-to-br from-[#22C55E] to-[#0BA65A]', watermark: 'text-[#0BA65A]' },
+  orange: { card: 'bg-[#F8F8F8]', chip: 'bg-gradient-to-br from-[#FFB35C] to-[#FF8F2C]', watermark: 'text-[#FF8F2C]' },
+  blue: { card: 'bg-[#F8F8F8]', chip: 'bg-gradient-to-br from-[#5EB6FA] to-[#2196F3]', watermark: 'text-[#2196F3]' },
+  violet: { card: 'bg-[#F8F8F8]', chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8B5CF6]', watermark: 'text-[#8B5CF6]' },
 };
 
 const CASH_CARDS = [
@@ -89,13 +113,62 @@ const CASH_CARDS = [
 function CashCard({ icon: Icon, watermark: Watermark, label, tone }) {
   const s = CASH_CARD_STYLES[tone] || CASH_CARD_STYLES.green;
   return (
-    <div className={cx('relative flex min-h-[135px] flex-col overflow-hidden rounded-[20px] border border-[rgba(15,80,60,0.06)] p-4 shadow-[0_8px_24px_rgba(20,70,55,0.06)]', s.card)}>
+    <div className="relative flex flex-col overflow-hidden rounded-[18px] border border-[#ECECEC] bg-[#F8F8F8] p-5">
       <Watermark className={cx('pointer-events-none absolute -bottom-4 -right-4 h-24 w-24 opacity-15', s.watermark)} aria-hidden="true" />
-      <span className={cx('relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_6px_14px_rgba(0,0,0,0.1)]', s.chip)}>
+      <span className={cx('relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white', s.chip)}>
         <Icon className="h-5 w-5" aria-hidden="true" />
       </span>
-      <p className="relative mt-2.5 text-[26px] font-extrabold leading-none text-[#10233F]">{DASH}</p>
-      <p className="relative mt-1 text-sm font-semibold text-[#10233F]">{label}</p>
+      <p className="relative mt-4 text-[28px] font-extrabold leading-none text-[#111111]">{DASH}</p>
+      <p className="relative mt-1.5 text-[14px] font-medium text-[#666666]">{label}</p>
+    </div>
+  );
+}
+
+/** Set / change / clear an account's due date (PATCH /ledger-parties/{id}). */
+function DueDateEditor({ party, onSaved }) {
+  const [value, setValue] = useState(toDateInput(party.dueDate));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setValue(toDateInput(party.dueDate)), [party.dueDate]);
+
+  async function save(next) {
+    setSaving(true);
+    try {
+      await updateLedgerPartyDueDate(party.id, next || null);
+      notifySuccess(next ? 'Due date saved' : 'Due date cleared');
+      onSaved?.();
+    } catch (err) {
+      notifyError(err, 'Could not update the due date.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-[#ECECEC] bg-white px-3 py-2.5">
+      <CalendarClock className="h-4 w-4 shrink-0 text-[#09AD2A]" aria-hidden="true" />
+      <span className="text-xs font-bold text-[#344054]">Due date</span>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="h-8 rounded-lg border border-[#D0D5DD] px-2 text-xs text-[#10233F] outline-none focus:border-[#09AD2A]"
+      />
+      <button
+        type="button"
+        onClick={() => save(value)}
+        disabled={saving || !value || value === toDateInput(party.dueDate)}
+        className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#09AD2A] px-3 text-xs font-bold text-white transition hover:bg-[#08961F] disabled:opacity-50"
+      >
+        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+        Save
+      </button>
+      {party.dueDate ? (
+        <button type="button" onClick={() => save(null)} disabled={saving} className="h-8 rounded-lg px-2 text-xs font-bold text-[#B42318] hover:bg-[#FEF2F2] disabled:opacity-50">
+          Clear
+        </button>
+      ) : (
+        <span className="text-[0.68rem] text-[#98A2B3]">Not set — marked Defaulter after {DEFAULT_CREDIT_DAYS} days without payment.</span>
+      )}
     </div>
   );
 }
@@ -105,41 +178,68 @@ function CashCard({ icon: Icon, watermark: Watermark, label, tone }) {
 // /ledger-entries/party/{id}) and expands it inline, same expand/toggle
 // pattern already used elsewhere in this app (e.g. ServiceReportClient's
 // TaskRow) rather than a new routed screen.
-function PartyRow({ party, expanded, onToggle, statement, statementLoading, statementError }) {
+function PartyRow({ party, expanded, onToggle, statement, statementLoading, statementError, onPartyUpdated }) {
   const initial = (party.name || '?').trim().charAt(0).toUpperCase() || '?';
   const hasLastEntry = party.lastEntryAmount != null && party.lastEntryDirection;
   const activityLine = hasLastEntry
     ? `${inr(party.lastEntryAmount)} ${directionLabel(party.lastEntryDirection)} on ${formatShortDate(party.lastEntryDate)}`
     : `Added On ${formatShortDate(party.createdAt)}`;
   const due = Number(party.balance || 0) !== 0;
+  const pay = ledgerPaymentStatus(party);
+  const defaulter = pay.status === 'defaulter';
 
   return (
     <div>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F9FDFB] sm:px-5">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#22C55E] to-[#0BA65A] text-sm font-extrabold text-white">
+      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F8F8F8] sm:px-5">
+        <span
+          className={cx(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white',
+            defaulter ? 'bg-gradient-to-br from-[#F04438] to-[#B42318]' : 'bg-gradient-to-br from-[#22C55E] to-[#0BA65A]',
+          )}
+        >
           {initial}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-[#10233F]">{party.name}</p>
-          <p className="truncate text-xs text-[#667085]">{activityLine}</p>
+          <p className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-bold text-[#10233F]">{party.name}</span>
+            {defaulter ? (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#FEE4E2] px-2 py-0.5 text-[0.65rem] font-extrabold uppercase tracking-wide text-[#B42318]">
+                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                Defaulter
+              </span>
+            ) : null}
+          </p>
+          {defaulter ? (
+            <p className="truncate text-xs font-semibold text-[#B42318]">
+              {pay.reason} · {pay.daysLate} day{pay.daysLate === 1 ? '' : 's'} late (due {formatShortDate(pay.dueOn)})
+            </p>
+          ) : (
+            <p className="truncate text-xs text-[#666666]">
+              {activityLine}
+              {due && party.dueDate ? ` · Due on ${formatShortDate(pay.dueOn)}` : ''}
+            </p>
+          )}
         </div>
         <div className="shrink-0 text-right">
-          <p className="text-sm font-extrabold text-[#10233F]">{inr(party.balance)}</p>
-          <p className={cx('text-xs font-bold', due ? 'text-[#DC6803]' : 'text-[#0BA65A]')}>{due ? 'Due' : 'Settled'}</p>
+          <p className={cx('text-sm font-extrabold', defaulter ? 'text-[#B42318]' : 'text-[#10233F]')}>{inr(party.balance)}</p>
+          <p className={cx('text-xs font-bold', defaulter ? 'text-[#B42318]' : due ? 'text-[#DC6803]' : 'text-[#0BA65A]')}>
+            {defaulter ? 'Overdue' : due ? 'Due' : 'Settled'}
+          </p>
         </div>
         <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
       </button>
 
       {expanded ? (
-        <div className="border-t border-dashed border-[#EAECF0] bg-[#F9FAFB] px-4 py-4 sm:px-5">
+        <div className="border-t border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-4 sm:px-5">
+          <DueDateEditor party={party} onSaved={onPartyUpdated} />
           {party.phone ? (
-            <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-[#667085]">
+            <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-[#666666]">
               <Phone className="h-3.5 w-3.5" aria-hidden="true" />
               {party.phone}
             </p>
           ) : null}
           {statementLoading ? (
-            <p className="flex items-center gap-2 text-xs text-[#667085]">
+            <p className="flex items-center gap-2 text-xs text-[#666666]">
               <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
               Loading statement…
             </p>
@@ -153,7 +253,7 @@ function PartyRow({ party, expanded, onToggle, statement, statementLoading, stat
           ) : (
             <div className="space-y-2">
               {statement.entries.map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 shadow-sm">
+                <div key={entry.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2">
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-[#10233F]">{directionLabel(entry.direction)}</p>
                     <p className="text-[0.68rem] text-[#98A2B3]">{formatShortDate(entry.entryDate)}</p>
@@ -170,6 +270,131 @@ function PartyRow({ party, expanded, onToggle, statement, statementLoading, stat
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Add a customer/supplier account — name (optional) + 10-digit mobile. */
+function AddPartyModal({ partyType, onClose, onAdded }) {
+  const noun = partyType === 'SUPPLIER' ? 'Supplier' : 'Customer';
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [dueDate, setDueDate] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const digits = normalizeLedgerPhone(phone);
+  const valid = digits.length === 10;
+
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && !saving && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [saving, onClose]);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!valid || saving) {
+      if (!valid) setError('Enter a valid 10-digit mobile number.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const party = await createLedgerParty({ partyType, name, phone: digits, dueDate: dueDate || undefined });
+      onAdded(party);
+    } catch (err) {
+      notifyError(err, `Could not add the ${noun.toLowerCase()}.`);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#0B1739]/40 sm:items-center sm:p-4" onMouseDown={() => !saving && onClose()}>
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-party-title"
+        onSubmit={submit}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-[24px] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[0_24px_60px_rgba(11,23,57,0.25)] sm:rounded-[24px] sm:p-6"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#F3F3F3] text-[#0BA65A]">
+              <UserPlus className="h-5 w-5" aria-hidden="true" />
+            </span>
+            <h2 id="add-party-title" className="text-[17px] font-extrabold text-[#10233F]">
+              Add {noun}
+            </h2>
+          </div>
+          <button type="button" onClick={onClose} disabled={saving} aria-label="Close" className="rounded-full p-1.5 text-[#98A2B3] hover:bg-[#F3F3F3] hover:text-[#344054]">
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <label className="mt-5 block text-xs font-bold uppercase tracking-wide text-[#666666]" htmlFor="party-name">
+          Name <span className="font-semibold normal-case tracking-normal text-[#98A2B3]">(optional)</span>
+        </label>
+        <input
+          id="party-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={`${noun} name`}
+          maxLength={120}
+          autoFocus
+          className="mt-1.5 h-12 w-full rounded-xl border border-[#D0D5DD] px-3.5 text-[15px] text-[#10233F] outline-none transition focus:border-[#0BA65A] focus:ring-4 focus:ring-[#0BA65A]/10"
+        />
+
+        <label className="mt-4 block text-xs font-bold uppercase tracking-wide text-[#666666]" htmlFor="party-phone">
+          Mobile number <span className="text-[#DC2626]">*</span>
+        </label>
+        <div className="mt-1.5 flex h-12 items-center rounded-xl border border-[#D0D5DD] px-3.5 transition focus-within:border-[#0BA65A] focus-within:ring-4 focus-within:ring-[#0BA65A]/10">
+          <span className="mr-2 text-[15px] font-semibold text-[#666666]">+91</span>
+          <input
+            id="party-phone"
+            value={phone}
+            onChange={(e) => {
+              setPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
+              setError('');
+            }}
+            inputMode="numeric"
+            maxLength={10}
+            placeholder="10-digit mobile number"
+            className="min-w-0 flex-1 bg-transparent text-[15px] text-[#10233F] outline-none"
+          />
+        </div>
+        <p className="mt-1.5 text-xs text-[#98A2B3]">If this number already has an account, its name is updated instead.</p>
+
+        <label className="mt-4 block text-xs font-bold uppercase tracking-wide text-[#666666]" htmlFor="party-due">
+          Payment due date <span className="font-semibold normal-case tracking-normal text-[#98A2B3]">(optional)</span>
+        </label>
+        <input
+          id="party-due"
+          type="date"
+          value={dueDate}
+          onChange={(e) => setDueDate(e.target.value)}
+          className="mt-1.5 h-12 w-full rounded-xl border border-[#D0D5DD] px-3.5 text-[15px] text-[#10233F] outline-none transition focus:border-[#0BA65A] focus:ring-4 focus:ring-[#0BA65A]/10"
+        />
+        <p className="mt-1.5 text-xs text-[#98A2B3]">
+          Past this date with money still due, the account is marked Defaulter automatically. Without one, that happens after {DEFAULT_CREDIT_DAYS} days with no payment.
+        </p>
+
+        {error ? <p className="mt-3 text-sm font-semibold text-[#DC2626]">{error}</p> : null}
+
+        <div className="mt-5 flex gap-2.5">
+          <button type="button" onClick={onClose} disabled={saving} className="h-11 flex-1 rounded-xl border border-[#D0D5DD] bg-white text-sm font-bold text-[#344054] transition hover:bg-[#F8F8F8]">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving || !valid}
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[#F3BF23] text-[#1E1E1E] hover:bg-[#E5B11A] text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+            Add {noun}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -201,6 +426,7 @@ export default function CashBookReportPage() {
   const [statements, setStatements] = useState({});
   const [statementLoadingId, setStatementLoadingId] = useState(null);
   const [statementErrors, setStatementErrors] = useState({});
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (ownerOnlyRestricted) return undefined;
@@ -225,6 +451,20 @@ export default function CashBookReportPage() {
 
   const netBalance = useMemo(() => parties.reduce((sum, p) => sum + (Number(p.balance) || 0), 0), [parties]);
   const accountCount = parties.length;
+  // Defaulters first (most days late first), the rest in the server's order.
+  const sortedParties = useMemo(() => {
+    const withStatus = parties.map((p, i) => ({ p, i, s: ledgerPaymentStatus(p) }));
+    return withStatus
+      .sort((a, b) => {
+        const da = a.s.status === 'defaulter' ? 1 : 0;
+        const db = b.s.status === 'defaulter' ? 1 : 0;
+        if (da !== db) return db - da;
+        if (da && db) return b.s.daysLate - a.s.daysLate;
+        return a.i - b.i;
+      })
+      .map((x) => x.p);
+  }, [parties]);
+  const defaulterCount = useMemo(() => parties.filter((p) => ledgerPaymentStatus(p).status === 'defaulter').length, [parties]);
 
   function toggleParty(party) {
     const nextId = expandedId === party.id ? null : party.id;
@@ -246,34 +486,8 @@ export default function CashBookReportPage() {
   }
 
   return (
-    <div className="flex flex-col gap-5" style={{ background: 'linear-gradient(180deg, #F7FBFA 0%, #F4FAF8 55%, #EDF8F3 100%)' }}>
-      {/* Banner — the real public/cashbook.png asset (which already renders
-          its own "Cash Book" title, subtitle, wallet icon, and shop
-          illustration as one finished scene), used directly with no
-          surrounding hero card/border/padding. The source file itself has
-          ~244px of solid blank canvas above the real illustration and
-          ~242px below it (out of 760px total height, verified by a pixel
-          bounding-box scan) — showing it at a compact height, uncropped,
-          would mean showing mostly blank space, and cropping to remove that
-          via object-fit:cover would risk cutting into the real artwork
-          instead. So this is public/images/cashbook-banner.png: the exact
-          same pixels, trimmed only to that verified-blank margin (not the
-          illustration) — same non-destructive-crop technique already used
-          for this page's previous banner asset. Width 100% / height auto
-          keeps the image's own aspect ratio with zero crop and zero
-          stretch at any width; max-h caps it at a compact height on wide
-          desktops per spec (well inside 180–220px), naturally growing
-          shorter on narrower viewports — no fixed box, so no empty
-          letterboxed area either. */}
-      <Image
-        src="/images/cashbook-banner.png"
-        alt="Cash Book — Manage cash-in and cash-out records."
-        width={1905}
-        height={304}
-        sizes="100vw"
-        className="h-auto w-full max-h-[200px] rounded-[20px]"
-        priority
-      />
+    <div className="flex flex-col gap-5" style={{ background: '#FFFFFF' }}>
+      <PageHeader title="Cash Book" subtitle="Manage cash-in and cash-out records." />
 
       {/* ---- Summary cards -------------------------------------------- */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -284,7 +498,7 @@ export default function CashBookReportPage() {
 
       {/* ---- Content panel ---------------------------------------------- */}
       <section
-        className="rounded-[22px] bg-white p-5 shadow-[0_8px_26px_rgba(20,70,55,0.05)] sm:p-6"
+        className="rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:p-6"
         style={{ border: '1px solid rgba(15, 80, 60, 0.06)' }}
       >
         <div className="flex items-center justify-between gap-3">
@@ -293,7 +507,7 @@ export default function CashBookReportPage() {
               type="button"
               onClick={() => router.back()}
               aria-label="Back"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#E4ECE8] bg-white text-[#344054] transition hover:border-[#0BA65A] hover:text-[#0BA65A]"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#344054] transition hover:border-[#0BA65A] hover:text-[#0BA65A]"
             >
               <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
             </button>
@@ -306,7 +520,7 @@ export default function CashBookReportPage() {
             disabled
             title="Cash book ledger export isn't available yet."
             aria-label="Ledger (not available yet)"
-            className="flex h-9 w-9 shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-gradient-to-br from-[#22C55E] to-[#0BA65A] text-white opacity-60 shadow-[0_4px_12px_rgba(11,166,90,0.28)]"
+            className="flex h-9 w-9 shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-gradient-to-br from-[#22C55E] to-[#0BA65A] text-white opacity-60"
           >
             <BookOpen className="h-4 w-4" aria-hidden="true" />
           </button>
@@ -330,15 +544,15 @@ export default function CashBookReportPage() {
               className={cx(
                 'rounded-full px-4 py-2 text-xs font-bold transition',
                 tab === t.value
-                  ? 'bg-gradient-to-r from-[#22C55E] to-[#15803D] text-white shadow-[0_4px_12px_rgba(21,128,61,0.32)]'
-                  : 'bg-[#F3FBF7] text-[#344054] hover:bg-[#EAF9EF] hover:text-[#15803D]',
+                  ? 'bg-gradient-to-r from-[#22C55E] to-[#15803D] text-white'
+                  : 'bg-[#F8F8F8] text-[#344054] hover:bg-[#F3F3F3] hover:text-[#15803D]',
               )}
             >
               {t.label}
             </button>
           ))}
           {['Today', 'This Week', 'Month'].map((label) => (
-            <span key={label} className="rounded-full bg-[#F3FBF7] px-4 py-2 text-xs font-bold text-[#344054]">
+            <span key={label} className="rounded-full bg-[#F8F8F8] px-4 py-2 text-xs font-bold text-[#344054]">
               {label}
             </span>
           ))}
@@ -355,11 +569,17 @@ export default function CashBookReportPage() {
                 real `balance`, and a real account count. Filter/sort icon
                 stays honestly disabled — no sort/filter param has been
                 confirmed on GET /ledger-parties. */}
-            <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-[#EAFBF3] to-[#DDF7EA] px-4 py-3.5">
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-[#F3F3F3] px-4 py-3.5">
               <div className="min-w-0">
                 <p className="text-sm font-bold text-[#10233F]">Net Balance</p>
-                <p className="mt-0.5 text-xs font-semibold text-[#5C7A6D]">
+                <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs font-semibold text-[#5C7A6D]">
                   {accountCount} {accountCount === 1 ? 'Account' : 'Accounts'}
+                  {defaulterCount ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#FEE4E2] px-2 py-0.5 text-[0.68rem] font-extrabold text-[#B42318]">
+                      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                      {defaulterCount} {defaulterCount === 1 ? 'Defaulter' : 'Defaulters'}
+                    </span>
+                  ) : null}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-3">
@@ -372,7 +592,7 @@ export default function CashBookReportPage() {
                   disabled
                   title="Filtering or sorting accounts isn't available yet."
                   aria-label="Filter or sort (not available yet)"
-                  className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full border border-[rgba(15,80,60,0.12)] bg-white text-[#5C7A6D]"
+                  className="flex h-8 w-8 shrink-0 cursor-not-allowed items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#5C7A6D]"
                 >
                   <ArrowUpDown className="h-4 w-4" aria-hidden="true" />
                 </button>
@@ -381,13 +601,10 @@ export default function CashBookReportPage() {
 
             <div className="mt-4 flex items-center justify-between gap-3">
               <p className="text-sm font-bold text-[#10233F]">Accounts</p>
-              {/* Real disabled control — no create-party endpoint has been
-                  confirmed to exist yet (only the two GET routes above). */}
               <button
                 type="button"
-                disabled
-                title={`Adding a new ${tab === 'SUPPLIER' ? 'supplier' : 'customer'} isn't available yet — no create endpoint exists for this ledger yet.`}
-                className="inline-flex shrink-0 cursor-not-allowed items-center gap-1.5 rounded-full bg-gradient-to-br from-[#22C55E] to-[#0BA65A] px-3.5 py-2 text-xs font-bold text-white opacity-60 shadow-[0_4px_12px_rgba(11,166,90,0.24)]"
+                onClick={() => setAdding(true)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#F3BF23] px-3.5 py-2 text-xs font-bold text-[#1E1E1E] transition hover:brightness-105 hover:bg-[#E5B11A]"
               >
                 <UserPlus className="h-3.5 w-3.5" aria-hidden="true" />
                 Add {tab === 'SUPPLIER' ? 'Supplier' : 'Customer'}
@@ -403,7 +620,7 @@ export default function CashBookReportPage() {
             {loading ? (
               <div className="mt-4 space-y-2.5">
                 {[0, 1, 2].map((i) => (
-                  <div key={i} className="h-[64px] animate-pulse rounded-2xl bg-[#F3FBF7]" />
+                  <div key={i} className="h-[64px] animate-pulse rounded-2xl bg-[#F8F8F8]" />
                 ))}
               </div>
             ) : error ? (
@@ -417,8 +634,8 @@ export default function CashBookReportPage() {
                 description={`${tab === 'SUPPLIER' ? 'Supplier' : 'Customer'} cash-book entries will show up here once available.`}
               />
             ) : (
-              <div className="mt-4 divide-y divide-[#EEF3F0] rounded-[16px] border border-[rgba(15,80,60,0.06)]">
-                {parties.map((party) => (
+              <div className="mt-4 divide-y divide-[#ECECEC] rounded-[16px] border border-[#ECECEC]">
+                {sortedParties.map((party) => (
                   <PartyRow
                     key={party.id}
                     party={party}
@@ -427,6 +644,7 @@ export default function CashBookReportPage() {
                     statement={statements[party.id]}
                     statementLoading={statementLoadingId === party.id}
                     statementError={statementErrors[party.id]}
+                    onPartyUpdated={() => setReloadKey((k) => k + 1)}
                   />
                 ))}
               </div>
@@ -434,6 +652,17 @@ export default function CashBookReportPage() {
           </>
         )}
       </section>
+
+      {adding ? (
+        <AddPartyModal
+          partyType={tab}
+          onClose={() => setAdding(false)}
+          onAdded={() => {
+            setAdding(false);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

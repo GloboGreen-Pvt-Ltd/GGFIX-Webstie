@@ -12,7 +12,7 @@ export default function Breadcrumbs() {
 
   return (
     <nav aria-label="Breadcrumb">
-      <ol className="flex list-none flex-wrap items-center gap-1 p-0 text-xs text-[#667085]">
+      <ol className="flex list-none flex-wrap items-center gap-1 p-0 text-xs text-[#666666]">
         <li>
           <Link href="/shop-home" className="rounded font-medium transition hover:text-[#15803D]">
             Home

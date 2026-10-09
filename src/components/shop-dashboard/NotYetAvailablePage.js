@@ -29,9 +29,9 @@ export default function NotYetAvailablePage({ title, subtitle, icon: Icon, statL
         </div>
       ) : null}
 
-      <section className="rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+      <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
         {filters.length ? (
-          <div className="border-b border-[#EAECF0] px-4 py-4 opacity-60 sm:px-5">
+          <div className="border-b border-[#ECECEC] px-4 py-4 opacity-60 sm:px-5">
             <FilterChips options={filters} value={filters[0]} onChange={() => {}} />
           </div>
         ) : null}

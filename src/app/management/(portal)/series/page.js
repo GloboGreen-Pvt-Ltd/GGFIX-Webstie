@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { notifyError } from '@/lib/toast';
 
 // Split a bulk paste into clean, de-duplicated series names. Accepts one name
 // per line, comma-separated, or a mix; trims blanks.
@@ -139,17 +140,16 @@ export default function MasterSeriesPage() {
     if (!formCategoryId || !formBrandId) return;
     const mappingId = resolveMappingId(formCategoryId, formBrandId);
     if (!mappingId) {
-      setError('No Category-Brand mapping for this pair. Create it in the Category-Brand Mapping page first.');
+      notifyError('No Category-Brand mapping for this pair. Create it in the Category-Brand Mapping page first.');
       return;
     }
     setSubmitting(true);
-    setError('');
     try {
       if (modal.type === 'create') {
         // Bulk create: one series per line / comma-separated name.
         const names = parseSeriesNames(name);
         if (!names.length) {
-          setError('Enter at least one series name.');
+          notifyError('Enter at least one series name.');
           setSubmitting(false);
           return;
         }
@@ -171,7 +171,7 @@ export default function MasterSeriesPage() {
         if (failed.length) {
           // Keep the modal open with only the failed names so they can be fixed/retried.
           setName(failed.join('\n'));
-          setError(`Added ${ok} of ${names.length}. These were skipped (already exist or invalid): ${failed.join(', ')}`);
+          notifyError(`Added ${ok} of ${names.length}. These were skipped (already exist or invalid): ${failed.join(', ')}`);
           setSubmitting(false);
           return;
         }
@@ -187,7 +187,7 @@ export default function MasterSeriesPage() {
         loadSeries();
       }
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -199,7 +199,7 @@ export default function MasterSeriesPage() {
       await masterApi.delete(`/master/series/${row.id}`);
       loadSeries();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -223,14 +223,14 @@ export default function MasterSeriesPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Series</h1>
-        <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Series</h1>
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+            className="w-full rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm sm:w-auto"
           >
             <option value="">All categories</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
@@ -238,7 +238,7 @@ export default function MasterSeriesPage() {
           <select
             value={filterBrand}
             onChange={(e) => setFilterBrand(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+            className="w-full rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm sm:w-auto"
           >
             <option value="">All brands{filterCategory ? ' in category' : ''}</option>
             {brandsForCategory.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
@@ -272,12 +272,12 @@ export default function MasterSeriesPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'New series' : 'Edit series'}
             </h2>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-sm text-admin-muted mb-1">Category</label>
                   <select

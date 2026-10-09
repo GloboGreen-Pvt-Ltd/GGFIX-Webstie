@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { shopApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 const SERVICE_CODES = ['REPAIR', 'BUY', 'SELL', 'PICKUP', 'SMART_EXCHANGE'];
 // Backend stores dayOfWeek as a Short (ISO-8601: 1=Mon … 7=Sun, null = any day).
@@ -61,8 +62,7 @@ export default function DirectoryShopsPage() {
     if (parsed) {
       setLatitude(parsed.lat);
       setLongitude(parsed.lng);
-      // eslint-disable-next-line no-alert
-      window.alert(`Detected coords from URL: ${parsed.lat}, ${parsed.lng}`);
+      notifySuccess(`Detected coords from URL: ${parsed.lat}, ${parsed.lng}`);
     }
   };
 
@@ -70,9 +70,8 @@ export default function DirectoryShopsPage() {
   // Set lat/lng + auto-fill city/state/pincode if not yet set.
   const geocodeAddress = async () => {
     const query = [address, city, state, pincode].filter(Boolean).join(', ').trim();
-    if (!query) { setError('Type an address first, then click Geocode'); return; }
+    if (!query) { notifyError('Type an address first, then click Geocode'); return; }
     setGeocoding(true);
-    setError('');
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q=${encodeURIComponent(query)}`,
@@ -80,7 +79,7 @@ export default function DirectoryShopsPage() {
       );
       if (!res.ok) throw new Error(`Geocoder returned ${res.status}`);
       const data = await res.json();
-      if (!data.length) { setError(`No match for "${query}". Add more detail or paste coords directly.`); return; }
+      if (!data.length) { notifyError(`No match for "${query}". Add more detail or paste coords directly.`); return; }
       const hit = data[0];
       setLatitude(String(Number(hit.lat).toFixed(7)));
       setLongitude(String(Number(hit.lon).toFixed(7)));
@@ -89,7 +88,7 @@ export default function DirectoryShopsPage() {
       if (!state && a.state) setState(a.state);
       if (!pincode && a.postcode) setPincode(a.postcode);
     } catch (e) {
-      setError(e.message || 'Geocoding failed');
+      notifyError(e.message || 'Geocoding failed');
     } finally {
       setGeocoding(false);
     }
@@ -223,16 +222,12 @@ export default function DirectoryShopsPage() {
       if (isActive !== modal.item.isActive) {
         await shopApi.patch(`/shops/${id}/status?active=${isActive}`);
       }
-      setError('');
       closeModal();
       await load();
-      // Toast-ish confirmation so the user knows the save landed.
-      if (typeof window !== 'undefined') {
-        // eslint-disable-next-line no-alert
-        window.alert(`Saved "${body.name}" ✅`);
-      }
+      // Toast confirmation so the user knows the save landed.
+      notifySuccess(`Saved "${body.name}" ✅`);
     } catch (e) {
-      setError(e.body?.message || e.body?.error || e.message || 'Save failed');
+      notifyError(e.body?.message || e.body?.error || e.message || 'Save failed');
     } finally {
       setSubmitting(false);
     }
@@ -244,7 +239,7 @@ export default function DirectoryShopsPage() {
       await shopApi.delete(`/shops/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -260,7 +255,7 @@ export default function DirectoryShopsPage() {
       await load();
     } catch (e) {
       const msg = e.body?.message || e.body?.error || e.message || 'Failed to toggle Active';
-      setError(`Couldn't toggle "${row.name}": ${msg}`);
+      notifyError(`Couldn't toggle "${row.name}": ${msg}`);
       throw e;
     }
   };
@@ -279,14 +274,13 @@ export default function DirectoryShopsPage() {
         ok += 1;
       } catch (e) {
         const msg = e.body?.message || e.body?.error || e.message || 'unknown error';
-        setError(`Stopped after ${ok} of ${inactive.length}. Failed on "${r.name}": ${msg}`);
+        notifyError(`Stopped after ${ok} of ${inactive.length}. Failed on "${r.name}": ${msg}`);
         await load();
         return;
       }
     }
-    setError('');
     await load();
-    alert(`Activated ${ok} shop(s) ✅`);
+    notifySuccess(`Activated ${ok} shop(s) ✅`);
   };
 
   const addService = async () => {
@@ -295,7 +289,7 @@ export default function DirectoryShopsPage() {
       await shopApi.post(`/shops/${modal.item.id}/services`, { serviceCode: newServiceCode });
       loadShopExtras(modal.item.id);
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to add service');
+      notifyError(e.body?.message || e.message || 'Failed to add service');
     }
   };
 
@@ -305,7 +299,7 @@ export default function DirectoryShopsPage() {
       await shopApi.delete(`/shops/${modal.item.id}/services/${code}`);
       loadShopExtras(modal.item.id);
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to remove service');
+      notifyError(e.body?.message || e.message || 'Failed to remove service');
     }
   };
 
@@ -323,7 +317,7 @@ export default function DirectoryShopsPage() {
       });
       loadShopExtras(modal.item.id);
     } catch (e) {
-      setError(e.body?.message || e.body?.error || e.message || 'Failed to add slot');
+      notifyError(e.body?.message || e.body?.error || e.message || 'Failed to add slot');
     }
   };
 
@@ -333,7 +327,7 @@ export default function DirectoryShopsPage() {
       await shopApi.delete(`/shops/${modal.item.id}/pickup-slots/${slotId}`);
       loadShopExtras(modal.item.id);
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to delete slot');
+      notifyError(e.body?.message || e.message || 'Failed to delete slot');
     }
   };
 
@@ -365,10 +359,10 @@ export default function DirectoryShopsPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 sm:p-6 md:p-8">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Shops</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={activateAll}
@@ -404,8 +398,9 @@ export default function DirectoryShopsPage() {
       )}
 
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-y-auto">
-          <div className="w-full max-w-3xl rounded-xl bg-admin-card border border-admin-border p-6 my-8">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 overflow-y-auto">
+          {/* my-auto centres the panel when it fits and lets a taller one scroll from its top, instead of items-center clipping it. */}
+          <div className="w-full max-w-3xl rounded-xl bg-admin-card border border-admin-border p-4 sm:p-6 my-auto">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'New shop' : `Edit shop: ${modal.item.name}`}
             </h2>
@@ -497,7 +492,7 @@ export default function DirectoryShopsPage() {
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                 <span className="text-sm font-medium text-slate-600">Location coordinates</span>
                 <button
                   type="button"
@@ -618,11 +613,11 @@ export default function DirectoryShopsPage() {
                       })
                     )}
                   </div>
-                  <div className="flex gap-2 items-center">
+                  <div className="flex flex-wrap gap-2 items-center">
                     <select
                       value={newServiceCode}
                       onChange={(e) => setNewServiceCode(e.target.value)}
-                      className="rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900 text-sm"
+                      className="min-w-0 max-w-full rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900 text-sm"
                     >
                       {SERVICE_CODES.map((c) => (
                         <option key={c} value={c}>{c}</option>
@@ -646,8 +641,8 @@ export default function DirectoryShopsPage() {
                   ) : (
                     <ul className="divide-y divide-admin-border rounded-lg border border-admin-border">
                       {pickupSlots.map((s) => (
-                        <li key={s.id} className="flex items-center justify-between px-3 py-2 text-sm text-slate-800">
-                          <span>
+                        <li key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm text-slate-800">
+                          <span className="min-w-0">
                             {s.dayOfWeek ? DAY_LABEL[s.dayOfWeek] : 'Any day'} · {s.startTime}–{s.endTime} · cap {s.capacity}
                           </span>
                           <button

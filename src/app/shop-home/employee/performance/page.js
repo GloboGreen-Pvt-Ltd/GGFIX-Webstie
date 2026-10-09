@@ -52,22 +52,22 @@ const COMPLETED_TICKET_STATUSES = new Set(['DELIVERED', 'READY', 'INVOICE_GENERA
 // own card treatments.
 const PERF_STAT_STYLES = {
   green: {
-    card: 'bg-gradient-to-br from-[#EAFBF3] to-[#DAF5E7]',
+    card: 'bg-[#F3F3F3]',
     chip: 'bg-gradient-to-br from-[#22C55E] to-[#0BA65A]',
     watermark: 'text-[#0BA65A]',
   },
   blue: {
-    card: 'bg-gradient-to-br from-[#EEF7FF] to-[#DFEFFE]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#5EB6FA] to-[#2196F3]',
     watermark: 'text-[#2196F3]',
   },
   violet: {
-    card: 'bg-gradient-to-br from-[#F5F0FE] to-[#EBE1FD]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8B5CF6]',
     watermark: 'text-[#8B5CF6]',
   },
   orange: {
-    card: 'bg-gradient-to-br from-[#FFF3E4] to-[#FEE4C4]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#FFB35C] to-[#FF8F2C]',
     watermark: 'text-[#FF8F2C]',
   },
@@ -76,15 +76,15 @@ const PERF_STAT_STYLES = {
 function PerfStatCard({ icon: Icon, watermark: Watermark, label, value, tone }) {
   const s = PERF_STAT_STYLES[tone] || PERF_STAT_STYLES.green;
   return (
-    <div className={cx('relative flex h-[135px] flex-col justify-center overflow-hidden rounded-[20px] border border-[rgba(15,80,60,0.06)] p-5 shadow-[0_8px_24px_rgba(20,70,55,0.06)]', s.card)}>
+    <div className={cx('relative flex min-h-[135px] min-w-0 flex-col justify-center overflow-hidden rounded-[20px] border border-[#ECECEC] p-4 sm:p-5 lg:h-[135px]', s.card)}>
       <Watermark className={cx('pointer-events-none absolute -bottom-4 -right-4 h-24 w-24 opacity-15', s.watermark)} aria-hidden="true" />
-      <div className="relative flex items-center gap-3">
-        <span className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_6px_14px_rgba(0,0,0,0.1)]', s.chip)}>
+      <div className="relative flex flex-col items-start gap-2 lg:flex-row lg:items-center lg:gap-3">
+        <span className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white', s.chip)}>
           <Icon className="h-5 w-5" aria-hidden="true" />
         </span>
-        <div className="min-w-0">
-          <p className="truncate text-[22px] font-extrabold leading-tight text-[#10233F]">{value}</p>
-          <p className="mt-0.5 text-sm font-semibold text-[#10233F]">{label}</p>
+        <div className="min-w-0 max-w-full">
+          <p className="truncate text-[20px] font-extrabold leading-tight text-[#10233F] sm:text-[22px]">{value}</p>
+          <p className="mt-0.5 text-[13px] font-semibold text-[#10233F] sm:text-sm">{label}</p>
         </div>
       </div>
     </div>
@@ -185,12 +185,11 @@ export default function PerformancePage() {
           real caveat, just restyled as an info banner instead of plain
           text. */}
       <div
-        className="relative overflow-hidden rounded-[22px] p-6 shadow-[0_8px_24px_rgba(20,70,55,0.06)] sm:p-7"
-        style={{ background: 'linear-gradient(110deg, #ffffff 0%, #f5fcf9 45%, #e7faf1 100%)', border: '1px solid rgba(15, 140, 90, 0.14)' }}
+        className="relative overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:p-7"
+        style={{ background: '#F8F8F8', border: '1px solid #ECECEC' }}
       >
         {/* Decorative performance graphics — trend line, bars, dots, a
             faint chart-card silhouette — low-opacity, purely decorative. */}
-        <span className="pointer-events-none absolute -right-10 -top-14 h-52 w-52 rounded-full bg-[#6EE7B7]/15 blur-3xl" aria-hidden="true" />
         <svg className="pointer-events-none absolute right-6 top-4 hidden h-[100px] w-[220px] text-[#0BA65A]/25 sm:block" viewBox="0 0 220 100" aria-hidden="true">
           <path d="M4 88 L40 60 L74 70 L110 30 L150 40 L196 10" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
           <circle cx="110" cy="30" r="4" fill="currentColor" />
@@ -206,14 +205,14 @@ export default function PerformancePage() {
 
         <div className="relative z-[1] flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#10233F] sm:text-[34px]">Employee Performance</h1>
-            <p className="mt-1 text-[14px] text-[#6D7E94] sm:text-[15px]">Monitor employee productivity and work performance.</p>
+            <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#111111] sm:text-[34px]">Employee Performance</h1>
+            <p className="mt-1 text-[14px] text-[#666666] sm:text-[15px]">Monitor employee productivity and work performance.</p>
           </div>
           <button
             type="button"
             onClick={() => setReloadKey((k) => k + 1)}
             className={cx(
-              'inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-[#E4ECE8] bg-white px-4 text-sm font-semibold text-[#10233F] shadow-sm transition hover:border-[#0BA65A] hover:text-[#0BA65A]',
+              'inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-[#ECECEC] bg-white px-4 text-sm font-semibold text-[#10233F] transition hover:border-[#0BA65A] hover:text-[#0BA65A]',
               FOCUS_RING,
             )}
           >
@@ -222,7 +221,7 @@ export default function PerformancePage() {
           </button>
         </div>
 
-        <div className="relative z-[1] mt-4 flex items-start gap-2.5 rounded-2xl border border-[#DCEFE4] bg-white/80 px-4 py-3">
+        <div className="relative z-[1] mt-4 flex items-start gap-2.5 rounded-2xl border border-[#ECECEC] bg-[#F8F8F8] px-4 py-3">
           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0BA65A] text-white">
             <Info className="h-3 w-3" aria-hidden="true" />
           </span>
@@ -238,7 +237,7 @@ export default function PerformancePage() {
       {loading ? (
         <SkeletonStatCards count={4} />
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {stats.map((s) => (
             <PerfStatCard key={s.label} icon={s.icon} watermark={s.watermark} label={s.label} value={s.value} tone={s.tone} />
           ))}
@@ -246,10 +245,10 @@ export default function PerformancePage() {
       )}
 
       <section
-        className="overflow-hidden rounded-[22px] bg-white shadow-[0_8px_26px_rgba(20,70,55,0.05)]"
+        className="overflow-hidden rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8]"
         style={{ border: '1px solid rgba(15, 80, 60, 0.06)' }}
       >
-        <div className="border-b border-[#EEF3F0] px-4 py-4 sm:px-5">
+        <div className="border-b border-[#ECECEC] px-4 py-4 sm:px-5">
           <FilterChips options={ROLE_FILTERS} value={roleFilter} onChange={setRoleFilter} />
         </div>
 
@@ -262,9 +261,9 @@ export default function PerformancePage() {
             {filtered.map((r, i) => (
               <div
                 key={r.id}
-                className="flex flex-wrap items-center gap-3 rounded-[16px] border border-[#EEF3F0] bg-white px-3.5 py-3 sm:flex-nowrap sm:px-4"
+                className="flex flex-wrap items-center gap-3 rounded-[16px] border border-[#ECECEC] bg-[#F8F8F8] px-3.5 py-3 sm:flex-nowrap sm:px-4"
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#EAFBF3] text-sm font-bold text-[#0BA65A]">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-sm font-bold text-[#0BA65A]">
                   #{i + 1}
                 </span>
                 <Icon3D icon={r.roleLabel === 'Pickup Person' ? Truck : Wrench} tone={r.roleLabel === 'Pickup Person' ? 'orange' : 'green'} size="md" />
@@ -275,7 +274,7 @@ export default function PerformancePage() {
                   </p>
                 </div>
                 <div className="order-last flex w-full items-center gap-3 sm:order-none sm:w-auto">
-                  <div className="hidden h-2 w-40 shrink-0 overflow-hidden rounded-full bg-[#EDF3F1] sm:block md:w-[180px]">
+                  <div className="hidden h-2 w-40 shrink-0 overflow-hidden rounded-full bg-[#F3F3F3] sm:block md:w-[180px]">
                     <div
                       className="h-full rounded-full"
                       style={{ width: `${r.completionRate ?? 0}%`, background: 'linear-gradient(90deg, #11B964, #0A9352)' }}

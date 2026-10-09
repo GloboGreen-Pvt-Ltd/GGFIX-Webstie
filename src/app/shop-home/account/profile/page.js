@@ -41,10 +41,10 @@ function formatMobile(mobile) {
 function Field({ label, icon: Icon, value }) {
   if (!value) return null;
   return (
-    <div>
+    <div className="min-w-0">
       <label className="mb-1.5 block text-sm font-semibold text-[#344054]">{label}</label>
-      <div className="flex items-center gap-2.5 rounded-xl border border-[#D0D5DD] bg-[#F9FAFB] px-3.5 py-2.5 text-sm font-medium text-[#101828]">
-        {Icon ? <Icon className="h-4 w-4 shrink-0 text-[#667085]" aria-hidden="true" /> : null}
+      <div className="flex items-center gap-2.5 rounded-xl border border-[#D0D5DD] bg-[#F8F8F8] px-3.5 py-2.5 text-sm font-medium text-[#111111]">
+        {Icon ? <Icon className="h-4 w-4 shrink-0 text-[#666666]" aria-hidden="true" /> : null}
         <span className="truncate">{value}</span>
       </div>
     </div>
@@ -84,25 +84,25 @@ export default function ProfilePage() {
       />
 
       {/* ---- Banner + Personal Information card ---------------------------- */}
-      <section className="overflow-hidden rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+      <section className="overflow-hidden rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
         {/* Gradient identity banner */}
-        <div className="relative overflow-hidden bg-gradient-to-r from-[#DCFCE7] via-[#F0FDF4] to-white px-5 py-6 sm:px-8">
+        <div className="relative overflow-hidden bg-[#F8F8F8] px-5 py-6 sm:px-8">
           <div className="flex flex-wrap items-center gap-4">
             <span className="inline-flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-brand-600 text-xl font-bold text-white ring-4 ring-white">
               {initials}
             </span>
-            <div className="min-w-0">
-              <p className="truncate text-xl font-bold text-[#101828]">{name}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xl font-bold text-[#111111]">{name}</p>
               {shopOwner?.roleLabel ? <p className="text-sm text-[#344054]">{shopOwner.roleLabel}</p> : null}
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[#475467]">
                 {shopOwner?.email ? (
-                  <span className="flex items-center gap-1.5">
+                  <span className="flex min-w-0 items-center gap-1.5 break-all">
                     <Mail className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     {shopOwner.email}
                   </span>
                 ) : null}
                 {shopOwner?.shopName ? (
-                  <span className="flex items-center gap-1.5">
+                  <span className="flex min-w-0 items-center gap-1.5 break-words">
                     <Store className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     {shopOwner.shopName}
                   </span>
@@ -113,8 +113,8 @@ export default function ProfilePage() {
         </div>
 
         {/* Personal Information */}
-        <div className="border-t border-[#EAECF0] p-5 sm:p-8">
-          <h2 className="mb-5 text-base font-bold text-[#101828]">Personal Information</h2>
+        <div className="border-t border-[#ECECEC] p-5 sm:p-8">
+          <h2 className="mb-5 text-base font-bold text-[#111111]">Personal Information</h2>
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="Full Name" icon={User} value={name} />
             <Field label="Email Address" icon={Mail} value={shopOwner?.email} />
@@ -126,12 +126,12 @@ export default function ProfilePage() {
       </section>
 
       {/* ---- Privacy note -------------------------------------------------- */}
-      <div className="flex items-start gap-3 rounded-2xl bg-[#DCFCE7] p-4">
+      <div className="flex items-start gap-3 rounded-2xl bg-[#F3F3F3] p-4">
         <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#15803D]">
           <Lock className="h-4 w-4" aria-hidden="true" />
         </span>
         <div>
-          <p className="text-sm font-bold text-[#101828]">Your information is safe with us</p>
+          <p className="text-sm font-bold text-[#111111]">Your information is safe with us</p>
           <p className="mt-0.5 text-sm text-[#166534]">
             Your contact details stay private and are only used for service updates.
           </p>

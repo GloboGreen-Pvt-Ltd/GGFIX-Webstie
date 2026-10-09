@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, shopApi } from '@/lib/api';
+import { notifyError } from '@/lib/toast';
 
 export default function ShopSettingsPage() {
   const params = useSearchParams();
@@ -61,7 +62,6 @@ export default function ShopSettingsPage() {
     e.preventDefault();
     if (!shopId) return;
     setSaving(true);
-    setError('');
     try {
       await authApi.patch(`/auth/shops/${shopId}`, {
         name: name.trim(),
@@ -73,7 +73,7 @@ export default function ShopSettingsPage() {
         isActive,
       });
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to save profile');
+      notifyError(e.body?.message || e.message || 'Failed to save profile');
     } finally {
       setSaving(false);
     }
@@ -83,12 +83,11 @@ export default function ShopSettingsPage() {
     e.preventDefault();
     if (!shopId) return;
     setSaving(true);
-    setError('');
     try {
       // If there is a dedicated KYC endpoint, you can switch to it later.
       await authApi.patch(`/auth/shops/${shopId}`, { kycStatus });
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to save KYC status');
+      notifyError(e.body?.message || e.message || 'Failed to save KYC status');
     } finally {
       setSaving(false);
     }
@@ -98,7 +97,6 @@ export default function ShopSettingsPage() {
     e.preventDefault();
     if (!shopId) return;
     setSaving(true);
-    setError('');
     try {
       // Prefer a pickup-service API if available; for now we persist via shop service when fields exist.
       await shopApi
@@ -116,7 +114,7 @@ export default function ShopSettingsPage() {
           });
         });
     } catch (e) {
-      setError(e.body?.message || e.message || 'Failed to save pickup options');
+      notifyError(e.body?.message || e.message || 'Failed to save pickup options');
     } finally {
       setSaving(false);
     }
@@ -124,15 +122,15 @@ export default function ShopSettingsPage() {
 
   if (!shopId) {
     return (
-      <div className="p-6 md:p-8">
+      <div className="p-4 sm:p-6 md:p-8">
         <p className="text-red-600 text-sm">Invalid shop id.</p>
       </div>
     );
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 md:p-8 space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Shop settings</h1>
           <p className="text-admin-muted text-sm">
@@ -155,7 +153,7 @@ export default function ShopSettingsPage() {
         <>
           {/* Basic profile */}
           <section className="rounded-xl border border-admin-border bg-admin-card p-5 space-y-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <div>
                 <h2 className="text-lg font-medium text-slate-900">Basic Shop Profile</h2>
                 <p className="text-admin-muted text-sm">
@@ -254,7 +252,7 @@ export default function ShopSettingsPage() {
 
           {/* KYC status */}
           <section className="rounded-xl border border-admin-border bg-admin-card p-5 space-y-4">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <div>
                 <h2 className="text-lg font-medium text-slate-900">KYC status</h2>
                 <p className="text-admin-muted text-sm">

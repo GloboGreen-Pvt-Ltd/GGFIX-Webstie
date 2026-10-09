@@ -134,12 +134,12 @@ export default function CustomerReportPage() {
         title="Customer Report"
         subtitle="View customer activity and service history."
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setReloadKey((k) => k + 1)}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-xl border border-[#EAECF0] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
+                'inline-flex items-center gap-1.5 rounded-xl border border-[#ECECEC] bg-white px-4 py-2.5 text-sm font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]',
                 FOCUS_RING,
               )}
             >
@@ -151,7 +151,7 @@ export default function CustomerReportPage() {
               onClick={handleExport}
               disabled={loading || exporting || filtered.length === 0}
               className={cx(
-                'inline-flex items-center gap-1.5 rounded-xl bg-[#15803D] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#166534] disabled:cursor-not-allowed disabled:opacity-60',
+                'inline-flex items-center gap-1.5 rounded-xl bg-[#F3BF23] px-4 py-2.5 text-sm font-semibold text-[#1E1E1E] transition hover:bg-[#E5B11A] disabled:cursor-not-allowed disabled:opacity-60',
                 FOCUS_RING,
               )}
             >
@@ -176,8 +176,8 @@ export default function CustomerReportPage() {
         </div>
       )}
 
-      <section className="rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
-        <div className="border-b border-[#EAECF0] px-4 py-4 sm:px-5">
+      <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
+        <div className="border-b border-[#ECECEC] px-4 py-4 sm:px-5">
           <SearchField value={query} onChange={setQuery} placeholder="Search by name, phone, or email" />
         </div>
 
@@ -190,7 +190,7 @@ export default function CustomerReportPage() {
             <EmptyState icon={Users} tone="muted" title="No customers match your search" description="Try a different name, phone, or email." />
           )
         ) : (
-          <div className="divide-y divide-[#EAECF0]">
+          <div className="divide-y divide-[#ECECEC]">
             {filtered.map((c) => (
               <CustomerRow key={c.key} customer={c} expanded={expandedKey === c.key} onToggle={() => setExpandedKey(expandedKey === c.key ? null : c.key)} />
             ))}
@@ -204,35 +204,35 @@ export default function CustomerReportPage() {
 function CustomerRow({ customer, expanded, onToggle }) {
   return (
     <div>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F9FAFB] sm:px-5">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4] text-sm font-bold text-[#15803D]">
+      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-[#F8F8F8] sm:px-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8] text-sm font-bold text-[#15803D]">
           {initials(customer.name)}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-[#101828]">{customer.name}</p>
-          <p className="truncate text-xs text-[#667085]">
+          <p className="truncate text-sm font-bold text-[#111111]">{customer.name}</p>
+          <p className="truncate text-xs text-[#666666]">
             {customer.phone || 'No phone'} {customer.email ? `· ${customer.email}` : ''}
           </p>
         </div>
-        <span className="hidden shrink-0 text-xs font-semibold text-[#667085] sm:block">
+        <span className="hidden shrink-0 text-xs font-semibold text-[#666666] sm:block">
           {customer.totalBookings} booking{customer.totalBookings === 1 ? '' : 's'}
         </span>
         <ChevronDown className={cx('h-4 w-4 shrink-0 text-[#98A2B3] transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
       </button>
 
       {expanded ? (
-        <div className="space-y-3 border-t border-dashed border-[#EAECF0] bg-[#F9FAFB] px-4 py-4 sm:px-5">
+        <div className="space-y-3 border-t border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-4 sm:px-5">
           <div className="grid grid-cols-1 gap-1.5 text-sm text-[#344054] sm:grid-cols-2">
-            <p className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 text-[#98A2B3]" aria-hidden="true" />{customer.phone || '—'}</p>
-            <p className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5 text-[#98A2B3]" aria-hidden="true" />{customer.email || '—'}</p>
+            <p className="flex items-center gap-1.5"><Phone className="h-3.5 w-3.5 shrink-0 text-[#98A2B3]" aria-hidden="true" />{customer.phone || '—'}</p>
+            <p className="flex min-w-0 items-center gap-1.5 break-all"><Mail className="h-3.5 w-3.5 shrink-0 text-[#98A2B3]" aria-hidden="true" />{customer.email || '—'}</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-white px-3 py-2">
-              <p className="text-xs text-[#667085]">Total Spent</p>
-              <p className="text-sm font-bold text-[#101828]">₹{customer.totalSpent.toLocaleString('en-IN')}</p>
+              <p className="text-xs text-[#666666]">Total Spent</p>
+              <p className="text-sm font-bold text-[#111111]">₹{customer.totalSpent.toLocaleString('en-IN')}</p>
             </div>
             <div className="rounded-xl bg-white px-3 py-2">
-              <p className="text-xs text-[#667085]">Pending Payments</p>
+              <p className="text-xs text-[#666666]">Pending Payments</p>
               <p className="text-sm font-bold text-[#98A2B3]">— <span className="text-[0.65rem] font-normal">not tracked yet</span></p>
             </div>
           </div>

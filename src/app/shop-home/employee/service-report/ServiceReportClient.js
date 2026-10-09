@@ -32,15 +32,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import Image from 'next/image';
 import {
   BarChart3,
-  CalendarDays,
   ChartPie,
   CheckCheck,
   CheckCircle2,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Clock,
   Cog,
@@ -53,6 +50,8 @@ import {
 
 import { cx } from '@/components/site/ui';
 import Icon3D from '@/components/shop-dashboard/Icon3D';
+import PageHeader from '@/components/shop-dashboard/PageHeader';
+import { HEADER_BUTTON, MonthPicker } from '@/components/shop-dashboard/HeaderControls';
 import FilterChips from '@/components/shop-dashboard/FilterChips';
 import EmptyState from '@/components/shop-dashboard/EmptyState';
 import ErrorBanner from '@/components/shop-dashboard/ErrorBanner';
@@ -60,8 +59,6 @@ import { SkeletonRows, SkeletonStatCards } from '@/components/shop-dashboard/Ske
 import { MONTHS, shiftMonth } from '@/components/shop-dashboard/MonthSwitcher';
 import { fetchTicketsPaged } from '@/lib/shopDashboard';
 import { TICKET_STAGE_BADGE, ticketStageLabel } from '@/lib/ticketStatus';
-
-const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
 const FULL_LIST_FILTERS = [
   { value: 'All', label: 'All' },
   { value: 'Completed', label: 'Completed' },
@@ -76,25 +73,25 @@ const FULL_LIST_FILTERS = [
 // Attendance/Shift-Management/Permission's own card treatments.
 const SERVICE_STAT_STYLES = {
   blue: {
-    card: 'bg-gradient-to-br from-[#EEF7FF] to-[#DFEFFE]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#5EB6FA] to-[#2196F3]',
     value: 'text-[#10233F]',
     watermark: 'text-[#2196F3]',
   },
   orange: {
-    card: 'bg-gradient-to-br from-[#FFF3E4] to-[#FEE4C4]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#FFB35C] to-[#F97316]',
     value: 'text-[#10233F]',
     watermark: 'text-[#F97316]',
   },
   green: {
-    card: 'bg-gradient-to-br from-[#EAFBF3] to-[#DAF5E7]',
+    card: 'bg-[#F3F3F3]',
     chip: 'bg-gradient-to-br from-[#22C55E] to-[#0BA65A]',
     value: 'text-[#10233F]',
     watermark: 'text-[#0BA65A]',
   },
   violet: {
-    card: 'bg-gradient-to-br from-[#F5F0FE] to-[#EBE1FD]',
+    card: 'bg-[#F8F8F8]',
     chip: 'bg-gradient-to-br from-[#A78BFA] to-[#8B5CF6]',
     value: 'text-[#10233F]',
     watermark: 'text-[#8B5CF6]',
@@ -104,13 +101,13 @@ const SERVICE_STAT_STYLES = {
 function ServiceReportStatCard({ icon: Icon, watermark: Watermark, label, value, helper, tone }) {
   const s = SERVICE_STAT_STYLES[tone] || SERVICE_STAT_STYLES.blue;
   return (
-    <div className={cx('relative flex h-[135px] flex-col overflow-hidden rounded-[20px] border border-[rgba(15,80,60,0.06)] p-5 shadow-[0_8px_24px_rgba(20,70,55,0.06)]', s.card)}>
+    <div className={cx('relative flex min-h-[135px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#ECECEC] p-4 sm:p-5 lg:h-[135px]', s.card)}>
       <Watermark className={cx('pointer-events-none absolute -bottom-4 -right-4 h-24 w-24 opacity-15', s.watermark)} aria-hidden="true" />
-      <div className="relative flex items-start gap-3">
-        <span className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-[0_6px_14px_rgba(0,0,0,0.1)]', s.chip)}>
+      <div className="relative flex flex-col items-start gap-2 lg:flex-row lg:gap-3">
+        <span className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white', s.chip)}>
           <Icon className="h-5 w-5" aria-hidden="true" />
         </span>
-        <div className="min-w-0 pt-1">
+        <div className="min-w-0 max-w-full lg:pt-1">
           <p className={cx('text-[28px] font-extrabold leading-none', s.value)}>{value}</p>
           <p className="mt-1.5 text-sm font-bold text-[#10233F]">{label}</p>
         </div>
@@ -219,69 +216,22 @@ export default function ServiceReportClient() {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Hero — ONE complete banner image. public/service -report.png (note:
-          the actual filename on disk has a space before the hyphen), same
-          crop/height as before (object-fit: cover, object-position nudged
-          to frame the real title/technician/clipboard band and crop out
-          the asset's own large blank margins) — unchanged, per this fix
-          being layout-only. The Refresh/month controls previously overlaid
-          on top of this image (right on top of its own baked "Refresh"/
-          "September 2026" pills) now live in their own toolbar row below
-          instead — no more overlap with the artwork. */}
-      <div
-        className="relative h-[108px] w-full overflow-hidden rounded-[20px] shadow-[0_6px_20px_rgba(20,70,55,0.05)] sm:h-[116px] lg:h-[124px]"
-        style={{ border: '1px solid rgba(15, 140, 90, 0.14)', background: '#F5FCF8', isolation: 'isolate' }}
+      <PageHeader
+        title="Service Report"
+        subtitle="Track technician service assignments and repair work."
+        action={
+          <button type="button" onClick={() => setReloadKey((k) => k + 1)} className={HEADER_BUTTON}>
+            <RefreshCw className={cx('h-4 w-4', loading && 'animate-spin')} aria-hidden="true" />
+            Refresh
+          </button>
+        }
       >
-        <Image
-          src="/service%20-report.png"
-          alt="Service Report — Track technician service assignments and repair work."
-          fill
-          sizes="100vw"
-          className="object-cover"
-          style={{ objectPosition: 'center 46%', borderRadius: 'inherit' }}
-          priority
+        <MonthPicker
+          label={`${MONTHS[viewDate.getMonth()]} ${viewDate.getFullYear()}`}
+          onPrev={goPrevMonth}
+          onNext={goNextMonth}
         />
-      </div>
-
-      {/* Toolbar — Refresh (left) / month selector with prev-next arrows
-          (right), same setReloadKey/goPrevMonth/goNextMonth handlers as
-          before, just relocated out of the banner into their own compact
-          row so they never sit on top of the artwork. */}
-      <div className="-mt-2 flex flex-wrap items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => setReloadKey((k) => k + 1)}
-          className={cx(
-            'inline-flex h-10 items-center gap-1.5 rounded-full border border-[#E4ECE8] bg-white px-4 text-sm font-semibold text-[#10233F] shadow-sm transition hover:border-[#0BA65A] hover:text-[#0BA65A]',
-            FOCUS_RING,
-          )}
-        >
-          <RefreshCw className={cx('h-4 w-4 text-[#0BA65A]', loading && 'animate-spin')} aria-hidden="true" />
-          Refresh
-        </button>
-        <div className="inline-flex h-10 items-center gap-0.5 rounded-full bg-gradient-to-r from-[#22C55E] to-[#0BA65A] p-1 shadow-[0_4px_12px_rgba(11,166,90,0.28)]">
-          <button
-            type="button"
-            onClick={goPrevMonth}
-            aria-label="Previous month"
-            className={cx('flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/15', FOCUS_RING)}
-          >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <span className="flex items-center gap-1.5 px-2 text-sm font-bold text-white">
-            <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-            {MONTHS[viewDate.getMonth()]} {viewDate.getFullYear()}
-          </span>
-          <button
-            type="button"
-            onClick={goNextMonth}
-            aria-label="Next month"
-            className={cx('flex h-8 w-8 items-center justify-center rounded-full text-white transition hover:bg-white/15', FOCUS_RING)}
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
+      </PageHeader>
 
       {singleMode ? (
         <p className="-mt-3 text-[13px] text-[#6D7D94]">Repair tickets assigned to {employeeName || 'this technician'}.</p>
@@ -289,44 +239,19 @@ export default function ServiceReportClient() {
 
       {error ? <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
 
-      {/* "This Month" summary card — one wrapping card with the month title
-          on the left, a month-selector pill on the right (same
-          viewDate/goPrevMonth/goNextMonth state as the hero's own month
-          pill above, so both always agree), and the 4 stat boxes inside it
-          in one row, per the reference layout. The hero's own Refresh/month
-          pill are left exactly as they were. */}
-      <section className="rounded-[20px] border border-[rgba(15,80,60,0.06)] bg-gradient-to-br from-[#F6FFFA] to-[#E9F9EF] p-4 shadow-[0_8px_24px_rgba(20,70,55,0.06)] sm:p-5">
+      {/* "This Month" summary card — the month is picked in the PageHeader
+          above (same viewDate state). */}
+      <section className="rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8] p-4 sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-2">
             <Icon3D icon={BarChart3} tone="green" size="sm" />
             <span className="text-[15px] font-bold text-[#10233F]">This Month</span>
           </span>
-          <div className="inline-flex h-9 items-center gap-0.5 rounded-full bg-gradient-to-r from-[#22C55E] to-[#0BA65A] p-1 shadow-[0_4px_12px_rgba(11,166,90,0.28)]">
-            <button
-              type="button"
-              onClick={goPrevMonth}
-              aria-label="Previous month"
-              className={cx('flex h-7 w-7 items-center justify-center rounded-full text-white transition hover:bg-white/15', FOCUS_RING)}
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <span className="px-2 text-sm font-bold text-white">
-              {MONTHS[viewDate.getMonth()]} {viewDate.getFullYear()}
-            </span>
-            <button
-              type="button"
-              onClick={goNextMonth}
-              aria-label="Next month"
-              className={cx('flex h-7 w-7 items-center justify-center rounded-full text-white transition hover:bg-white/15', FOCUS_RING)}
-            >
-              <ChevronRight className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
         </div>
         {loading ? (
           <SkeletonStatCards count={4} />
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {monthStats.map((s) => (
               <ServiceReportStatCard key={s.label} icon={s.icon} watermark={s.watermark} label={s.label} value={s.value} helper={s.helper} tone={s.tone} />
             ))}
@@ -335,7 +260,7 @@ export default function ServiceReportClient() {
       </section>
 
       <div>
-        <div className="mb-2.5 flex items-center justify-between gap-3">
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-2">
             <Icon3D icon={TriangleAlert} tone="orange" size="sm" />
             <span className="text-[15px] font-bold text-[#10233F]">Recent Pending</span>
@@ -355,7 +280,7 @@ export default function ServiceReportClient() {
         ) : recentPending.length === 0 ? (
           <EmptyState icon={Inbox} title="No pending tasks." description="You're all caught up!" />
         ) : (
-          <div className="divide-y divide-[#EEF3F0] rounded-[20px] border border-[rgba(15,80,60,0.06)] bg-white shadow-[0_8px_26px_rgba(18,65,50,0.05)]">
+          <div className="divide-y divide-[#ECECEC] rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8]">
             {recentPending.map((t) => (
               <TaskRow key={t.id} ticket={t} showAssignee={!singleMode} expanded={expandedId === t.id} onToggle={() => toggleExpanded(t.id)} tone="orange" />
             ))}
@@ -364,7 +289,7 @@ export default function ServiceReportClient() {
       </div>
 
       <div>
-        <div className="mb-2.5 flex items-center justify-between gap-3">
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-3">
           <span className="flex items-center gap-2">
             <Icon3D icon={Cog} tone="blue" size="sm" />
             <span className="text-[15px] font-bold text-[#10233F]">In Process</span>
@@ -384,7 +309,7 @@ export default function ServiceReportClient() {
         ) : inProcess.length === 0 ? (
           <EmptyState icon={CheckCheck} title="No tasks in progress." description="Nothing being worked on right now." />
         ) : (
-          <div className="divide-y divide-[#EEF3F0] rounded-[20px] border border-[rgba(15,80,60,0.06)] bg-white shadow-[0_8px_26px_rgba(18,65,50,0.05)]">
+          <div className="divide-y divide-[#ECECEC] rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8]">
             {inProcess.map((t) => (
               <TaskRow key={t.id} ticket={t} showAssignee={!singleMode} expanded={expandedId === t.id} onToggle={() => toggleExpanded(t.id)} tone="blue" />
             ))}
@@ -397,8 +322,8 @@ export default function ServiceReportClient() {
           <Icon3D icon={CheckCircle2} tone="green" size="sm" />
           <span className="text-[15px] font-bold text-[#10233F]">Previous Completed</span>
         </span>
-        <section className="rounded-[20px] border border-[rgba(15,80,60,0.06)] bg-white shadow-[0_8px_26px_rgba(18,65,50,0.05)]">
-          <div className="border-b border-[#EEF3F0] px-4 py-4 sm:px-5">
+        <section className="rounded-[20px] border border-[#ECECEC] bg-[#F8F8F8]">
+          <div className="border-b border-[#ECECEC] px-4 py-4 sm:px-5">
             <FilterChips options={FULL_LIST_FILTERS} value={filter} onChange={setFilter} counts={counts} />
           </div>
 
@@ -415,7 +340,7 @@ export default function ServiceReportClient() {
               <EmptyState icon={Wrench} tone="muted" title="No tasks found." description="Try a different status." />
             )
           ) : (
-            <div className="divide-y divide-[#EEF3F0]">
+            <div className="divide-y divide-[#ECECEC]">
               {filtered.map((t) => (
                 <TaskRow key={t.id} ticket={t} showAssignee={!singleMode} expanded={expandedId === t.id} onToggle={() => toggleExpanded(t.id)} tone="green" />
               ))}
@@ -430,39 +355,39 @@ export default function ServiceReportClient() {
 const TASK_ROW_TONE = {
   orange: { bg: 'bg-[#FFF3E4]', text: 'text-[#F97316]' },
   blue: { bg: 'bg-[#EEF7FF]', text: 'text-[#2196F3]' },
-  green: { bg: 'bg-[#EAFBF3]', text: 'text-[#0BA65A]' },
+  green: { bg: 'bg-[#F3F3F3]', text: 'text-[#0BA65A]' },
 };
 
 function TaskRow({ ticket, showAssignee, expanded, onToggle, tone = 'green' }) {
   const t = TASK_ROW_TONE[tone] || TASK_ROW_TONE.green;
   return (
     <div>
-      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-[15px] text-left transition hover:bg-[#F9FAFB] sm:px-5">
+      <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 px-4 py-[15px] text-left transition hover:bg-[#F8F8F8] sm:px-5">
         <span className={cx('flex h-11 w-11 shrink-0 items-center justify-center rounded-full', t.bg)}>
           <Wrench className={cx('h-5 w-5', t.text)} aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-bold text-[#101828]">{ticket.customerName || ticket.deviceDisplayName || 'Ticket'}</p>
-          <p className="truncate text-xs text-[#667085]">
+          <p className="truncate text-sm font-bold text-[#111111]">{ticket.customerName || ticket.deviceDisplayName || 'Ticket'}</p>
+          <p className="truncate text-xs text-[#666666]">
             #{ticket.trackingId || ticket.id} {ticket.deviceDisplayName ? `· ${ticket.deviceDisplayName}` : ''}
             {showAssignee ? ` · ${ticket.assignedTechnicianName || 'Unassigned'}` : ''}
           </p>
         </div>
-        <span className={cx('hidden shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide sm:inline-block', TICKET_STAGE_BADGE[ticket.stageLabel] || 'bg-[#F0FDF4] text-[#667085]')}>
+        <span className={cx('hidden shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide sm:inline-block', TICKET_STAGE_BADGE[ticket.stageLabel] || 'bg-[#F8F8F8] text-[#666666]')}>
           {ticket.stageLabel}
         </span>
-        <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#E5ECE8] bg-white text-[#98A2B3] shadow-sm sm:flex">
+        <span className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#98A2B3] sm:flex">
           <ChevronDown className={cx('h-4 w-4 transition-transform', expanded && 'rotate-180')} aria-hidden="true" />
         </span>
       </button>
 
       {expanded ? (
-        <div className="space-y-2 border-t border-dashed border-[#EAECF0] bg-[#F9FAFB] px-4 py-4 text-sm text-[#344054] sm:px-5">
-          {ticket.issueDescription ? <p>{ticket.issueDescription}</p> : <p className="text-[#98A2B3]">No issue description available.</p>}
-          {showAssignee ? <p className="text-xs text-[#667085]">Assigned Technician: <span className="font-semibold text-[#101828]">{ticket.assignedTechnicianName || 'Unassigned'}</span></p> : null}
-          <p className="text-xs text-[#667085]">
-            Created: <span className="font-semibold text-[#101828]">{ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'Not available'}</span>
-            {' · '}Last Updated: <span className="font-semibold text-[#101828]">{ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Not available'}</span>
+        <div className="space-y-2 border-t border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-4 text-sm text-[#344054] sm:px-5">
+          {ticket.issueDescription ? <p className="break-words">{ticket.issueDescription}</p> : <p className="text-[#98A2B3]">No issue description available.</p>}
+          {showAssignee ? <p className="text-xs text-[#666666]">Assigned Technician: <span className="font-semibold text-[#111111]">{ticket.assignedTechnicianName || 'Unassigned'}</span></p> : null}
+          <p className="text-xs text-[#666666]">
+            Created: <span className="font-semibold text-[#111111]">{ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'Not available'}</span>
+            {' · '}Last Updated: <span className="font-semibold text-[#111111]">{ticket.updatedAt ? new Date(ticket.updatedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'Not available'}</span>
           </p>
         </div>
       ) : null}

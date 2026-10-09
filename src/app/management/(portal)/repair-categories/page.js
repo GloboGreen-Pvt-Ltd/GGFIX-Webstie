@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
+import { notifyError } from '@/lib/toast';
 
 // Split a typed/pasted value into individual names on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -102,7 +103,7 @@ export default function MasterRepairCategoriesPage() {
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -114,7 +115,7 @@ export default function MasterRepairCategoriesPage() {
       await masterApi.delete(`/master/repair-categories/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -125,14 +126,14 @@ export default function MasterRepairCategoriesPage() {
   ], [categories]);
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Repair Categories</h1>
-        <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Repair Categories</h1>
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+            className="w-full rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm sm:w-auto"
           >
             <option value="">All categories</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
@@ -166,7 +167,7 @@ export default function MasterRepairCategoriesPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'Add main categories' : 'Edit main category'}
             </h2>

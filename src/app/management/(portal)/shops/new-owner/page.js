@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authApi, uploadMedia as uploadFile } from '@/lib/api';
 import SafeImage from '@/components/SafeImage';
+import { notifyError } from '@/lib/toast';
 
 function detectTimezone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'; }
@@ -110,7 +111,6 @@ export default function NewShopOwnerPage() {
   const [owner, setOwner] = useState({ ...EMPTY_OWNER });
   const [locations, setLocations] = useState([{ ...EMPTY_LOC }]);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
   const [uploading, setUploading] = useState({});
   const [autoCoords, setAutoCoords] = useState(null); // { latitude, longitude } from browser
   const [locatingIdx, setLocatingIdx] = useState(null); // index currently fetching geolocation
@@ -200,7 +200,6 @@ export default function NewShopOwnerPage() {
         setLocationField(i, 'latitude', String(result.latitude));
         setLocationField(i, 'longitude', String(result.longitude));
         setAutoCoords({ latitude: result.latitude, longitude: result.longitude });
-        setError('');
       } else {
         const msg = {
           denied:      'Location permission was blocked. In Chrome: click the lock/info icon left of the URL → Site settings → set Location to Allow → reload. Or paste coords manually using the 🗺 Find on Google Maps link.',
@@ -209,7 +208,7 @@ export default function NewShopOwnerPage() {
           unsupported: 'This browser does not support geolocation. Paste coords manually.',
           unknown:     'Could not get your current location. Use the 🗺 Find on Google Maps link to look up coords manually.',
         }[result.reason] || 'Could not get your current location.';
-        setError(msg);
+        notifyError(msg);
       }
     } finally {
       setLocatingIdx(null);
@@ -234,7 +233,7 @@ export default function NewShopOwnerPage() {
     try {
       const url = await uploadFile(file, folder, opts);
       if (url) setOwnerField(field, url);
-    } catch (e) { setError(e.message || 'Upload failed'); }
+    } catch (e) { notifyError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [`owner-${field}`]: false })); }
   };
   const handleLocationUpload = async (i, field, file, folder, opts) => {
@@ -244,7 +243,7 @@ export default function NewShopOwnerPage() {
     try {
       const url = await uploadFile(file, folder, opts);
       if (url) setLocationField(i, field, url);
-    } catch (e) { setError(e.message || 'Upload failed'); }
+    } catch (e) { notifyError(e.message || 'Upload failed'); }
     finally { setUploading((u) => ({ ...u, [key]: false })); }
   };
 
@@ -253,13 +252,12 @@ export default function NewShopOwnerPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     if (!owner.name.trim() || !owner.email.trim() || !owner.password.trim()) {
-      setError('Owner name, email and password are required');
+      notifyError('Owner name, email and password are required');
       return;
     }
     if (!locations.length || !locations[0].name.trim()) {
-      setError('At least one shop location with a name is required');
+      notifyError('At least one shop location with a name is required');
       return;
     }
     setSubmitting(true);
@@ -309,15 +307,15 @@ export default function NewShopOwnerPage() {
       await authApi.post('/auth/shop-owner', payload);
       router.push('/management/shops');
     } catch (e) {
-      setError(e.body?.message || e.message || 'Create failed');
+      notifyError(e.body?.message || e.message || 'Create failed');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="space-y-4 pb-24">
-      <div className="flex items-center justify-between">
+    <div className="p-4 pb-24 sm:p-6 sm:pb-24 md:p-8 md:pb-24 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Create Shop Owner</h1>
           <p className="text-sm text-admin-muted">
@@ -428,7 +426,7 @@ export default function NewShopOwnerPage() {
 
         {/* Business Locations */}
         <div className="rounded-xl bg-admin-card border border-admin-border p-5">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <SectionHeader icon="🏪" title="Business Locations" inline />
             <button type="button" onClick={addLocation} className="rounded-lg bg-admin-accent text-white text-xs px-3 py-1.5 hover:bg-blue-700">
               + Add another shop
@@ -438,14 +436,14 @@ export default function NewShopOwnerPage() {
           <div className="space-y-4">
             {locations.map((loc, i) => (
               <div key={i} className="rounded-lg border border-admin-border p-4 bg-admin-dark/40">
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                   <h3 className="text-sm font-semibold text-slate-800">New Business Location {locations.length > 1 ? `#${i + 1}` : ''}</h3>
                   {locations.length > 1 && (
                     <button type="button" onClick={() => removeLocation(i)} className="text-admin-muted hover:text-red-600 text-lg leading-none">×</button>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <Field label="SHOP / LOCATION NAME *">
                     <div className="relative">
                       <input
@@ -641,7 +639,7 @@ export default function NewShopOwnerPage() {
                 <div className="mt-4 pt-4 border-t border-admin-border">
                   <p className="text-sm font-semibold text-slate-800">Shop Photos & Documents</p>
                   <p className="text-xs text-admin-muted mb-3">Shop front + banner/visiting card are required; GST &amp; Udyam are optional proofs.</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     <UploadCard
                       label="Shop Front View *"
                       hint="Photo of the shop front"
@@ -685,11 +683,7 @@ export default function NewShopOwnerPage() {
           </div>
         </div>
 
-        {error && (
-          <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-2 text-sm text-red-500">{error}</div>
-        )}
-
-        <div className="flex items-center justify-end gap-3 sticky bottom-4 bg-admin-card border border-admin-border rounded-xl p-3">
+        <div className="flex flex-wrap items-center justify-end gap-3 sticky bottom-4 bg-admin-card border border-admin-border rounded-xl p-3">
           <Link href="/management/shops" className="rounded-lg border border-admin-border px-4 py-2 text-sm text-slate-800 hover:bg-admin-dark">
             ← Cancel
           </Link>
@@ -750,7 +744,7 @@ function UploadCard({ label, hint, url, uploading, onFile, accept, buttonText })
             <SafeImage
               src={url}
               alt={label}
-              className="max-h-20 object-contain"
+              className="max-h-20 max-w-full object-contain"
               placeholderClassName="text-[11px] text-admin-muted italic px-2 text-center"
               placeholderText="Image unavailable"
             />

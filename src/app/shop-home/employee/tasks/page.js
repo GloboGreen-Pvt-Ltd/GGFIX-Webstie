@@ -38,19 +38,10 @@ export default function TasksPage() {
           single overflow-hidden rounded container, per an explicit
           "no separate text layer, no separate right-side artwork, no
           nested white box" instruction. */}
-      <div
-        className="relative h-[120px] overflow-hidden rounded-[22px] shadow-[0_8px_24px_rgba(20,70,55,0.06)] sm:h-[140px] lg:h-[150px]"
-        style={{ border: '1px solid rgba(15, 140, 90, 0.14)', background: '#F5FCF8', isolation: 'isolate' }}
-      >
-        <Image
-          src="/tasks.png"
-          alt="Tasks — Manage and monitor employee work tasks."
-          fill
-          sizes="100vw"
-          className="object-cover"
-          style={{ objectPosition: 'center', borderRadius: 'inherit' }}
-          priority
-        />
+      {/* Plain grey banner (the picture banner was removed on request). */}
+      <div className="rounded-[22px] border border-[#ECECEC] bg-[#F8F8F8] p-6 sm:p-7">
+        <h1 className="text-[30px] font-extrabold leading-tight tracking-tight text-[#111111] sm:text-[34px]">Tasks</h1>
+        <p className="mt-1 text-[14px] text-[#666666] sm:text-[15px]">Manage and monitor employee work tasks.</p>
       </div>
 
       {/* Everything below is unchanged from NotYetAvailablePage's own
@@ -63,8 +54,8 @@ export default function TasksPage() {
         ))}
       </div>
 
-      <section className="rounded-3xl border border-[#EAECF0] bg-white shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
-        <div className="border-b border-[#EAECF0] px-4 py-4 opacity-60 sm:px-5">
+      <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]">
+        <div className="border-b border-[#ECECEC] px-4 py-4 opacity-60 sm:px-5">
           <FilterChips options={FILTERS} value={FILTERS[0]} onChange={() => {}} />
         </div>
 

@@ -49,7 +49,7 @@ function GroupBadge({ status }) {
     return <span className="rounded-full bg-[#15803D] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-white">Started</span>;
   }
   if (status === 'done') {
-    return <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[#15803D]">Done</span>;
+    return <span className="rounded-full bg-[#F3F3F3] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[#15803D]">Done</span>;
   }
   return null;
 }
@@ -139,30 +139,30 @@ export default function BookingHistoryPage() {
           type="button"
           onClick={() => router.back()}
           aria-label="Back"
-          className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#EAECF0] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]"
+          className="mt-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#ECECEC] bg-white text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]"
         >
           <ArrowLeft className="h-4.5 w-4.5" aria-hidden="true" />
         </button>
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold tracking-tight text-[#101828] sm:text-[28px]">Service History</h1>
-          <p className="mt-1 text-sm text-[#667085]">Track the complete journey of this device.</p>
+          <h1 className="break-words text-2xl font-bold tracking-tight text-[#111111] sm:text-[28px]">Service History</h1>
+          <p className="mt-1 text-sm text-[#666666]">Track the complete journey of this device.</p>
         </div>
         <button
           type="button"
           onClick={copyTrackingId}
-          className="mt-1 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#F0FDF4] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#15803D] transition hover:bg-[#DCFCE7]"
+          className="mt-1 inline-flex min-w-0 max-w-[45%] shrink-0 items-center gap-1.5 rounded-full sm:max-w-none bg-[#F8F8F8] px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-[#15803D] transition hover:bg-[#F3F3F3]"
         >
-          #{trackingId}
-          <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+          <span className="truncate">#{trackingId}</span>
+          <Copy className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           {copied ? 'Copied' : ''}
         </button>
       </div>
 
       {loading ? (
         <div className="space-y-4">
-          <div className="h-40 animate-pulse rounded-3xl border border-[#EAECF0] bg-[#F9FAFB]" />
-          <div className="h-24 animate-pulse rounded-3xl border border-[#EAECF0] bg-[#F9FAFB]" />
-          <div className="h-96 animate-pulse rounded-3xl border border-[#EAECF0] bg-[#F9FAFB]" />
+          <div className="h-40 animate-pulse rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]" />
+          <div className="h-24 animate-pulse rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]" />
+          <div className="h-96 animate-pulse rounded-3xl border border-[#ECECEC] bg-[#F8F8F8]" />
         </div>
       ) : error ? (
         <ErrorBanner message={error} onRetry={() => setReloadKey((k) => k + 1)} />
@@ -175,14 +175,14 @@ export default function BookingHistoryPage() {
         />
       ) : (
         <>
-          <section className="rounded-3xl border border-[#EAECF0] bg-white p-5 shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+          <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8] p-5">
             <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-wide text-[#98A2B3]">Device</p>
             <div className="flex items-start gap-4">
               <DeviceThumb url={booking.deviceImageUrl} />
               <div className="min-w-0 flex-1">
-                <p className="text-lg font-bold text-[#101828]">
+                <p className="break-words text-lg font-bold text-[#111111]">
                   {deviceName}
-                  {booking.ramStorage ? <span className="font-semibold text-[#667085]"> · {booking.ramStorage}</span> : null}
+                  {booking.ramStorage ? <span className="font-semibold text-[#666666]"> · {booking.ramStorage}</span> : null}
                 </p>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {booking.color ? (
@@ -201,7 +201,7 @@ export default function BookingHistoryPage() {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-dashed border-[#EAECF0] pt-4 text-xs font-semibold text-[#344054]">
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-dashed border-[#ECECEC] pt-4 text-xs font-semibold text-[#344054]">
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="h-3.5 w-3.5 text-[#15803D]" aria-hidden="true" />
                 Genuine Device
@@ -212,7 +212,7 @@ export default function BookingHistoryPage() {
               </span>
             </div>
 
-            <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-dashed border-[#EAECF0] pt-3 text-xs text-[#667085] sm:grid-cols-2">
+            <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 border-t border-dashed border-[#ECECEC] pt-3 text-xs text-[#666666] sm:grid-cols-2">
               <p>Customer: <span className="font-semibold text-[#344054]">{booking.customerName || 'Not available'}</span></p>
               {booking.customerMobile ? (
                 <a href={`tel:${booking.customerMobile}`} className="flex items-center gap-1.5 font-semibold text-[#15803D]">
@@ -228,8 +228,8 @@ export default function BookingHistoryPage() {
             </div>
           </section>
 
-          <section className="flex items-center gap-4 rounded-3xl border border-[#EAECF0] bg-white p-5 shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#F0FDF4]">
+          <section className="flex items-center gap-4 rounded-3xl border border-[#ECECEC] bg-[#F8F8F8] p-5">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#F8F8F8]">
               <Clock className="h-6 w-6 text-[#15803D]" aria-hidden="true" />
             </span>
             <div className="min-w-0 flex-1">
@@ -241,32 +241,32 @@ export default function BookingHistoryPage() {
             </div>
             <div className="shrink-0 text-right">
               <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#98A2B3]">Step</p>
-              <p className="text-sm font-bold text-[#101828]">{completed} / {flatSteps.length}</p>
-              <p className="text-xs text-[#667085]">{percent}% complete</p>
+              <p className="text-sm font-bold text-[#111111]">{completed} / {flatSteps.length}</p>
+              <p className="text-xs text-[#666666]">{percent}% complete</p>
             </div>
           </section>
 
           {latest ? (
-            <section className="rounded-3xl border border-[#EAECF0] bg-white p-5 shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
+            <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8] p-5">
               <p className="mb-3 text-[0.7rem] font-bold uppercase tracking-wide text-[#98A2B3]">Latest Update</p>
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#15803D] text-white">
                   <Check className="h-3.5 w-3.5" aria-hidden="true" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-[#101828]">{currentStep?.label || humanizeStatus(latest.status)}</p>
+                  <p className="text-sm font-bold text-[#111111]">{currentStep?.label || humanizeStatus(latest.status)}</p>
                   {latest.createdAt ? (
-                    <p className="mt-0.5 text-xs text-[#667085]">
+                    <p className="mt-0.5 text-xs text-[#666666]">
                       {new Date(latest.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                     </p>
                   ) : null}
-                  {latest.note ? <p className="mt-1 text-sm text-[#344054]">{latest.note}</p> : null}
+                  {latest.note ? <p className="mt-1 break-words text-sm text-[#344054]">{latest.note}</p> : null}
                 </div>
               </div>
             </section>
           ) : null}
 
-          <div className="-mb-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-[#667085]">
+          <div className="-mb-2 flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-[#666666]">
             <span>
               {totalEvents} event{totalEvents === 1 ? '' : 's'}
               {lastSyncedAt ? ` · Synced ${lastSyncedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : ''}
@@ -277,16 +277,16 @@ export default function BookingHistoryPage() {
             </span>
           </div>
 
-          <section className="rounded-3xl border border-[#EAECF0] bg-white p-5 shadow-[0_1px_3px_rgba(16,24,40,0.08)]">
-            <div className="mb-4 flex items-center justify-between">
+          <section className="rounded-3xl border border-[#ECECEC] bg-[#F8F8F8] p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-bold text-[#101828]">Service Timeline</p>
-                <p className="text-xs text-[#667085]">Track each step of your device repair.</p>
+                <p className="text-sm font-bold text-[#111111]">Service Timeline</p>
+                <p className="text-xs text-[#666666]">Track each step of your device repair.</p>
               </div>
               <button
                 type="button"
                 onClick={() => setReloadKey((k) => k + 1)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#EAECF0] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#ECECEC] bg-white px-3 py-1.5 text-xs font-semibold text-[#344054] transition hover:border-[#15803D] hover:text-[#15803D]"
               >
                 <RefreshCw className={cx('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden="true" />
                 Refresh
@@ -299,7 +299,7 @@ export default function BookingHistoryPage() {
                   <div
                     className={cx(
                       'mb-2 flex items-center justify-between rounded-xl px-3 py-2',
-                      group.status === 'upcoming' ? 'bg-[#F9FAFB]' : 'bg-[#F0FDF4]',
+                      group.status === 'upcoming' ? 'bg-[#F8F8F8]' : 'bg-[#F8F8F8]',
                     )}
                   >
                     <p className={cx('text-sm font-bold', group.status === 'upcoming' ? 'text-[#98A2B3]' : 'text-[#15803D]')}>{group.label}</p>
@@ -327,9 +327,9 @@ export default function BookingHistoryPage() {
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
-                              <p className={cx('text-sm', step.done ? 'font-bold text-[#101828]' : 'font-semibold text-[#98A2B3]')}>{step.label}</p>
+                              <p className={cx('text-sm', step.done ? 'font-bold text-[#111111]' : 'font-semibold text-[#98A2B3]')}>{step.label}</p>
                               {step.current ? (
-                                <span className="rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[#15803D]">Now</span>
+                                <span className="rounded-full bg-[#F3F3F3] px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-[#15803D]">Now</span>
                               ) : !step.done ? (
                                 <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-sky-700">Upcoming</span>
                               ) : null}
@@ -339,7 +339,7 @@ export default function BookingHistoryPage() {
                                 ? new Date(step.event.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
                                 : '--'}
                             </p>
-                            {step.event?.note ? <p className="mt-1 text-sm text-[#344054]">{step.event.note}</p> : null}
+                            {step.event?.note ? <p className="mt-1 break-words text-sm text-[#344054]">{step.event.note}</p> : null}
                             {Array.isArray(step.event?.imageUrls) && step.event.imageUrls.length ? (
                               <div className="mt-2 grid grid-cols-3 gap-2 sm:max-w-xs">
                                 {step.event.imageUrls.map((url, imgIndex) => (
@@ -372,7 +372,7 @@ function DeviceThumb({ url }) {
         src={url}
         alt=""
         onError={() => setBroken(true)}
-        className="h-20 w-20 shrink-0 rounded-2xl object-cover ring-1 ring-[#EAECF0]"
+        className="h-20 w-20 shrink-0 rounded-2xl object-cover ring-1 ring-[#ECECEC]"
       />
     );
   }

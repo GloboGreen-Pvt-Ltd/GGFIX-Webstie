@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Briefcase,
   Check,
+  CheckCircle2,
   Home,
   MapPin,
   Pencil,
@@ -46,6 +47,7 @@ import {
 } from '@/components/site/account/ui';
 import { exactDigits, required, validateForm } from '@/lib/formValidation';
 import { focusField, registerField } from '@/lib/formFocus';
+import { notifyError } from '@/lib/toast';
 
 const LABELS = ['Home', 'Office', 'Other'];
 const LABEL_ICON = { Home, Office: Briefcase, Other: Tag };
@@ -86,7 +88,6 @@ const inputCls =
 function AddressForm({ initial, onCancel, onSaved }) {
   const [form, setForm] = useState({ ...EMPTY_FORM, ...(initial || {}) });
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const fieldRefs = useRef({});
 
@@ -100,7 +101,6 @@ function AddressForm({ initial, onCancel, onSaved }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    setError('');
     const { errors, firstErrorField, isValid } = validateForm(
       {
         fullName: required('Full name is required.'),
@@ -122,7 +122,7 @@ function AddressForm({ initial, onCancel, onSaved }) {
       else await createAddress(form);
       onSaved();
     } catch (err) {
-      setError(err?.message || "Couldn't save the address. Please try again.");
+      notifyError(err, "Couldn't save the address. Please try again.");
       setBusy(false);
     }
   };
@@ -137,7 +137,7 @@ function AddressForm({ initial, onCancel, onSaved }) {
           type="button"
           onClick={onCancel}
           aria-label="Close form"
-          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-brand-muted transition hover:bg-brand-soften"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-full text-brand-muted transition hover:bg-brand-soften [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10"
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
@@ -147,7 +147,7 @@ function AddressForm({ initial, onCancel, onSaved }) {
         {/* Label segmented control */}
         <div>
           <span className="mb-1.5 block text-xs font-semibold text-brand-ink">Label</span>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {LABELS.map((l) => {
               const Icon = LABEL_ICON[l];
               const active = form.label === l;
@@ -242,9 +242,7 @@ function AddressForm({ initial, onCancel, onSaved }) {
           Set as default address
         </label>
 
-        {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
-
-        <div className="flex gap-3 pt-1">
+        <div className="flex flex-wrap gap-3 pt-1">
           <Button type="submit" variant="primary" size="md" disabled={busy}>
             {busy ? 'Saving…' : editing ? 'Save changes' : 'Save address'}
           </Button>
@@ -261,70 +259,68 @@ function AddressForm({ initial, onCancel, onSaved }) {
 /* Address card                                                                */
 /* -------------------------------------------------------------------------- */
 
+// Same look as the Saved devices cards: tinted icon tile, label + name,
+// address and phone, a Default ribbon, outlined actions and a bin icon.
 function AddressCard({ address, onEdit, onDelete, onSetDefault, busy }) {
   const Icon = LABEL_ICON[address.label] || MapPin;
   return (
-    <Panel className="p-4 sm:p-5" highlight={address.isDefault}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-brand-soft text-brand-700">
-            <Icon className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <div>
-            <p className="text-sm font-bold text-brand-ink">{address.label || 'Address'}</p>
-            {address.fullName ? (
-              <p className="text-xs text-brand-muted">{address.fullName}</p>
-            ) : null}
-          </div>
-        </div>
-        {address.isDefault ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-brand-700">
-            <Check className="h-3 w-3" aria-hidden="true" />
-            Default
-          </span>
-        ) : null}
-      </div>
-
-      <div className="mt-3 flex items-start gap-2 text-sm text-brand-ink">
-        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-brand-subtle" aria-hidden="true" />
-        <span>{formatAddress(address)}</span>
-      </div>
-      {address.mobile ? (
-        <div className="mt-1.5 flex items-center gap-2 text-sm text-brand-muted">
-          <Phone className="h-4 w-4 shrink-0 text-brand-subtle" aria-hidden="true" />
-          +91 {address.mobile}
-        </div>
+    <Panel className="relative overflow-hidden p-4" highlight={address.isDefault}>
+      {address.isDefault ? (
+        <span className="absolute right-0 top-0 inline-flex items-center gap-1 rounded-bl-2xl bg-brand-600 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-wide text-white">
+          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+          Default
+        </span>
       ) : null}
+      <div className="flex items-start gap-4">
+        <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-50 to-brand-soft text-brand-700">
+          <Icon className="h-7 w-7" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[0.68rem] font-bold uppercase tracking-wider text-brand-600">{address.label || 'Address'}</p>
+          <p className="mt-0.5 truncate text-[1.02rem] font-extrabold text-brand-ink">{address.fullName || 'Saved address'}</p>
+          <p className="mt-1.5 flex items-start gap-1.5 text-sm text-brand-ink">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
+            <span className="line-clamp-2">{formatAddress(address)}</span>
+          </p>
+          {address.mobile ? (
+            <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-brand-line bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-brand-ink">
+              <Phone className="h-3.5 w-3.5 text-brand-600" aria-hidden="true" />
+              +91 {address.mobile}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
-      <div className="mt-4 flex items-center gap-1 border-t border-brand-line pt-3 text-sm">
+      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-brand-line pt-3">
+        <button
+          type="button"
+          onClick={() => onEdit(address)}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-full border border-brand-line px-3 py-1.5 text-xs font-bold [@media(pointer:coarse)]:min-h-10 text-brand-ink transition hover:border-brand-600 hover:text-brand-700 disabled:opacity-50"
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+          Edit
+        </button>
         {!address.isDefault ? (
           <button
             type="button"
             onClick={() => onSetDefault(address)}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-semibold text-brand-700 transition hover:bg-brand-soft disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-full border border-brand-line px-3 py-1.5 text-xs font-bold [@media(pointer:coarse)]:min-h-10 text-brand-700 transition hover:border-brand-600 hover:bg-brand-soft disabled:opacity-50"
           >
-            <Check className="h-4 w-4" aria-hidden="true" />
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
             Set default
           </button>
         ) : null}
         <button
           type="button"
-          onClick={() => onEdit(address)}
-          disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-semibold text-brand-ink transition hover:bg-brand-soften disabled:opacity-50"
-        >
-          <Pencil className="h-4 w-4" aria-hidden="true" />
-          Edit
-        </button>
-        <button
-          type="button"
           onClick={() => onDelete(address)}
           disabled={busy}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+          aria-label={`Delete ${address.label || 'address'}`}
+          title="Delete"
+          className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-red-600 [@media(pointer:coarse)]:h-10 [@media(pointer:coarse)]:w-10 transition hover:bg-red-50 disabled:opacity-50"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" />
-          Delete
         </button>
       </div>
     </Panel>
@@ -365,7 +361,7 @@ export default function ManageAddressPage() {
       await setDefaultAddress(a.id);
       await load();
     } catch (e) {
-      setError(e?.message || '');
+      notifyError(e, "Couldn't set the default address. Please try again.");
     } finally {
       setMutating(false);
     }
@@ -378,7 +374,7 @@ export default function ManageAddressPage() {
       await deleteAddress(a.id);
       await load();
     } catch (e) {
-      setError(e?.message || '');
+      notifyError(e, "Couldn't delete the address. Please try again.");
     } finally {
       setMutating(false);
     }
@@ -433,8 +429,8 @@ export default function ManageAddressPage() {
             }
           />
         ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {addresses.map((a) => (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {[...addresses].sort((x, y) => Number(Boolean(y.isDefault)) - Number(Boolean(x.isDefault))).map((a) => (
               <AddressCard
                 key={a.id}
                 address={a}
@@ -444,6 +440,19 @@ export default function ManageAddressPage() {
                 onSetDefault={onSetDefault}
               />
             ))}
+            {!form ? (
+              <button
+                type="button"
+                onClick={() => setForm({})}
+                className="group flex min-h-[176px] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-brand-strong bg-brand-50/40 p-5 text-center transition hover:border-brand-600 hover:bg-brand-50"
+              >
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-600 text-white shadow-soft transition group-hover:scale-105">
+                  <Plus className="h-6 w-6" aria-hidden="true" />
+                </span>
+                <span className="text-sm font-extrabold text-brand-ink">Add a new address</span>
+                <span className="text-xs text-brand-muted">Home, work or any pickup / delivery location.</span>
+              </button>
+            ) : null}
           </div>
         )}
       </div>

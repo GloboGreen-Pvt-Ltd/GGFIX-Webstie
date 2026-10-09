@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
+  ArrowRight,
   CircleHelp,
   Headset,
   Home,
@@ -13,35 +14,83 @@ import {
   MapPin,
   Menu,
   Package,
-  Search,
+  QrCode,
+  Settings,
   ShieldCheck,
   Smartphone,
+  Sparkles,
   Store,
   Tag,
+  Truck,
+  UserCheck,
+  Wrench,
   X,
 } from 'lucide-react';
 
 import { BRAND, SITE_NAV, CTA } from '@/lib/siteContent';
-import { Button, cx } from './ui';
+import { Button, cx, desktopNavItemClass } from './ui';
 import SiteSearch from './SiteSearch';
 import LocationControl from './LocationControl';
 import HeaderAccount from './HeaderAccount';
 import HeaderCart from './HeaderCart';
-import RepairNavMenu from './RepairNavMenu';
+import CategoryNavMenu from './CategoryNavMenu';
+
+// "Sell with Us" opens the seller homepage (src/app/sell-with-us); shop owners sign in from there.
+const SELL_WITH_US_HREF = '/sell-with-us/';
 
 /**
- * Icon shown before each primary-nav label. Keyed by href — '/repair' is
- * deliberately absent, since RepairNavMenu owns its own trigger and icon.
+ * Icon shown before each nav label in the mobile panel (the desktop menu row
+ * is text only). Keyed by href.
  */
 const NAV_ICONS = {
   '/': Home,
+  '/repair': Wrench,
   '/#sell': Tag,
   '/#buy': Smartphone,
   '/nearby-shops': Store,
+  '/#pickup-delivery': Truck,
   '/about': Info,
   '/faq': CircleHelp,
   '/contact': Mail,
 };
+
+/**
+ * Nav items that open a device-category dropdown (CategoryNavMenu), keyed by
+ * href → category-menu type. On desktop all three do; in the mobile panel only
+ * Repair does, since every Sell / Buy row lands on the same home-page section
+ * and an accordion there would only add a tap.
+ */
+const CATEGORY_MENUS = { '/repair': 'REPAIR', '/#sell': 'SELL', '/#buy': 'BUY' };
+
+/**
+ * Header menu = SITE_NAV plus "Pickup & Delivery" after Nearby Shops, which
+ * opens the dedicated /pickup-delivery page. The icon key stays separate from
+ * the href so the Truck icon lookup is unaffected.
+ */
+const HEADER_NAV = SITE_NAV.flatMap((item) =>
+  item.href === '/nearby-shops'
+    ? [item, { href: '/pickup-delivery', label: 'Pickup & Delivery', iconKey: '/#pickup-delivery' }]
+    : [item],
+);
+
+/** Left out of the desktop menu card (none today — About, FAQ and Contact all show). */
+const DESKTOP_HIDDEN_HREFS = [];
+
+/** Trust strip, left side. Statements only — none of these are links. */
+const TRUST_POINTS = [
+  { label: BRAND.taglineShort, icon: ShieldCheck, show: 'flex' },
+  { label: '100% Genuine Parts', icon: Settings, show: 'hidden lg:flex' },
+  { label: 'Certified Technicians', icon: UserCheck, show: 'hidden xl:flex' },
+  { label: 'Secure & Safe Service', icon: ShieldCheck, show: 'hidden xl:flex' },
+];
+
+/** Trust strip, right side — every one a real route. */
+const UTILITY_LINKS = [
+  { href: '/nearby-shops', label: 'Find nearby shops', icon: MapPin, show: 'hidden md:block' },
+  { href: '/account/orders', label: 'Track Order', icon: Package, show: 'block' },
+  { href: '/faq', label: 'Help', icon: CircleHelp, show: 'block' },
+  { href: '/contact', label: 'Support', icon: Headset, show: 'block' },
+];
 
 /* -------------------------------------------------------------------------- */
 /* Active route                                                                */
@@ -50,15 +99,13 @@ const NAV_ICONS = {
 /**
  * Exactly one nav item may render as active.
  *
- * Four of the eight items are in-page anchors on the home page ('/', '/#repair',
- * '/#sell', '/#buy'). usePathname() returns '/' for all four and never includes
- * the hash, so any naive normalise-and-compare lights up all four at once.
+ * Several items are in-page anchors on the home page ('/', '/#sell', '/#buy',
+ * '/#repair'). usePathname() returns '/' for all of them and never includes
+ * the hash, so any naive normalise-and-compare lights up all of them at once.
  *
  * The deliberate rule: an item is only ever active if its href has NO hash.
  * Hash items are section jumps, not destinations, so on the home page only
- * "Home" is highlighted. Tracking which section is on screen would need scroll
- * observation and is explicitly out of scope — this is the honest fallback, and
- * it is structurally incapable of marking two items at once.
+ * "Home" is highlighted.
  */
 function isActive(pathname, href) {
   if (!pathname || !href) return false;
@@ -76,97 +123,64 @@ function isActive(pathname, href) {
 /* Shared classes                                                              */
 /* -------------------------------------------------------------------------- */
 
-/* ring-brand-700, not the ring-brand-500 baked into ui.js's BUTTON_BASE:
- * brand-500 measures ~2.3:1 against white and misses the 3:1 non-text contrast
- * floor (WCAG 1.4.11) that a focus indicator has to clear. Matches SiteSearch,
- * LocationControl and CategoryRail. */
+/* ring-brand-700: brand-500 misses the 3:1 non-text contrast floor (WCAG 1.4.11). */
 const FOCUS_RING =
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2';
 
+/* The trust strip is green, so its focus ring is white. */
+const FOCUS_RING_ON_GREEN =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700';
+
 const ICON_BUTTON = cx(
-  'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-brand-line',
+  'inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-brand-line bg-white',
   'text-brand-ink transition hover:bg-brand-soften',
   FOCUS_RING,
 );
+
+/** Same left/right edges as ui.js's Container, so the header lines up with the page. */
+const CONTAINER = 'mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8';
 
 /* -------------------------------------------------------------------------- */
 /* Header                                                                      */
 /* -------------------------------------------------------------------------- */
 
 /**
- * SiteHeader — sticky, translucent public-site header.
+ * SiteHeader — sticky public-site header, three bands on lg+:
+ *   1. green trust / utility strip
+ *   2. identity + search + tools (location, cart, account, Sell with Us)
+ *   3. a floating rounded menu card, with "Get the App" on its right
  *
- * Three bands on lg+: a slim trust/utility bar, the primary row (identity +
- * tools), and the eight-item menu row. One row cannot hold all of it — logo +
- * a usefully wide search + the tool cluster + eight links crowds badly below
- * ~1400px and wraps raggedly, so the split is the layout that holds from
- * 360px to 1920px rather than a stylistic choice.
+ * The trust strip collapses (max-height + opacity) once the page has been
+ * scrolled past a few pixels, row 2 gets shorter and the header gains a soft
+ * shadow — a compact, still-sticky state. Purely visual: nothing remounts, so
+ * no state (search query, open menu, login modal) is lost when it happens.
+ * The compact lg+ height has to stay under the home page's anchor offset
+ * (ANCHOR_OFFSET in app/(site)/page.js) or section jumps land under it.
  *
- * The utility bar collapses (max-height + opacity) once the page has been
- * scrolled past a few pixels, and the header gains a soft shadow — a compact,
- * still-sticky state rather than the taller first-paint one. Purely visual:
- * it does not remount anything, so no state (search query, open menu, login
- * modal) is lost when it happens.
- *
- * Below lg the second row is dropped entirely: the menu, the location control
- * and the account/business controls move into the disclosure panel, and
- * search collapses to an icon that reveals a full-width field. A compact
- * quick-access cluster (account icon, business icon) stays visible in row 1
- * even below lg, duplicating what's in the panel — the same trade already
- * made for "Get the app" (visible from sm up AND repeated in the panel for
- * <360px), because a hamburger alone would hide account access an extra tap
- * deep on a screen where it is used constantly.
- *
- * Cart and Orders are real routes (see HeaderCart / /account/orders) —
- * compact icon shortcuts here, in addition to their full entries inside the
- * account dropdown / panel.
+ * Below lg the menu row is dropped: the menu opens from the hamburger (left of
+ * the logo) into a disclosure panel, and row 2 keeps location, cart and an
+ * account icon. Below md the search moves to its own full-width row.
  */
 export default function SiteHeader() {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   const panelId = useId();
-  const searchRowId = useId();
 
   const menuButtonRef = useRef(null);
-  const searchButtonRef = useRef(null);
   const firstPanelLinkRef = useRef(null);
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const toggleMenu = useCallback(() => setMenuOpen((value) => !value), []);
 
-  /* The two disclosures are mutually exclusive: both are full-width bands under
-   * the same header, and opening one on top of the other reads as a glitch. */
-  const toggleMenu = useCallback(() => {
-    setMenuOpen((value) => {
-      if (!value) setSearchOpen(false);
-      return !value;
-    });
-  }, []);
-
-  const toggleSearch = useCallback(() => {
-    setSearchOpen((value) => {
-      if (!value) setMenuOpen(false);
-      return !value;
-    });
-  }, []);
-
-  /* -- close on navigation ------------------------------------------------- */
-  /* Route changes close both. Note this fires on pathname only, so a jump from
-   * /about to /#repair closes correctly, but tapping "Repair" while already on
-   * the home page does NOT change the pathname — the onClick handlers on the
-   * panel links cover that case. Both paths are needed; neither alone is
-   * sufficient. */
+  /* Route changes close the menu. Same-page hash jumps don't change the
+   * pathname — the onClick handlers on the panel links cover that case. */
   useEffect(() => {
     setMenuOpen(false);
-    setSearchOpen(false);
   }, [pathname]);
 
   /* -- scroll: collapse the utility bar, compact the header ---------------- */
-  /* Purely presentational — a threshold flip, not a scroll-linked animation,
-   * so there is nothing here to throttle beyond the browser's own passive
-   * scroll batching. */
   useEffect(() => {
     function onScroll() {
       setScrolled(window.scrollY > 8);
@@ -182,22 +196,19 @@ export default function SiteHeader() {
 
     function onKeyDown(event) {
       if (event.key !== 'Escape') return;
-      // Same one-level-at-a-time rule as the search row. LocationControl lives
-      // INSIDE this panel and marks Escape handled while its own popover is
-      // open, so a single press closes the popover without also tearing down
-      // the menu around it.
+      // Components inside the panel (the Repair submenu, the search listbox)
+      // mark Escape handled while their own popup is open, so one press closes
+      // that popup without also tearing down the menu around it.
       if (event.defaultPrevented) return;
       setMenuOpen(false);
-      // Return focus to the trigger, or a keyboard user is stranded at the top
-      // of the document (WCAG 2.4.3).
+      // Return focus to the trigger (WCAG 2.4.3).
       if (menuButtonRef.current) menuButtonRef.current.focus();
     }
 
     document.addEventListener('keydown', onKeyDown);
 
     /* The panel itself scrolls (max-h + overflow-y-auto below), so locking the
-     * body is safe: a tall menu on a short phone is still fully reachable, and
-     * the page behind cannot scroll away underneath it. */
+     * body is safe. */
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
@@ -207,42 +218,15 @@ export default function SiteHeader() {
     };
   }, [menuOpen]);
 
-  /* Move focus into the panel when it opens, so the next Tab continues from
-   * inside it rather than from the top of the page. */
+  /* Move focus into the panel when it opens. */
   useEffect(() => {
     if (!menuOpen) return;
     if (firstPanelLinkRef.current) firstPanelLinkRef.current.focus();
   }, [menuOpen]);
 
-  /* Escape also closes the collapsed search row — but only once SiteSearch has
-   * nothing left to consume. It marks the event handled (preventDefault) while
-   * its dropdown is open or its field has text, and the guard below honours
-   * that, so Escape steps out one level at a time: dropdown, then query, then
-   * the row. It never does two of those at once. */
-  useEffect(() => {
-    if (!searchOpen) return undefined;
-
-    function onKeyDown(event) {
-      if (event.key !== 'Escape') return;
-      // SiteSearch calls preventDefault() when it consumes Escape (closing its
-      // own dropdown, or clearing the field). Without this guard one press did
-      // BOTH — the dropdown closed and the entire search row collapsed, taking
-      // the query with it. Checked rather than relying on stopPropagation:
-      // React's delegated listener and this one are both on `document`, and
-      // stopPropagation does not stop other listeners on the same node.
-      if (event.defaultPrevented) return;
-      setSearchOpen(false);
-      if (searchButtonRef.current) searchButtonRef.current.focus();
-    }
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [searchOpen]);
-
   const navLinkClass = (active, size) => {
     if (size === 'lg') {
       // Mobile panel — a pill still reads well as a full-width tap target.
-      // flex (not block): callers put an icon beside the label inside it.
       return cx(
         'flex items-center gap-2.5 rounded-full px-4 py-3 text-base font-semibold transition',
         FOCUS_RING,
@@ -251,281 +235,222 @@ export default function SiteHeader() {
           : 'text-brand-muted hover:bg-brand-soften hover:text-brand-ink',
       );
     }
-    // Desktop row — a filled pill, matching the mobile panel's active state.
-    // The icon has no colour class of its own, so it inherits text-brand-700
-    // (active) or text-brand-muted (inactive) from this same className via
-    // currentColor — one toggle drives both the label and the icon.
-    return cx(
-      'rounded-full px-3.5 py-2 text-sm font-semibold transition',
-      FOCUS_RING,
-      active
-        ? 'bg-brand-soft text-brand-700'
-        : 'text-brand-muted hover:bg-brand-soften hover:text-brand-ink',
-    );
+    // Desktop menu card — text only, underline hover, no active style (see ui.js).
+    return desktopNavItemClass();
   };
 
   return (
     /* No overflow clipping anywhere on the header: the search listbox, the
-     * location popover and the Repair mega-menu are absolutely positioned
-     * children and must be allowed to spill below it. The header sits at
-     * z-50 so they land above the page. */
+     * account menu and the category menus are absolutely positioned children
+     * and must be allowed to spill below it. */
     <header
       className={cx(
-        'sticky top-0 z-50 border-b border-brand-line bg-white/80 backdrop-blur-md supports-[backdrop-filter]:bg-white/70',
+        'sticky top-0 z-50 border-b border-brand-line bg-white',
         'transition-shadow duration-200',
         scrolled && 'shadow-soft',
       )}
     >
       {/* ------------------------------------------------------------------ */}
-      {/* Level 1 — utility / trust bar                                       */}
+      {/* Row 1 — green trust / utility strip                                 */}
       {/* ------------------------------------------------------------------ */}
-      {/* Light, compact and deliberately non-dominant — every link here is a
-          real route (no invented "24/7" or language-switch claims the rest of
-          the site does not back up). Same taglineShort BRAND already ships. */}
       <div
         className={cx(
-          'hidden overflow-hidden border-b border-brand-line bg-brand-50 transition-[max-height,opacity] duration-200 sm:block',
+          'hidden overflow-hidden bg-gradient-to-r from-brand-800 via-brand-700 to-brand-600 text-white',
+          'transition-[max-height,opacity] duration-200 sm:block',
           scrolled ? 'max-h-0 opacity-0' : 'max-h-9 opacity-100',
         )}
       >
-        <div className="mx-auto flex h-9 w-full max-w-[1440px] items-center justify-between gap-6 px-4 text-xs sm:px-5 lg:px-6">
-          <p className="flex min-w-0 items-center gap-1.5 truncate font-semibold text-brand-800">
-            <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-brand-600" aria-hidden="true" />
-            <span className="truncate">{BRAND.taglineShort}</span>
-          </p>
-          <ul className="flex shrink-0 items-center divide-x divide-brand-line font-medium text-brand-muted">
-            <li className="pr-4">
-              <Link
-                href="/nearby-shops"
-                className={cx('flex items-center gap-1.5 rounded transition hover:text-brand-700', FOCUS_RING)}
+        <div className={cx(CONTAINER, 'flex h-9 items-center justify-between gap-6 text-xs')}>
+          <ul className="flex min-w-0 items-center font-semibold">
+            {TRUST_POINTS.map(({ label, icon: Icon, show }, index) => (
+              <li
+                key={label}
+                className={cx(
+                  show,
+                  'min-w-0 items-center gap-2 whitespace-nowrap',
+                  index > 0 && 'ml-5 border-l border-white/25 pl-5',
+                )}
               >
-                <MapPin className="h-3.5 w-3.5 shrink-0 text-brand-600" aria-hidden="true" />
-                Find nearby shops
-              </Link>
-            </li>
-            <li className="px-4">
-              <Link
-                href="/account/orders"
-                className={cx('flex items-center gap-1.5 rounded transition hover:text-brand-700', FOCUS_RING)}
+                <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                <span className="truncate">{label}</span>
+              </li>
+            ))}
+          </ul>
+          <ul className="flex shrink-0 items-center gap-5 font-medium">
+            {UTILITY_LINKS.map(({ href, label, icon: Icon, show }, index) => (
+              <li
+                key={href}
+                className={cx(show, index === 0 && 'md:border-r md:border-white/25 md:pr-5')}
               >
-                <Package className="h-3.5 w-3.5 shrink-0 text-brand-600" aria-hidden="true" />
-                Track Order
-              </Link>
-            </li>
-            <li className="px-4">
-              <Link
-                href="/faq"
-                className={cx('flex items-center gap-1.5 rounded transition hover:text-brand-700', FOCUS_RING)}
-              >
-                <CircleHelp className="h-3.5 w-3.5 shrink-0 text-brand-600" aria-hidden="true" />
-                Help
-              </Link>
-            </li>
-            <li className="pl-4">
-              <Link
-                href="/contact"
-                className={cx('flex items-center gap-1.5 rounded transition hover:text-brand-700', FOCUS_RING)}
-              >
-                <Headset className="h-3.5 w-3.5 shrink-0 text-brand-600" aria-hidden="true" />
-                Support
-              </Link>
-            </li>
+                <Link
+                  href={href}
+                  className={cx(
+                    'flex items-center gap-1.5 whitespace-nowrap rounded text-white/95 transition hover:text-white hover:underline hover:underline-offset-4',
+                    FOCUS_RING_ON_GREEN,
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                  {label}
+                </Link>
+              </li>
+            ))}
           </ul>
         </div>
       </div>
 
-      <nav aria-label="Primary" className="mx-auto w-full max-w-[1440px] px-4 sm:px-5 lg:px-6">
+      <nav aria-label="Primary" className={CONTAINER}>
         {/* ---------------------------------------------------------------- */}
-        {/* Level 2 — identity + tools                                        */}
+        {/* Row 2 — identity + search + tools                                 */}
         {/* ---------------------------------------------------------------- */}
         <div
           className={cx(
-            'flex items-center gap-3 transition-[height] duration-200 sm:gap-4',
-            scrolled ? 'h-16' : 'h-16 sm:h-20',
+            'flex items-center gap-2 transition-[height] duration-200 sm:gap-3 xl:gap-4',
+            scrolled ? 'h-16' : 'h-16 lg:h-[72px]',
           )}
         >
+          <button
+            ref={menuButtonRef}
+            type="button"
+            onClick={toggleMenu}
+            aria-expanded={menuOpen}
+            aria-controls={panelId}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            className={cx(ICON_BUTTON, 'lg:hidden')}
+          >
+            {menuOpen ? (
+              <X className="h-5 w-5" aria-hidden="true" />
+            ) : (
+              <Menu className="h-5 w-5" aria-hidden="true" />
+            )}
+          </button>
+
           <Link
             href="/"
-            className={cx('flex shrink-0 items-center gap-2.5 rounded-xl py-1', FOCUS_RING)}
+            className={cx('flex shrink-0 items-center gap-2.5 rounded-2xl py-1 lg:gap-3', FOCUS_RING)}
             aria-label={`${BRAND.name} home`}
           >
             <Image
               src={BRAND.logo}
               alt={BRAND.logoAlt}
-              width={40}
-              height={40}
+              width={56}
+              height={56}
               priority
-              className="h-10 w-10 rounded-xl object-contain"
+              className={cx(
+                'shrink-0 rounded-full object-contain transition-[height,width] duration-200',
+                scrolled ? 'h-10 w-10' : 'h-10 w-10 lg:h-12 lg:w-12',
+              )}
             />
-            <span className="text-xl font-extrabold tracking-tight text-brand-ink sm:text-2xl">
-              {BRAND.name}
+            <span className="hidden leading-none min-[380px]:block">
+              <span className="block text-[22px] font-extrabold tracking-tight text-brand-ink lg:text-[26px]">
+                {BRAND.name}
+              </span>
+              <span className="mt-1 hidden whitespace-nowrap text-[11px] font-medium text-brand-muted sm:block">
+                Repair <span aria-hidden="true">•</span> Buy <span aria-hidden="true">•</span> Sell
+              </span>
             </span>
           </Link>
 
-          {/* Search — the flexible, dominant element. min-w-0 lets it actually
-              shrink inside the flex row instead of forcing the row wider than
-              the viewport (a flex item's default min-width is auto, not 0). */}
-          <div className="hidden min-w-0 flex-1 justify-center md:flex">
-            <SiteSearch className="max-w-2xl" />
+          {/* Search — the flexible, dominant element. min-w-0 lets it shrink
+              inside the flex row instead of forcing the row wider. */}
+          <div className="hidden min-w-0 flex-1 md:flex lg:ml-2 xl:ml-4">
+            <SiteSearch size="lg" />
           </div>
 
-          {/* Spacer for the breakpoints where search is collapsed, so the
-              controls stay hard right instead of hugging the wordmark. */}
+          {/* Spacer below md, where search has its own row. */}
           <div className="min-w-0 flex-1 md:hidden" aria-hidden="true" />
 
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-            {/* Collapsed-search trigger. Below md only. */}
-            <button
-              ref={searchButtonRef}
-              type="button"
-              onClick={toggleSearch}
-              aria-expanded={searchOpen}
-              aria-controls={searchRowId}
-              aria-label={searchOpen ? 'Close search' : 'Search'}
-              className={cx(ICON_BUTTON, 'md:hidden')}
-            >
-              {searchOpen ? (
-                <X className="h-5 w-5" aria-hidden="true" />
-              ) : (
-                <Search className="h-5 w-5" aria-hidden="true" />
-              )}
-            </button>
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 xl:gap-3">
+            <LocationControl size="lg" />
 
-            <LocationControl className="hidden lg:flex" />
+            <span className="hidden h-8 w-px bg-brand-line lg:block" aria-hidden="true" />
 
-            {/* Orders + Cart — compact shortcuts to real, already-gated routes
-                (see /account/orders and HeaderCart's doc comment). Desktop
-                only: below lg both are still reachable inside the panel via
-                HeaderAccount's mobile menu links. */}
-            <Link
-              href="/account/orders"
-              aria-label="Orders"
-              className={cx(ICON_BUTTON, 'hidden lg:inline-flex')}
-            >
-              <Package className="h-5 w-5" aria-hidden="true" />
-            </Link>
-            <HeaderCart className="hidden lg:inline-flex" />
+            <HeaderCart size="lg" />
 
-            {/* Mobile/tablet quick-access icons — visible whenever the
-                hamburger is (below lg), same duplication trade as the mobile
-                "Get the app" button below. */}
+            {/* Below lg: icon-only account. lg+: round icon, with the account
+                dropdown when signed in. */}
             <HeaderAccount variant="icon" className="lg:hidden" />
+            <HeaderAccount size="lg" />
+
+            {/* Business / shop-owner door — the Sell with GGFIX homepage
+                (/sell-with-us). Deliberately a separate control from
+                HeaderAccount. Below lg it lives in the menu panel. */}
             <Link
-              href={CTA.businessLogin.href}
+              href={SELL_WITH_US_HREF}
               aria-label="Sell with Us"
-              className={cx(ICON_BUTTON, 'lg:hidden')}
-            >
-              <Store className="h-5 w-5" aria-hidden="true" />
-            </Link>
-
-            {/* Customer sign-in / account control (opens the OTP modal, or shows
-                the account menu when signed in). The admin portal is a separate
-                door in the footer — this is the customer's. */}
-            <HeaderAccount />
-
-            {/* Business / shop-owner door — /shopmanagement, a real sign-in
-                against the same /auth/login endpoint the staff portal uses,
-                gated to SHOP_OWNER / SHOP_LOGIN accounts (see
-                src/lib/shopAuth.js). Deliberately a separate control from
-                HeaderAccount, never merged into one dropdown with it. */}
-            <Button
-              href={CTA.businessLogin.href}
-              variant="outline"
-              size="sm"
-              icon="Store"
-              iconPosition="left"
-              className="hidden lg:inline-flex"
-            >
-              Sell with Us
-            </Button>
-
-            {/* Persistent CTA from sm up; at 360px it lives in the panel. */}
-            <Button
-              href={CTA.getApp.href}
-              variant="primary"
-              size="sm"
-              icon="ArrowRight"
-              className="hidden sm:inline-flex"
-            >
-              {CTA.getApp.label}
-            </Button>
-
-            <button
-              ref={menuButtonRef}
-              type="button"
-              onClick={toggleMenu}
-              aria-expanded={menuOpen}
-              aria-controls={panelId}
-              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-              className={cx(ICON_BUTTON, 'lg:hidden')}
-            >
-              {menuOpen ? (
-                <X className="h-5 w-5" aria-hidden="true" />
-              ) : (
-                <Menu className="h-5 w-5" aria-hidden="true" />
+              title="Sell with Us"
+              className={cx(
+                'hidden h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white',
+                'shadow-glow transition hover:bg-brand-700 lg:inline-flex',
+                FOCUS_RING,
               )}
-            </button>
+            >
+              <Store className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
+            </Link>
           </div>
         </div>
 
-        {/* ---------------------------------------------------------------- */}
-        {/* Collapsed search row (below md)                                   */}
-        {/* ---------------------------------------------------------------- */}
-        <div id={searchRowId} hidden={!searchOpen} className="border-t border-brand-line py-3 md:hidden">
-          {/* Keyed on searchOpen so the field remounts each time it is
-              revealed: autoFocus only fires on mount, and a stale query from a
-              previous open would otherwise reappear with its dropdown shut. */}
-          {searchOpen ? <SiteSearch key="collapsed-search" autoFocus /> : null}
+        {/* Search row (below md). */}
+        <div className="pb-3 md:hidden">
+          <SiteSearch size="lg" />
         </div>
 
         {/* ---------------------------------------------------------------- */}
-        {/* Level 3 — category / main navigation (lg+)                       */}
+        {/* Row 3 — floating menu card (lg+)                                  */}
         {/* ---------------------------------------------------------------- */}
-        {/* A distinct rounded card rather than a plain border-top row — reads as
-            its own floating surface against the translucent header behind it. */}
-        <div className="hidden pb-3 pt-2 lg:block">
-          <div className="rounded-2xl border border-brand-line bg-white px-2 py-1.5 shadow-soft">
-            <ul className="flex flex-wrap items-center gap-1">
-              {SITE_NAV.map((item) => {
+        <div className="hidden pb-2 lg:block">
+          <div className="flex items-center justify-between gap-3 rounded-3xl border border-brand-line bg-white p-1 shadow-soft">
+            <ul className="flex min-w-0 items-center gap-0.5">
+              {HEADER_NAV.filter((item) => !DESKTOP_HIDDEN_HREFS.includes(item.href)).map((item) => {
                 const active = isActive(pathname, item.href);
-                if (item.href === '/repair') {
+                const service = CATEGORY_MENUS[item.href];
+                if (service) {
                   return (
                     <li key={`d-${item.href}-${item.label}`}>
-                      <RepairNavMenu active={active} />
+                      <CategoryNavMenu service={service} label={item.label} href={item.href} />
                     </li>
                   );
                 }
-                const Icon = NAV_ICONS[item.href];
                 return (
                   <li key={`d-${item.href}-${item.label}`}>
                     <Link
                       href={item.href}
                       aria-current={active ? 'page' : undefined}
-                      className={cx('inline-flex items-center gap-1.5', navLinkClass(active))}
+                      className={navLinkClass(active)}
                     >
-                      {Icon ? <Icon className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
                       {item.label}
                     </Link>
                   </li>
                 );
               })}
             </ul>
+
+            <Link
+              href={CTA.getApp.href}
+              className={cx(
+                'inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-brand-100 bg-brand-50 pl-1 pr-1 text-sm font-bold text-brand-700 xl:pl-4',
+                'transition hover:border-brand-200 hover:bg-brand-soft',
+                FOCUS_RING,
+              )}
+            >
+              <Sparkles className="hidden h-[18px] w-[18px] shrink-0 xl:block" strokeWidth={1.75} aria-hidden="true" />
+              <span className="sr-only xl:not-sr-only">Get the App</span>
+              <ArrowRight className="hidden h-4 w-4 shrink-0 xl:block" aria-hidden="true" />
+              <span className="ml-1 flex h-8 w-8 items-center justify-center rounded-full bg-white text-brand-700 ring-1 ring-brand-100">
+                <QrCode className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden="true" />
+              </span>
+            </Link>
           </div>
         </div>
 
         {/* ---------------------------------------------------------------- */}
         {/* Mobile / tablet panel (below lg)                                  */}
         {/* ---------------------------------------------------------------- */}
-        {/* Scrolls internally rather than growing past the viewport — with the
-            body locked, a panel taller than the screen would otherwise hide its
-            own last items with no way to reach them. */}
         <div
           id={panelId}
           hidden={!menuOpen}
-          className="max-h-[calc(100vh-4rem)] overflow-y-auto overscroll-contain border-t border-brand-line pb-6 pt-4 sm:max-h-[calc(100vh-5rem)] lg:hidden"
+          className="max-h-[calc(100dvh-8rem)] overflow-y-auto overscroll-contain border-t border-brand-line pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4 lg:hidden"
         >
-          {/* Account — Customer Login + Business Login, kept visibly separate
-              per the brief, never merged into one dropdown. */}
+          {/* Account — Customer Login + Sell with Us, kept visibly separate. */}
           <div>
             <p className="px-1 pb-2 text-xs font-bold uppercase tracking-wide text-brand-subtle">
               Account
@@ -533,8 +458,8 @@ export default function SiteHeader() {
             <div className="flex flex-col gap-2">
               <HeaderAccount variant="mobile" onNavigate={closeMenu} />
               <Button
-                href={CTA.businessLogin.href}
-                variant="outline"
+                href={SELL_WITH_US_HREF}
+                variant="primary"
                 size="md"
                 icon="Store"
                 iconPosition="left"
@@ -551,16 +476,24 @@ export default function SiteHeader() {
               Navigation
             </p>
             <ul className="flex flex-col gap-1">
-              {SITE_NAV.map((item, index) => {
+              {HEADER_NAV.map((item, index) => {
                 const active = isActive(pathname, item.href);
                 if (item.href === '/repair') {
                   return (
                     <li key={`m-${item.href}-${item.label}`}>
-                      <RepairNavMenu active={active} variant="mobile" onNavigate={closeMenu} />
+                      <CategoryNavMenu
+                        service="REPAIR"
+                        label={item.label}
+                        href={item.href}
+                        variant="mobile"
+                        active={active}
+                        icon={NAV_ICONS[item.href]}
+                        onNavigate={closeMenu}
+                      />
                     </li>
                   );
                 }
-                const Icon = NAV_ICONS[item.href];
+                const Icon = NAV_ICONS[item.iconKey || item.href];
                 return (
                   <li key={`m-${item.href}-${item.label}`}>
                     <Link
@@ -580,28 +513,23 @@ export default function SiteHeader() {
           </div>
 
           <div className="mt-5 border-t border-brand-line pt-5">
-            <p className="px-1 pb-2 text-xs font-bold uppercase tracking-wide text-brand-subtle">
-              Actions
-            </p>
-            {/* Location lives here on small screens. It is left-aligned and
-                given room because its own popover is anchored right and would
-                otherwise sit half off-screen. */}
-            <LocationControl className="justify-start" />
-
-            <div className="mt-4 flex flex-col gap-2">
-              {/* Duplicated from row 1 on purpose: row 1 hides it below sm,
-                  and this is the only place it exists at 360px. */}
-              <Button
-                href={CTA.getApp.href}
-                variant="primary"
-                size="md"
-                icon="ArrowRight"
-                onClick={closeMenu}
-                className="sm:hidden"
-              >
-                {CTA.getApp.label}
-              </Button>
-            </div>
+            <Link
+              href={CTA.getApp.href}
+              onClick={closeMenu}
+              className={cx(
+                'flex h-12 w-full items-center justify-between rounded-full border border-brand-100 bg-brand-50 pl-4 pr-1.5 text-base font-bold text-brand-700',
+                FOCUS_RING,
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <Sparkles className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                Get the App
+                <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+              </span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white ring-1 ring-brand-100">
+                <QrCode className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
+              </span>
+            </Link>
           </div>
         </div>
       </nav>

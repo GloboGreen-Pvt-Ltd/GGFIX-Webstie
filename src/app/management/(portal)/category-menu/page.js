@@ -6,6 +6,7 @@ import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadCategoryMenuImage } from '@/lib/modelMedia';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 /**
  * The three customer-app/website category menus. Single source for this list —
@@ -45,10 +46,6 @@ export default function CategoryMenuPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, for
-  // the same reason Banners does this: the modal closes on save, and a
-  // replacement deletes the old file from the bucket — worth saying in words.
-  const [notice, setNotice] = useState('');
 
   // Above-the-table filters. Type is sent to the backend (it already supports
   // the query param, so there is no reason to fetch everything and filter
@@ -125,7 +122,6 @@ export default function CategoryMenuPage() {
     e.preventDefault();
     if (!menuName.trim()) return;
     setSubmitting(true);
-    setNotice('');
     try {
       const body = {
         categoryType,
@@ -148,12 +144,13 @@ export default function CategoryMenuPage() {
       }
       if (imageFile && rowId) {
         const uploaded = await uploadCategoryMenuImage(rowId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Menu image'));
+        const notice = imageReplacementNotice(uploaded, 'Menu image');
+        if (notice) notifySuccess(notice);
       }
       closeModal();
       load();
     } catch (e2) {
-      setError(e2.body?.message || e2.message || 'Request failed');
+      notifyError(e2.body?.message || e2.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -166,7 +163,7 @@ export default function CategoryMenuPage() {
       });
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Could not change status');
+      notifyError(e.body?.message || e.message || 'Could not change status');
     }
   };
 
@@ -176,7 +173,7 @@ export default function CategoryMenuPage() {
       await masterApi.delete(`/master/category-menu/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -212,9 +209,9 @@ export default function CategoryMenuPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Category Menu Management</h1>
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Category Menu Management</h1>
         <button
           type="button"
           onClick={openCreate}
@@ -232,7 +229,7 @@ export default function CategoryMenuPage() {
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+          className="w-full rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm sm:w-auto"
         >
           <option value="">All types</option>
           {CATEGORY_MENU_TYPES.map((t) => (
@@ -242,7 +239,7 @@ export default function CategoryMenuPage() {
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+          className="w-full rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm sm:w-auto"
         >
           <option value="">All status</option>
           <option value="active">Active</option>
@@ -251,11 +248,6 @@ export default function CategoryMenuPage() {
       </div>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
       ) : (
@@ -271,7 +263,7 @@ export default function CategoryMenuPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border p-6 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'New category menu' : 'Edit category menu'}
             </h2>

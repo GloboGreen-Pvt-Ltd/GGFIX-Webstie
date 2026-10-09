@@ -1,23 +1,39 @@
-import { CalendarClock, IndianRupee, MapPin } from 'lucide-react';
+import Link from 'next/link';
+import {
+  CalendarClock,
+  Check,
+  ClipboardCheck,
+  Handshake,
+  IndianRupee,
+  MapPin,
+  PackageSearch,
+  ShieldCheck,
+  Store,
+} from 'lucide-react';
 
 import {
   Badge,
   Button,
-  CTABand,
   Section,
   SectionHeading,
   cx,
   resolveIcon,
 } from '@/components/site/ui';
-import { BRAND, CTA, SUPPORT_CHANNELS, SUPPORT_TOPICS } from '@/lib/siteContent';
+import { BRAND, CTA, FAQS, SUPPORT_CHANNELS } from '@/lib/siteContent';
+
+import CustomerHomePhone from '@/components/site/CustomerHomePhone';
+import StoreBadges from '@/components/site/StoreBadges';
 
 import FaqAccordion from './FaqAccordion';
+import { faqSchema, pageMetadata } from '@/lib/seo';
+import JsonLd from '@/components/seo/JsonLd';
 
-export const metadata = {
-  title: 'FAQ',
+export const metadata = pageMetadata({
+  title: 'FAQs – Repair, Pickup, Sell & Buy Questions',
   description:
-    'Answers about booking a repair, doorstep pickup, selling a device to multiple bidding shops, the 15-day GGFIX Free Trial, the ₹3,000-a-year Basic plan, KYC documents and account security.',
-};
+    'Answers about booking a phone repair, doorstep pickup, selling your device to multiple shops, the 15-day shop free trial, KYC and account security.',
+  path: '/faq',
+});
 
 /* -------------------------------------------------------------------------- */
 /* Local data — the three hard numbers people search this page for             */
@@ -45,6 +61,58 @@ const QUICK_FACTS = [
       'How far the customer app looks when it shows you pickup-enabled repair shops and their ratings.',
     tone: 'brand',
   },
+];
+
+const HELP_TOPICS = [
+  {
+    icon: PackageSearch,
+    who: 'Customers',
+    title: 'Where is my device?',
+    description: 'Share your order ID and we will check the live status with the shop handling your repair or pickup.',
+    chip: 'from-[#22C55E] to-[#079455]',
+  },
+  {
+    icon: CalendarClock,
+    who: 'Customers',
+    title: 'Pickup or delivery change',
+    description: 'Need a different pickup slot, address or delivery time? We will help you coordinate it with the shop.',
+    chip: 'from-[#2ED3B7] to-[#0E9384]',
+  },
+  {
+    icon: IndianRupee,
+    who: 'Customers',
+    title: 'Price, refund or return',
+    description: 'Questions about an estimate, a refund that has not arrived, or returning something you bought.',
+    chip: 'from-[#FDB022] to-[#F79009]',
+  },
+  {
+    icon: Handshake,
+    who: 'Customers',
+    title: 'Selling your device',
+    description: 'Not getting quotes, unsure about an offer, or need help completing a sale with a shop.',
+    chip: 'from-[#5EA2FF] to-[#1570EF]',
+  },
+  {
+    icon: Store,
+    who: 'Shop owners',
+    title: 'Plans, trial and KYC',
+    description: 'Get your plan set up, ask which KYC documents you need, or move an existing shop onto GGFIX.',
+    chip: 'from-[#A48AFB] to-[#7F56D9]',
+  },
+  {
+    icon: ShieldCheck,
+    who: 'Everyone',
+    title: 'Account and sign-in',
+    description: 'Trouble with OTP, a forgotten password or App Lock — we will help you get back into your account.',
+    chip: 'from-[#FD6F8E] to-[#E31B54]',
+  },
+];
+
+const READY_CHECKLIST = [
+  'Your order ID (for example #GGF2048) from My Orders',
+  'The phone number you registered with',
+  'Your device brand and model',
+  'A screenshot or photo of the problem, if you have one',
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -113,6 +181,9 @@ export default function FaqPage() {
           subtitle="Pick a topic or start typing. Every answer describes what the apps do today — nothing here is a roadmap promise."
         />
         <FaqAccordion />
+        {/* Every answer stays in the DOM (collapsed with CSS), so the markup
+            matches content a visitor can open on this page. */}
+        <JsonLd data={faqSchema(FAQS)} />
       </Section>
 
       {/* 3 — Still need help? --------------------------------------------- */}
@@ -120,88 +191,129 @@ export default function FaqPage() {
         <SectionHeading
           inverted
           eyebrow="Still need help?"
-          title="Talk to a person instead."
-          subtitle="If the answer is not above, it is usually faster to just ask. These are the things support handles most, and the three ways to reach us."
+          title="Real people, ready to sort it out."
+          subtitle="Whether you are a customer waiting on a device or a shop owner getting started, our support team picks up where the answers above stop."
         />
 
-        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6">
-          {SUPPORT_TOPICS.map((topic) => {
-            const Icon = resolveIcon(topic.icon);
-            return (
-              <div
-                key={topic.key}
-                className="rounded-3xl border border-white/10 bg-white/5 p-6 transition motion-safe:hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/10"
-              >
-                <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-white">
-                  {Icon ? <Icon className="h-5 w-5" aria-hidden="true" /> : null}
+        <div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-5">
+          {HELP_TOPICS.map((topic) => (
+            <div
+              key={topic.title}
+              className="group rounded-3xl border border-white/10 bg-white/5 p-6 transition motion-safe:hover:-translate-y-0.5 hover:border-white/25 hover:bg-white/10"
+            >
+              <div className="flex items-center justify-between">
+                <span className={cx('inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-md', topic.chip)}>
+                  <topic.icon className="h-5 w-5" aria-hidden="true" />
                 </span>
-                <h3 className="mt-4 text-base font-bold text-white sm:text-lg">{topic.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-brand-100">{topic.description}</p>
+                <span className="rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-brand-100">
+                  {topic.who}
+                </span>
               </div>
-            );
-          })}
+              <h3 className="mt-4 text-base font-bold text-white sm:text-lg">{topic.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-brand-100">{topic.description}</p>
+            </div>
+          ))}
         </div>
 
-        <div className="mt-10 rounded-4xl border border-white/10 bg-white/5 p-6 sm:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <Badge tone="inverted" icon="Headset">
-                Support
-              </Badge>
-              <p className="mt-3 text-lg font-bold text-white sm:text-xl">
-                Call, WhatsApp or email {BRAND.company}.
-              </p>
-              <p className="mt-2 max-w-prose text-sm leading-relaxed text-brand-100">
-                Shop owners can also use this to get a plan set up, ask about KYC documents, or move
-                an existing shop onto GGFIX.
-              </p>
-            </div>
-            <Button href={CTA.contact.href} variant="white" size="lg" icon="ArrowRight">
-              {CTA.contact.label}
-            </Button>
+        <div className="mt-10 grid gap-5 lg:grid-cols-[1fr_1.4fr]">
+          <div className="rounded-4xl border border-white/10 bg-white/5 p-6 sm:p-8">
+            <Badge tone="inverted" icon={ClipboardCheck}>
+              Before you reach out
+            </Badge>
+            <p className="mt-3 text-lg font-bold text-white sm:text-xl">Keep these handy for a faster answer</p>
+            <ul className="mt-5 space-y-3">
+              {READY_CHECKLIST.map((item) => (
+                <li key={item} className="flex items-start gap-3 text-sm text-brand-100">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-brand-700">
+                    <Check className="h-3 w-3" aria-hidden="true" />
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ul>
           </div>
 
-          <ul className="mt-8 grid gap-3 sm:grid-cols-3">
-            {SUPPORT_CHANNELS.map((channel) => {
-              const Icon = resolveIcon(channel.icon);
-              const isWeb = channel.href.startsWith('http');
-              return (
-                <li key={channel.key}>
-                  <a
-                    href={channel.href}
-                    {...(isWeb
-                      ? { target: '_blank', rel: 'noopener noreferrer' }
-                      : {})}
-                    className="flex items-center gap-3 rounded-2xl border border-white/10 bg-brand-900/40 px-4 py-3.5 transition hover:border-white/30 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-900"
-                  >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white">
-                      {Icon ? <Icon className="h-4 w-4" aria-hidden="true" /> : null}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-xs font-semibold uppercase tracking-wide text-brand-100">
-                        {channel.label}
+          <div className="rounded-4xl bg-white p-6 text-brand-ink shadow-lift sm:p-8">
+            <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-brand-700">Contact {BRAND.company}</p>
+                <p className="mt-2 text-xl font-extrabold sm:text-2xl">Pick the way that suits you</p>
+                <p className="mt-2 max-w-prose text-sm leading-relaxed text-brand-muted">
+                  Call for anything urgent, WhatsApp to share photos or screenshots, or email when you want a written record.
+                </p>
+              </div>
+              <Button href={CTA.contact.href} variant="primary" size="lg" icon="ArrowRight">
+                {CTA.contact.label}
+              </Button>
+            </div>
+
+            <ul className="mt-6 grid gap-3 sm:grid-cols-3">
+              {SUPPORT_CHANNELS.map((channel) => {
+                const Icon = resolveIcon(channel.icon);
+                const isWeb = channel.href.startsWith('http');
+                return (
+                  <li key={channel.key}>
+                    <a
+                      href={channel.href}
+                      {...(isWeb ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                      className="flex h-full flex-col gap-2 rounded-2xl border border-brand-line bg-brand-50/60 p-4 transition hover:border-brand-600/40 hover:bg-brand-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2"
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-600 text-white">
+                        {Icon ? <Icon className="h-4 w-4" aria-hidden="true" /> : null}
                       </span>
-                      <span className="block truncate text-sm font-bold text-white">
-                        {channel.value}
-                      </span>
+                      <span className="text-xs font-bold uppercase tracking-wide text-brand-muted">{channel.label}</span>
+                      <span className="break-all text-sm font-extrabold text-brand-ink">{channel.value}</span>
                       {isWeb ? <span className="sr-only">(opens in a new tab)</span> : null}
-                    </span>
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </div>
       </Section>
 
       {/* 4 — Closing CTA --------------------------------------------------- */}
       <Section tone="page">
-        <CTABand
-          title="Read enough? Start the 15-day trial."
-          subtitle={`${BRAND.taglineLong} Register your shop and the Free Trial begins on its own — the apps are ${BRAND.appsStatus.toLowerCase()}.`}
-          primary={CTA.startTrial}
-          secondary={CTA.seePricing}
-        />
+        <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-brand-600 via-brand-700 to-brand-800 px-6 pt-10 text-white shadow-lift sm:px-10 lg:px-12 lg:pt-8">
+          <div className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" aria-hidden="true" />
+          <div className="pointer-events-none absolute -bottom-32 right-10 h-80 w-80 rounded-full bg-[#9BF2AE]/15 blur-3xl" aria-hidden="true" />
+
+          <div className="relative grid items-end gap-8 lg:grid-cols-[minmax(0,1fr)_250px] lg:gap-12">
+            {/* Centre — message, store badges, actions */}
+            <div className="pb-10 text-center lg:self-center lg:text-left">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-[#C9F7D3]">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[#9BF2AE]" aria-hidden="true" />
+                {BRAND.appsStatus}
+              </span>
+              <h2 className="mt-4 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">
+                Read enough? Start the 15-day trial.
+              </h2>
+              <p className="mx-auto mt-3 max-w-xl text-base leading-relaxed text-white/80 lg:mx-0">
+                Repair, buy, sell or book a pickup — all in one place. Register your shop and the Free Trial begins on its own. No card needed.
+              </p>
+
+              <StoreBadges tone="dark" align="center" caption="" className="mt-6 lg:items-start lg:[&>div]:justify-start" />
+
+              <div className="mt-6 flex flex-wrap justify-center gap-3 lg:justify-start">
+                <Button href={CTA.startTrial.href} variant="white" size="lg" icon="ArrowRight">
+                  {CTA.startTrial.label}
+                </Button>
+                <Link
+                  href={CTA.seePricing.href}
+                  className="inline-flex items-center rounded-full border border-white/40 px-6 py-3 text-base font-bold text-white transition hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700"
+                >
+                  {CTA.seePricing.label}
+                </Link>
+              </div>
+            </div>
+
+            {/* Right — app home screen, cropped by the card's bottom edge */}
+            <div className="mx-auto h-[300px] w-full max-w-[250px] self-end overflow-hidden sm:h-[340px]">
+              <CustomerHomePhone className="rounded-b-none border-b-0" />
+            </div>
+          </div>
+        </div>
       </Section>
     </>
   );

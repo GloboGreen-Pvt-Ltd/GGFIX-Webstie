@@ -4,13 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Download, FileSpreadsheet, RefreshCw, Upload } from 'lucide-react';
 import { colornames } from 'color-name-list';
 import cssColorNames from 'color-name';
-import { masterApi } from '@/lib/api';
+import { masterApi, uploadMedia } from '@/lib/api';
 import { mapPool } from '@/lib/concurrency';
 import DataTable from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import ModelsImportModal from '@/components/ModelsImportModal';
 import { imageReplacementNotice, replaceModelImage } from '@/lib/modelMedia';
+import { imageForColor, toColorImagesPayload } from '@/lib/colorImages';
 import { exportModelsWorkbook, exportTemplateWorkbook } from '@/lib/modelsExcel';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 function slugify(s) {
   return String(s || '')
@@ -129,6 +131,41 @@ function parseStorageOnly(s) {
 
 // Small on/off toggle switch. Used for a model's "Sell Active" flag in the table
 // and the edit form (green = shown in the Sell flow, grey = hidden).
+/**
+ * One colour's photo in the model modal: swatch, name, thumbnail (staged file or
+ * saved URL), and pick / remove. Colours without a photo fall back to the main
+ * model image on the website, so leaving one empty is fine.
+ */
+function ColorPhotoRow({ name, hex, url, file, onPick, onClear }) {
+  const inputRef = useRef(null);
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : null), [file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  const shown = preview || url || null;
+  return (
+    <li className="flex items-center gap-3 rounded-lg border border-admin-border bg-admin-dark px-3 py-2">
+      <span className="h-4 w-4 shrink-0 rounded-full border border-admin-border" style={{ backgroundColor: hex }} />
+      <span className="min-w-0 flex-1 truncate text-sm text-slate-800">{name}</span>
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-admin-border bg-white">
+        {shown
+          // eslint-disable-next-line @next/next/no-img-element -- local object URL / remote S3 URL preview.
+          ? <img src={shown} alt={`${name} photo`} className="h-full w-full object-contain" />
+          : <span className="text-[10px] text-admin-muted">Main</span>}
+      </span>
+      <button type="button" onClick={() => inputRef.current?.click()}
+        className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-admin-accent hover:bg-admin-card">
+        {shown ? 'Change' : 'Add photo'}
+      </button>
+      {shown ? (
+        <button type="button" onClick={onClear} className="shrink-0 rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-admin-card hover:text-slate-800">
+          Remove
+        </button>
+      ) : null}
+      <input ref={inputRef} type="file" accept="image/*" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ''; }} />
+    </li>
+  );
+}
+
 function ToggleSwitch({ on, onClick, title, disabled }) {
   return (
     <button
@@ -159,11 +196,6 @@ export default function MasterModelsPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page rather than in the modal
-  // because the modal closes on save — and a replacement deletes the old file from
-  // the bucket, which is worth confirming in words rather than leaving to be inferred
-  // from the thumbnail.
-  const [notice, setNotice] = useState('');
 
   // Form state
   const [modal, setModal] = useState(null);
@@ -183,6 +215,10 @@ export default function MasterModelsPage() {
   // Held until the row has an id: the S3 key is derived from the model's stored
   // category/brand/series/name, so the record must exist before the upload.
   const [imageFile, setImageFile] = useState(null);
+  // Per-colour photos (model.colorImages, see src/lib/colorImages.js): saved URLs
+  // keyed by colour name, plus files staged in this modal and uploaded on Save.
+  const [colorImageUrls, setColorImageUrls] = useState({});
+  const [colorImageFiles, setColorImageFiles] = useState({});
   const [category, setCategory] = useState('DEVICE');
   const [sellActive, setSellActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -389,6 +425,7 @@ export default function MasterModelsPage() {
     setModelNumberInput(''); setModelNumbers([]);
     setImageUrl('');
     setImageFile(null);
+    setColorImageUrls({}); setColorImageFiles({});
     setCategory('DEVICE');
     setSellActive(true);
     setColorInput(''); setColorChips([]);
@@ -410,6 +447,10 @@ export default function MasterModelsPage() {
     // A file left staged from a previous modal would otherwise be uploaded onto THIS
     // record on save — and now also delete that record's current image.
     setImageFile(null);
+    setColorImageUrls(toColorImagesPayload(item.colors, Object.fromEntries(
+      (Array.isArray(item.colors) ? item.colors : []).map((c) => [c, imageForColor(item, c)]),
+    )));
+    setColorImageFiles({});
     setCategory(item.category || 'DEVICE');
     setSellActive(item.sellActive !== false);
     // Colours + RAM/storage come straight off the model's inline JSON arrays.
@@ -450,7 +491,7 @@ export default function MasterModelsPage() {
   // image is uploaded onto this record on save, and the record's own image is
   // deleted from the bucket to make room for it. Clearing here also releases the
   // File so a long admin session does not pin every image it has touched.
-  const closeModal = () => { setModal(null); setImageFile(null); };
+  const closeModal = () => { setModal(null); setImageFile(null); setColorImageFiles({}); };
 
   // ---- Color chips ----
   const addColorChips = () => {
@@ -523,7 +564,7 @@ export default function MasterModelsPage() {
       }
       return next;
     });
-    if (bad) setError(storageMode === 'STORAGE_ONLY'
+    if (bad) notifyError(storageMode === 'STORAGE_ONLY'
       ? 'Use a storage size, e.g. 128 GB.'
       : 'Use the format "RAM + Storage", e.g. 6 GB + 128 GB.');
     setSpecInput('');
@@ -590,8 +631,6 @@ export default function MasterModelsPage() {
     e.preventDefault();
     if (!name.trim() || !formBrandId) return;
     setSubmitting(true);
-    setError('');
-    setNotice('');
     try {
       // Fold any code still sitting in the input (user typed but didn't press Enter).
       const allModelNumbers = [...modelNumbers];
@@ -614,24 +653,47 @@ export default function MasterModelsPage() {
         colors: colorChips.map((c) => c.name),
         ramStorage: specChips.map((s) => s.label),
       };
+
+      // Per-colour photos go through the generic media upload (not id-scoped), so
+      // they can be uploaded before the save and sent with it. Filed beside the
+      // model's main image when it has one.
+      const colorUrls = { ...colorImageUrls };
+      const stagedColors = Object.entries(colorImageFiles).filter(([c, f]) => f && colorChips.some((x) => x.name === c));
+      if (stagedColors.length) {
+        const folderMatch = String(imageUrl || '').match(/^https?:\/\/[^/]+\/(.+)\/[^/]+$/);
+        const folder = folderMatch ? `${folderMatch[1]}/colors` : 'master/model-colors';
+        for (const [c, file] of stagedColors) {
+          colorUrls[c] = await uploadMedia(file, folder);
+        }
+      }
+      body.colorImages = toColorImagesPayload(body.colors, colorUrls);
+      const sentColorImages = Object.keys(body.colorImages).length > 0;
+
       // Save first, then upload. The image endpoint is id-scoped because the S3 key
       // comes from the model's stored taxonomy, not from anything the client sends.
       let modelId = modal.type === 'create' ? null : modal.item.id;
+      let saved;
       if (modal.type === 'create') {
-        const created = await masterApi.post('/master/models', body);
-        modelId = created?.id || null;
+        saved = await masterApi.post('/master/models', body);
+        modelId = saved?.id || null;
       } else {
-        await masterApi.put(`/master/models/${modal.item.id}`, body);
+        saved = await masterApi.put(`/master/models/${modal.item.id}`, body);
+      }
+      // The master-data API only keeps colour photos once it has a colorImages
+      // field; until then it drops them silently. Say so instead of pretending.
+      if (sentColorImages && saved && typeof saved === 'object' && !('colorImages' in saved)) {
+        notifyError('Colour photos were uploaded, but the server did not save them yet. The master-data API needs the colorImages field (see src/lib/colorImages.js).');
       }
       if (imageFile && modelId) {
         const uploaded = await replaceModelImage(modelId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Model image'));
+        const notice = imageReplacementNotice(uploaded, 'Model image');
+        if (notice) notifySuccess(notice);
       }
       await persistPalette();
       closeModal();
       loadModels();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -646,7 +708,7 @@ export default function MasterModelsPage() {
       await masterApi.patch(`/master/models/${row.id}/sell-active`, { sellActive: next });
     } catch (e) {
       setList((prev) => prev.map((m) => (m.id === row.id ? { ...m, sellActive: !next } : m)));
-      setError(e.body?.message || e.message || 'Failed to update Sell Active');
+      notifyError(e.body?.message || e.message || 'Failed to update Sell Active');
     }
   };
 
@@ -656,7 +718,7 @@ export default function MasterModelsPage() {
       await masterApi.delete(`/master/models/${row.id}`);
       loadModels();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -724,11 +786,10 @@ export default function MasterModelsPage() {
   const runExport = async (build) => {
     setExportMenu(false);
     setExporting(true);
-    setError('');
     try {
       await build();
     } catch (e) {
-      setError(e.message || 'Could not build the Excel file.');
+      notifyError(e.message || 'Could not build the Excel file.');
     } finally {
       setExporting(false);
     }
@@ -862,22 +923,22 @@ export default function MasterModelsPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <h1 className="text-2xl font-semibold text-slate-900">Models</h1>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex flex-wrap items-center gap-3">
           <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm">
+            className="w-full sm:w-auto rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm">
             <option value="">All categories</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
           </select>
           <select value={filterBrand} onChange={(e) => setFilterBrand(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm">
+            className="w-full sm:w-auto rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm">
             <option value="">All brands</option>
             {brandsForCategory.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
           </select>
           <select value={filterSeries} onChange={(e) => setFilterSeries(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm">
+            className="w-full sm:w-auto rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm">
             <option value="">All series</option>
             {seriesForFilter.map((s) => (<option key={s.id} value={s.id}>{s.name}</option>))}
           </select>
@@ -890,7 +951,7 @@ export default function MasterModelsPage() {
           {/* Export is a menu rather than a single button: the blank format has to stay
               reachable when the filters match nothing, which is exactly when there are
               no rows to export and a plain button would be disabled. */}
-          <div className="relative" ref={exportMenuRef}>
+          <div className="xl:relative" ref={exportMenuRef}>
             <button type="button" onClick={() => setExportMenu((v) => !v)} disabled={exporting}
               aria-haspopup="menu" aria-expanded={exportMenu}
               className="inline-flex items-center gap-1.5 rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark disabled:opacity-50">
@@ -900,7 +961,7 @@ export default function MasterModelsPage() {
             </button>
             {exportMenu && (
               <div role="menu"
-                className="absolute right-0 z-20 mt-1 w-72 overflow-hidden rounded-lg border border-admin-border bg-admin-card shadow-lg">
+                className="absolute right-0 z-20 mt-1 w-72 max-w-full xl:max-w-none overflow-hidden rounded-lg border border-admin-border bg-admin-card shadow-lg">
                 <button type="button" role="menuitem" onClick={handleExport} disabled={loading || !visibleList.length}
                   className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-admin-dark disabled:opacity-50 disabled:hover:bg-transparent">
                   <Download size={16} className="mt-0.5 shrink-0 text-slate-500" />
@@ -947,11 +1008,6 @@ export default function MasterModelsPage() {
         updating the ones it recognises.
       </p>
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
       {loading ? (
         <p className="text-admin-muted">
           Loading…
@@ -962,15 +1018,15 @@ export default function MasterModelsPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <form onSubmit={handleSubmit} className="w-full max-w-2xl flex flex-col max-h-[90vh] rounded-xl bg-admin-card border border-admin-border shadow-xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-admin-border shrink-0">
+          <form onSubmit={handleSubmit} className="w-full max-w-2xl flex flex-col max-h-[90dvh] rounded-xl bg-admin-card border border-admin-border shadow-xl">
+            <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-admin-border shrink-0">
               <h2 className="text-lg font-medium text-slate-900">
                 {modal.type === 'create' ? 'New model' : 'Edit model'}
               </h2>
               <button type="button" onClick={closeModal} aria-label="Close" className="text-slate-400 hover:text-slate-700 text-2xl leading-none">×</button>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-              <div className="grid grid-cols-3 gap-3">
+            <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm text-admin-muted mb-1">Category</label>
                   <select value={formCategoryId}
@@ -1000,7 +1056,7 @@ export default function MasterModelsPage() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-admin-muted mb-1">Model name</label>
                   <input type="text" value={name}
@@ -1031,7 +1087,7 @@ export default function MasterModelsPage() {
               </div>
 
               {/* Sell Active — controls whether this model appears in the mobile Sell flow */}
-              <div className="flex items-center justify-between rounded-lg bg-admin-dark border border-admin-border px-3 py-2.5">
+              <div className="flex items-center justify-between gap-3 rounded-lg bg-admin-dark border border-admin-border px-3 py-2.5">
                 <div>
                   <p className="text-sm font-medium text-slate-900">Sell Active</p>
                   <p className="text-xs text-admin-muted">When on, this model is shown in the customer Sell / trade-in flow.</p>
@@ -1051,7 +1107,7 @@ export default function MasterModelsPage() {
                     onChange={(e) => { setColorInput(e.target.value); setPendingHex(null); }}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addColorChips(); } }}
                     onBlur={(e) => { if (e.relatedTarget?.dataset?.swatch) return; addColorChips(); }}
-                    className="flex-1 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
+                    className="min-w-0 flex-1 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
                     placeholder="Type ONE color, e.g. Passion Red — then press Enter" />
                   {colorInput.trim() && !colorInput.includes(',') && (
                     <label className="relative inline-flex h-10 w-10 shrink-0" title="Click to pick the exact color, then press Enter">
@@ -1081,6 +1137,30 @@ export default function MasterModelsPage() {
                 )}
                 <p className="mt-1 text-xs text-admin-muted">Add <span className="text-slate-600">one color at a time</span>: type the name → the swatch beside it shows the detected color → <span className="text-slate-600">click that swatch to pick/eyedrop the exact color</span> → press Enter. Repeat for the next color.</p>
               </div>
+
+              {/* Colour photos — the website swaps to these when a customer picks the colour */}
+              {colorChips.length > 0 && (
+                <div>
+                  <label className="block text-sm text-admin-muted mb-1">Colour photos <span className="text-slate-400">(optional)</span></label>
+                  <ul className="space-y-2">
+                    {colorChips.map((c) => (
+                      <ColorPhotoRow
+                        key={c.name}
+                        name={c.name}
+                        hex={c.hex}
+                        url={colorImageUrls[c.name]}
+                        file={colorImageFiles[c.name]}
+                        onPick={(f) => setColorImageFiles((prev) => ({ ...prev, [c.name]: f }))}
+                        onClear={() => {
+                          setColorImageFiles((prev) => { const next = { ...prev }; delete next[c.name]; return next; });
+                          setColorImageUrls((prev) => { const next = { ...prev }; delete next[c.name]; return next; });
+                        }}
+                      />
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs text-admin-muted">When a customer picks a colour, the website shows its photo. Colours without one show the model image below.</p>
+                </div>
+              )}
 
               {/* RAM + Storage (or Storage-only) variants — chips saved inline on the model */}
               <div>
@@ -1129,7 +1209,7 @@ export default function MasterModelsPage() {
                 caption="Hero image for this model (e.g. Vivo Y20)"
               />
             </div>
-            <div className="flex gap-2 justify-end px-6 py-4 border-t border-admin-border shrink-0">
+            <div className="flex gap-2 justify-end px-4 sm:px-6 py-4 border-t border-admin-border shrink-0">
               <button type="button" onClick={closeModal} className="rounded-lg px-4 py-2 text-slate-600 hover:bg-admin-dark">Cancel</button>
               <button type="submit" disabled={submitting}
                 className="rounded-lg bg-admin-accent px-4 py-2 text-white disabled:opacity-50">

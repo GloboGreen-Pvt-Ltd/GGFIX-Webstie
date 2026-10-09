@@ -8,6 +8,7 @@ import { masterApi } from '@/lib/api';
 import { imageReplacementNotice, uploadCompatibilityImage } from '@/lib/modelMedia';
 import DataTable, { StatusPill } from '@/components/DataTable';
 import S3ImageUpload from '@/components/S3ImageUpload';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 /**
  * Master Data -> Model Compatibility.
@@ -137,9 +138,9 @@ function ModelChip({ model }) {
 /** One labelled line in the view panel. */
 function Field({ label, children }) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs uppercase tracking-wide text-admin-muted">{label}</p>
-      <div className="mt-1 text-sm text-slate-900">{children}</div>
+      <div className="mt-1 break-words text-sm text-slate-900">{children}</div>
     </div>
   );
 }
@@ -154,13 +155,6 @@ export default function CompatibilityClient() {
   const [types, setTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, because
-  // the modal closes on save — and a replacement deletes the old file from the
-  // bucket, which is worth saying in words rather than leaving to be inferred.
-  const [notice, setNotice] = useState('');
-  // 'warn' when the save came back missing something it was asked to store —
-  // the same line in the same place, but not dressed as good news.
-  const [noticeTone, setNoticeTone] = useState('ok');
 
   // Part-type management, so a fourth type is a row the shop adds rather than a
   // release. Kept on this page instead of its own route — it is a short list
@@ -168,7 +162,6 @@ export default function CompatibilityClient() {
   const [typeModal, setTypeModal] = useState(false);
   const [typeName, setTypeName] = useState('');
   const [typeBusy, setTypeBusy] = useState(false);
-  const [typeError, setTypeError] = useState('');
 
   // brandId -> [{ id, name }]. Populated on demand; a brand is only fetched once.
   const [modelsByBrand, setModelsByBrand] = useState({});
@@ -190,7 +183,6 @@ export default function CompatibilityClient() {
   const [imageUrl, setImageUrl] = useState('');
   const [imageFile, setImageFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState('');
 
   // Block keys must be stable across re-renders or React remounts the inputs on
   // every keystroke, so they come from a counter rather than the array index —
@@ -270,7 +262,7 @@ export default function CompatibilityClient() {
         .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
       setModelsByBrand((prev) => ({ ...prev, [brandId]: rows }));
     } catch (e) {
-      setFormError(e.body?.message || e.message || 'Could not load models for that brand.');
+      notifyError(e.body?.message || e.message || 'Could not load models for that brand.');
     } finally {
       setLoadingBrands((prev) => prev.filter((id) => id !== brandId));
     }
@@ -289,7 +281,6 @@ export default function CompatibilityClient() {
     setImageFile(null);
     setPartTypeId('');
     setModelQuery({});
-    setFormError('');
   };
 
   const openCreate = () => {
@@ -428,17 +419,14 @@ export default function CompatibilityClient() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setFormError('');
-    setNotice('');
-    setNoticeTone('ok');
 
-    if (!boxNo.trim()) { setFormError('Box No is required.'); return; }
-    if (!boxName.trim()) { setFormError('Box Name is required.'); return; }
+    if (!boxNo.trim()) { notifyError('Box No is required.'); return; }
+    if (!boxName.trim()) { notifyError('Box Name is required.'); return; }
 
     const used = blocks.filter((b) => b.brandId);
     const duplicateBrand = used.find((b, i) => used.findIndex((x) => x.brandId === b.brandId) !== i);
     if (duplicateBrand) {
-      setFormError(`${brandName(duplicateBrand.brandId)} is added twice — merge those two blocks.`);
+      notifyError(`${brandName(duplicateBrand.brandId)} is added twice — merge those two blocks.`);
       return;
     }
 
@@ -477,6 +465,9 @@ export default function CompatibilityClient() {
         : await masterApi.put(`/master/model-compatibility/${modal.row.id}`, payload);
 
       const said = [];
+      // Set when the save came back missing something it was asked to store —
+      // reported as an error toast, not dressed as good news.
+      let warn = false;
 
       // A master-data service that predates added models IGNORES the field
       // rather than rejecting it — Spring drops unknown JSON properties — so the
@@ -485,7 +476,7 @@ export default function CompatibilityClient() {
       const keptCustoms = (saved?.models || []).filter((m) => m.custom).length;
       const dropped = customModels.length - keptCustoms;
       if (customModels.length > 0 && dropped > 0) {
-        setNoticeTone('warn');
+        warn = true;
         said.push(`Saved — but ${dropped} added model name${dropped === 1 ? '' : 's'} did not stick.`
           + ' The master-data service is running a build that cannot store them yet.');
       }
@@ -497,12 +488,16 @@ export default function CompatibilityClient() {
         said.push(imageReplacementNotice(uploaded, 'Reference image'));
       }
 
-      if (said.length) setNotice(said.filter(Boolean).join(' '));
+      const notice = said.filter(Boolean).join(' ');
+      if (notice) {
+        if (warn) notifyError(notice);
+        else notifySuccess(notice);
+      }
 
       closeModal();
       load();
     } catch (err) {
-      setFormError(err.body?.message || err.message || 'Request failed');
+      notifyError(err.body?.message || err.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -513,7 +508,7 @@ export default function CompatibilityClient() {
       await masterApi.put(`/master/model-compatibility/${row.id}`, { isActive: row.isActive === false });
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Could not change status');
+      notifyError(e.body?.message || e.message || 'Could not change status');
     }
   };
 
@@ -523,7 +518,7 @@ export default function CompatibilityClient() {
       await masterApi.delete(`/master/model-compatibility/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -542,16 +537,15 @@ export default function CompatibilityClient() {
   const addType = async (e) => {
     e.preventDefault();
     const name = typeName.trim();
-    if (!name) { setTypeError('Type name is required.'); return; }
+    if (!name) { notifyError('Type name is required.'); return; }
     setTypeBusy(true);
-    setTypeError('');
     try {
       await masterApi.post('/master/model-compatibility-types', { name });
       setTypeName('');
       await loadTypes();
       announceTypesChanged();
     } catch (err) {
-      setTypeError(err.body?.message || err.message || 'Could not add that type.');
+      notifyError(err.body?.message || err.message || 'Could not add that type.');
     } finally {
       setTypeBusy(false);
     }
@@ -560,26 +554,24 @@ export default function CompatibilityClient() {
   const renameType = async (t) => {
     const name = prompt(`Rename "${t.name}" to:`, t.name);
     if (name == null || name.trim() === '' || name.trim() === t.name) return;
-    setTypeError('');
     try {
       await masterApi.put(`/master/model-compatibility-types/${t.id}`, { name: name.trim() });
       await loadTypes();
       announceTypesChanged();
     } catch (err) {
-      setTypeError(err.body?.message || err.message || 'Could not rename that type.');
+      notifyError(err.body?.message || err.message || 'Could not rename that type.');
     }
   };
 
   const deleteType = async (t) => {
     if (!confirm(`Delete part type "${t.name}"?`)) return;
-    setTypeError('');
     try {
       await masterApi.delete(`/master/model-compatibility-types/${t.id}`);
       await loadTypes();
       announceTypesChanged();
     } catch (err) {
       // The backend refuses while boxes still point at it and says how many.
-      setTypeError(err.body?.message || err.message || 'Could not delete that type.');
+      notifyError(err.body?.message || err.message || 'Could not delete that type.');
     }
   };
 
@@ -682,7 +674,7 @@ export default function CompatibilityClient() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
         <div>
           {/* The heading names the sidebar entry you arrived from, so the screen
@@ -694,10 +686,10 @@ export default function CompatibilityClient() {
             <p className="text-xs text-admin-muted">Model Compatibility · {list.length} box{list.length === 1 ? '' : 'es'}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => { setTypeModal(true); setTypeName(''); setTypeError(''); }}
+            onClick={() => { setTypeModal(true); setTypeName(''); }}
             className="inline-flex items-center gap-2 rounded-lg border border-admin-border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark"
           >
             <Settings2 className="h-4 w-4" /> Part types
@@ -727,15 +719,6 @@ export default function CompatibilityClient() {
       )}
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className={`mb-4 rounded-lg border px-3 py-2 text-sm ${
-          noticeTone === 'warn'
-            ? 'border-amber-200 bg-amber-50 text-amber-800'
-            : 'border-emerald-200 bg-emerald-50 text-emerald-800'
-        }`}>
-          {notice}
-        </p>
-      )}
 
       {loading ? (
         <p className="text-admin-muted">Loading…</p>
@@ -757,7 +740,7 @@ export default function CompatibilityClient() {
           reference photo. */}
       {viewRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-3xl max-h-[90dvh] overflow-y-auto rounded-xl bg-admin-card border border-admin-border p-4 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-wide text-admin-muted">Compatibility box</p>
@@ -861,7 +844,7 @@ export default function CompatibilityClient() {
           is actually edited. */}
       {typeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-lg max-h-[90dvh] overflow-y-auto rounded-xl bg-admin-card border border-admin-border p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900">Part types</h2>
             <p className="mt-1 text-sm text-admin-muted">
               Each type is one entry under Model Compatibility in the sidebar.
@@ -872,7 +855,7 @@ export default function CompatibilityClient() {
               {types.map((t) => (
                 <div key={t.id} className="flex items-center gap-2 rounded-lg border border-admin-border px-3 py-2">
                   <span className="min-w-0 flex-1 truncate text-sm text-slate-900">{t.name}</span>
-                  <code className="shrink-0 text-[11px] text-admin-muted">?type={t.slug}</code>
+                  <code className="block max-w-[40%] shrink-0 truncate text-[11px] text-admin-muted">?type={t.slug}</code>
                   <button
                     type="button"
                     onClick={() => renameType(t)}
@@ -899,7 +882,7 @@ export default function CompatibilityClient() {
                 value={typeName}
                 onChange={(e) => setTypeName(e.target.value)}
                 placeholder="New type, e.g. Back Panel"
-                className="flex-1 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
+                className="min-w-0 flex-1 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-slate-900"
               />
               <button
                 type="submit"
@@ -909,8 +892,6 @@ export default function CompatibilityClient() {
                 {typeBusy ? 'Adding…' : 'Add'}
               </button>
             </form>
-
-            {typeError && <p className="mt-3 text-sm text-red-600">{typeError}</p>}
 
             <div className="mt-5 flex justify-end">
               <button
@@ -927,7 +908,7 @@ export default function CompatibilityClient() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-3xl max-h-[90dvh] overflow-y-auto rounded-xl bg-admin-card border border-admin-border p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create'
                 ? 'Add compatibility box'
@@ -1075,7 +1056,7 @@ export default function CompatibilityClient() {
                           <select
                             value={block.brandId}
                             onChange={(e) => setBlockBrand(block.key, e.target.value)}
-                            className="flex-1 rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-900 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
+                            className="min-w-0 flex-1 rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-900 focus:border-admin-accent focus:outline-none focus:ring-2 focus:ring-admin-accent/20"
                           >
                             <option value="">Select brand</option>
                             {brands.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
@@ -1092,7 +1073,7 @@ export default function CompatibilityClient() {
 
                         {block.brandId && (
                           <div className="mt-3">
-                            <div className="flex items-center justify-between">
+                            <div className="flex flex-wrap items-center justify-between gap-x-2">
                               <label className="block text-sm text-admin-muted">
                                 Models
                                 {block.modelIds.length > 0 && (
@@ -1191,7 +1172,7 @@ export default function CompatibilityClient() {
                                         onChange={() => toggleModel(block.key, m.id)}
                                         className="h-4 w-4 rounded border-admin-border text-admin-accent focus:ring-admin-accent"
                                       />
-                                      <span className="truncate" title={m.name}>{m.name}</span>
+                                      <span className="min-w-0 truncate" title={m.name}>{m.name}</span>
                                       {/* Says where the name came from, so nobody goes
                                           looking for it in Master Data -> Models. */}
                                       {m.custom && (
@@ -1235,12 +1216,12 @@ export default function CompatibilityClient() {
                                       title={m.custom
                                         ? `Remove ${m.name} — added on this box only`
                                         : `Remove ${m.name}`}
-                                      className={`inline-flex items-center gap-1 rounded-full border bg-admin-card px-2.5 py-1 text-xs text-slate-800 hover:border-red-200 hover:text-red-700 ${
+                                      className={`inline-flex max-w-full items-center gap-1 rounded-full border bg-admin-card px-2.5 py-1 text-xs text-slate-800 hover:border-red-200 hover:text-red-700 ${
                                         m.custom ? 'border-dashed border-admin-accent/60' : 'border-admin-border'
                                       }`}
                                     >
-                                      {m.name}
-                                      <X className="h-3 w-3" />
+                                      <span className="min-w-0 break-all">{m.name}</span>
+                                      <X className="h-3 w-3 shrink-0" />
                                     </button>
                                   ))}
                                 </div>
@@ -1291,8 +1272,6 @@ export default function CompatibilityClient() {
                 />
                 Active
               </label>
-
-              {formError && <p className="text-sm text-red-600">{formError}</p>}
 
               <div className="flex gap-2 justify-end">
                 <button type="button" onClick={closeModal} className="rounded-lg px-4 py-2 text-slate-600 hover:bg-admin-dark">

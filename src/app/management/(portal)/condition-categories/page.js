@@ -5,6 +5,7 @@ import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import SellFlowBulkActions from '@/components/SellFlowBulkActions';
 import SellFlowImportModal from '@/components/SellFlowImportModal';
+import { notifyError } from '@/lib/toast';
 
 const splitNames = (value) => (value || '')
   .split(/[,\n]/)
@@ -119,7 +120,7 @@ export default function ConditionCategoriesPage() {
   const submit = async (event) => {
     event.preventDefault();
     if (!deviceCategoryId) {
-      setError('Select a device category.');
+      notifyError('Select a device category.');
       return;
     }
 
@@ -145,7 +146,7 @@ export default function ConditionCategoriesPage() {
       setModal(null);
       reload();
     } catch (submitError) {
-      setError(submitError.body?.message || submitError.message || 'Request failed');
+      notifyError(submitError.body?.message || submitError.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -162,7 +163,7 @@ export default function ConditionCategoriesPage() {
       }
       reload();
     } catch (deleteError) {
-      setError(deleteError.body?.message || deleteError.message || 'Delete failed');
+      notifyError(deleteError.body?.message || deleteError.message || 'Delete failed');
     }
   };
 
@@ -195,15 +196,15 @@ export default function ConditionCategoriesPage() {
   const inputClassName = 'w-full rounded-lg border border-admin-border bg-admin-dark px-3 py-2 text-slate-900';
 
   return (
-    <div className="space-y-10 p-6 md:p-8">
+    <div className="space-y-10 p-4 sm:p-6 md:p-8">
       <section>
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold text-slate-900">Condition Categories</h1>
-          <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Condition Categories</h1>
+          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
             <select
               value={filterCategory}
               onChange={(event) => setFilterCategory(event.target.value)}
-              className="rounded-lg border border-admin-border bg-admin-card px-3 py-2 text-sm text-slate-800"
+              className="w-full rounded-lg border border-admin-border bg-admin-card px-3 py-2 text-sm text-slate-800 sm:w-auto"
             >
               <option value="">All categories</option>
               {categories.map((category) => (
@@ -246,7 +247,7 @@ export default function ConditionCategoriesPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-lg rounded-xl border border-admin-border bg-admin-card p-6">
+          <div className="w-full max-w-lg rounded-xl border border-admin-border bg-admin-card max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="mb-4 text-lg font-medium text-slate-900">
               {modal.type === 'create'
                 ? 'Add condition categories'

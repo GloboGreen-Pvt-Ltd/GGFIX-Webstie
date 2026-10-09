@@ -6,6 +6,7 @@ import {
   exportSellFlowTemplateWorkbook,
   exportSellFlowWorkbook,
 } from '@/lib/sellFlowExcel';
+import { notifyError } from '@/lib/toast';
 
 const COPY = {
   screeningQuestions: {
@@ -65,7 +66,6 @@ export default function SellFlowBulkActions({
   const [exportMenu, setExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
   const menuRef = useRef(null);
 
   useEffect(() => {
@@ -93,12 +93,11 @@ export default function SellFlowBulkActions({
 
   const runExport = async (task) => {
     setExportMenu(false);
-    setError('');
     setExporting(true);
     try {
       await task();
     } catch (exportError) {
-      setError(exportError?.message || 'Could not build the Excel file.');
+      notifyError(exportError?.message || 'Could not build the Excel file.');
     } finally {
       setExporting(false);
     }
@@ -115,7 +114,7 @@ export default function SellFlowBulkActions({
   };
 
   return (
-    <div className="relative flex items-center gap-3">
+    <div className="relative flex flex-wrap items-center gap-3">
       <button
         type="button"
         onClick={refresh}
@@ -126,7 +125,7 @@ export default function SellFlowBulkActions({
         <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
         Refresh
       </button>
-      <div className="relative" ref={menuRef}>
+      <div className="sm:relative" ref={menuRef}>
         <button
           type="button"
           onClick={() => setExportMenu((open) => !open)}
@@ -140,7 +139,7 @@ export default function SellFlowBulkActions({
           <ChevronDown size={14} className={exportMenu ? 'rotate-180 transition-transform' : 'transition-transform'} />
         </button>
         {exportMenu && (
-          <div role="menu" className="absolute right-0 z-30 mt-1 w-72 overflow-hidden rounded-lg border border-admin-border bg-admin-card shadow-lg">
+          <div role="menu" className="absolute left-0 z-30 mt-1 w-72 max-w-[calc(100vw-2rem)] overflow-hidden sm:left-auto sm:right-0 rounded-lg border border-admin-border bg-admin-card shadow-lg">
             <button
               type="button"
               role="menuitem"
@@ -188,11 +187,6 @@ export default function SellFlowBulkActions({
         <Upload size={16} />
         Import
       </button>
-      {error && (
-        <p className="absolute right-0 top-full z-30 mt-2 w-80 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 shadow-sm">
-          {error}
-        </p>
-      )}
     </div>
   );
 }

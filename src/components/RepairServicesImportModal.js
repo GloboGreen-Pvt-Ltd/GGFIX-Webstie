@@ -20,6 +20,7 @@ import {
   parseRepairServicesFile,
   planRepairServicesImport,
 } from '@/lib/repairServicesExcel';
+import { notifyError } from '@/lib/toast';
 
 // Master-data runs in a constrained environment. A small write pool keeps a large
 // upload responsive without letting an accidental spreadsheet spike the service.
@@ -90,7 +91,6 @@ export default function RepairServicesImportModal({
   const [parsed, setParsed] = useState(null);
   const [plan, setPlan] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
   const [rowFilter, setRowFilter] = useState(null);
@@ -113,7 +113,6 @@ export default function RepairServicesImportModal({
 
   const buildPlan = (parsedFile) => {
     setBusy(true);
-    setError('');
     return masterApi
       .get('/master/repair-services')
       .then((services) => {
@@ -127,7 +126,7 @@ export default function RepairServicesImportModal({
         setStep('review');
       })
       .catch((requestError) => {
-        setError(
+        notifyError(
           requestError.body?.message ||
           requestError.message ||
           'Could not read the current Repair Services list to compare against.',
@@ -140,11 +139,10 @@ export default function RepairServicesImportModal({
     if (!nextFile) return;
     setFile(nextFile);
     setBusy(true);
-    setError('');
     try {
       const parsedFile = await parseRepairServicesFile(nextFile);
       if (!parsedFile.rows.length) {
-        setError('That sheet has no data rows below the header.');
+        notifyError('That sheet has no data rows below the header.');
         setBusy(false);
         return;
       }
@@ -152,7 +150,7 @@ export default function RepairServicesImportModal({
       setBusy(false);
       await buildPlan(parsedFile);
     } catch (parseError) {
-      setError(parseError.message || 'Could not read that file.');
+      notifyError(parseError.message || 'Could not read that file.');
       setBusy(false);
     }
   };
@@ -226,8 +224,8 @@ export default function RepairServicesImportModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl border border-admin-border bg-admin-card shadow-xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-admin-border px-6 py-4">
+      <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col rounded-xl border border-admin-border bg-admin-card shadow-xl">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-admin-border px-4 py-4 sm:px-6">
           <h2 className="flex items-center gap-2 text-lg font-medium text-slate-900">
             <FileSpreadsheet size={18} className="text-emerald-600" />
             Import Repair Services from Excel
@@ -242,11 +240,7 @@ export default function RepairServicesImportModal({
           </button>
         </div>
 
-        <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          {error && (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
-          )}
-
+        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-6">
           {step === 'pick' && (
             <>
               <label
@@ -281,7 +275,7 @@ export default function RepairServicesImportModal({
                   type="button"
                   onClick={() => {
                     exportRepairServicesTemplateWorkbook(templateLists()).catch((exportError) => {
-                      setError(exportError.message || 'Could not build the empty format.');
+                      notifyError(exportError.message || 'Could not build the empty format.');
                     });
                   }}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-admin-accent hover:underline"
@@ -297,7 +291,7 @@ export default function RepairServicesImportModal({
             <>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-slate-700">
-                  <span className="font-medium text-slate-900">{file?.name}</span>
+                  <span className="break-all font-medium text-slate-900">{file?.name}</span>
                   <span className="text-admin-muted"> · sheet &quot;{parsed?.sheetName}&quot; · {plan.items.length} data rows</span>
                 </p>
                 <button
@@ -307,7 +301,6 @@ export default function RepairServicesImportModal({
                     setPlan(null);
                     setParsed(null);
                     setFile(null);
-                    setError('');
                   }}
                   className="text-xs font-medium text-admin-accent hover:underline"
                 >
@@ -380,7 +373,7 @@ export default function RepairServicesImportModal({
                 )}
               </div>
 
-              <div className="overflow-hidden rounded-lg border border-admin-border">
+              <div className="overflow-x-auto rounded-lg border border-admin-border">
                 <table className="w-full text-sm">
                   <thead className="bg-admin-dark text-xs uppercase text-admin-muted">
                     <tr>
@@ -457,7 +450,7 @@ export default function RepairServicesImportModal({
                 <Stat label="Failed" value={result.failures.length} tone={result.failures.length ? 'red' : 'slate'} />
               </div>
               {result.failures.length > 0 && (
-                <div className="overflow-hidden rounded-lg border border-admin-border">
+                <div className="overflow-x-auto rounded-lg border border-admin-border">
                   <table className="w-full text-sm">
                     <thead className="bg-admin-dark text-xs uppercase text-admin-muted">
                       <tr>
@@ -488,14 +481,14 @@ export default function RepairServicesImportModal({
           )}
         </div>
 
-        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-admin-border px-6 py-4">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-admin-border px-4 py-4 sm:px-6">
           <div>
             {step === 'done' && result?.failures.length > 0 && (
               <button
                 type="button"
                 onClick={() => {
                   exportRepairServiceErrorReport(result.failures).catch((exportError) => {
-                    setError(exportError.message || 'Could not build the failed-row report.');
+                    notifyError(exportError.message || 'Could not build the failed-row report.');
                   });
                 }}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-admin-border bg-admin-card px-3 py-2 text-sm font-medium text-slate-700 hover:bg-admin-dark"
@@ -505,7 +498,7 @@ export default function RepairServicesImportModal({
               </button>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
             {step === 'running' ? (
               <button
                 type="button"

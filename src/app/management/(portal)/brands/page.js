@@ -7,15 +7,12 @@ import DataTable, { StatusPill } from '@/components/DataTable';
 import PageHeader, { Button } from '@/components/PageHeader';
 import S3ImageUpload from '@/components/S3ImageUpload';
 import { imageReplacementNotice, uploadBrandImage } from '@/lib/modelMedia';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 export default function MasterBrandsPage() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  // Outcome of the last image upload. Shown on the page, not in the modal, because
-  // the modal closes on save — and a replacement deletes the old file from the
-  // bucket, which is worth saying in words rather than leaving to be inferred.
-  const [notice, setNotice] = useState('');
   const [modal, setModal] = useState(null); // { type: 'create' | 'edit', item?: {} }
   const [name, setName] = useState('');
   const [imageUrl, setImageUrl] = useState('');
@@ -61,7 +58,6 @@ export default function MasterBrandsPage() {
     e.preventDefault();
     if (!name.trim()) return;
     setSubmitting(true);
-    setNotice('');
     try {
       // Save first, then upload: the endpoint is id-scoped because the object key
       // is built from the brand's stored name.
@@ -80,12 +76,13 @@ export default function MasterBrandsPage() {
       }
       if (imageFile && brandId) {
         const uploaded = await uploadBrandImage(brandId, imageFile);
-        setNotice(imageReplacementNotice(uploaded, 'Brand logo'));
+        const notice = imageReplacementNotice(uploaded, 'Brand logo');
+        if (notice) notifySuccess(notice);
       }
       closeModal();
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -97,7 +94,7 @@ export default function MasterBrandsPage() {
       await masterApi.delete(`/master/brands/${row.id}`);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -128,7 +125,7 @@ export default function MasterBrandsPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <PageHeader
         breadcrumb={['Master', 'Brands']}
         title="Brands"
@@ -142,11 +139,6 @@ export default function MasterBrandsPage() {
       />
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
-      {notice && (
-        <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          {notice}
-        </p>
-      )}
 
       {loading ? (
         <div className="rounded-xl border border-admin-border bg-admin-card p-10 text-center text-admin-muted shadow-sm">Loading…</div>
@@ -162,7 +154,7 @@ export default function MasterBrandsPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 shadow-xl sm:p-6">
             <h2 className="text-lg font-semibold text-slate-900 mb-4">
               {modal.type === 'create' ? 'New brand' : 'Edit brand'}
             </h2>

@@ -5,6 +5,7 @@ import { masterApi } from '@/lib/api';
 import DataTable from '@/components/DataTable';
 import SellFlowBulkActions from '@/components/SellFlowBulkActions';
 import SellFlowImportModal from '@/components/SellFlowImportModal';
+import { notifyError } from '@/lib/toast';
 
 // Split a typed/pasted value into individual values on commas or new lines.
 const splitNames = (s) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
@@ -91,7 +92,7 @@ export default function MasterDeviceConfigurationPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!deviceCategoryId) { setError('Select a device category.'); return; }
+    if (!deviceCategoryId) { notifyError('Select a device category.'); return; }
     if (!name.trim()) return;
     const options = [...new Set([...optNames, ...splitNames(optInput)].map((x) => x.trim()).filter(Boolean))];
     setSubmitting(true);
@@ -105,7 +106,7 @@ export default function MasterDeviceConfigurationPage() {
       closeModal();
       reload();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Request failed');
+      notifyError(e.body?.message || e.message || 'Request failed');
     } finally {
       setSubmitting(false);
     }
@@ -117,7 +118,7 @@ export default function MasterDeviceConfigurationPage() {
       await masterApi.delete(`/master/config-fields/${row.id}`);
       reload();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -139,14 +140,14 @@ export default function MasterDeviceConfigurationPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="p-4 sm:p-6 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-        <h1 className="text-2xl font-semibold text-slate-900">Device Configuration</h1>
-        <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">Device Configuration</h1>
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
-            className="rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm"
+            className="w-full rounded-lg bg-admin-card border border-admin-border px-3 py-2 text-slate-800 text-sm sm:w-auto"
           >
             <option value="">All categories</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
@@ -187,7 +188,7 @@ export default function MasterDeviceConfigurationPage() {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-admin-card border border-admin-border p-6">
+          <div className="w-full max-w-lg rounded-xl bg-admin-card border border-admin-border max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
             <h2 className="text-lg font-medium text-slate-900 mb-4">
               {modal.type === 'create' ? 'Add configuration field' : 'Edit configuration field'}
             </h2>

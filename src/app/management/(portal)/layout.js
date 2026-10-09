@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Bell } from 'lucide-react';
+import { Bell, Menu } from 'lucide-react';
 import { getToken, setToken, setRole } from '@/lib/auth';
 import Sidebar from '@/components/Sidebar';
 
@@ -62,10 +62,16 @@ export default function AdminLayout({ children }) {
   const router = useRouter();
   const pathname = usePathname();
   const [mounted, setMounted] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  /* Close the phone drawer on route change. */
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -93,11 +99,21 @@ export default function AdminLayout({ children }) {
 
   return (
     <div className="min-h-screen flex bg-admin-dark">
-      <Sidebar onLogout={handleLogout} />
+      <Sidebar onLogout={handleLogout} mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
       <div className="flex flex-1 min-w-0 flex-col">
-        <header className="h-16 shrink-0 flex items-center justify-between gap-4 border-b border-admin-border bg-white px-6">
-          <h1 className="text-lg font-semibold text-slate-900">{section}</h1>
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-30 h-16 shrink-0 flex items-center justify-between gap-3 border-b border-admin-border bg-white px-4 sm:px-6 md:static">
+          <div className="flex min-w-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open menu"
+              className="-ml-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-admin-dark md:hidden"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <h1 className="truncate text-base font-semibold text-slate-900 sm:text-lg">{section}</h1>
+          </div>
+          <div className="flex shrink-0 items-center gap-3">
             <button
               type="button"
               className="flex h-9 w-9 items-center justify-center rounded-lg border border-admin-border text-slate-500 hover:bg-admin-dark hover:text-slate-700"

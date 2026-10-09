@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { authApi } from '@/lib/api';
 import { isAdmin as isAdminRole } from '@/lib/auth';
 import SafeImage from '@/components/SafeImage';
+import { notifyError } from '@/lib/toast';
 
 function initialsOf(name) {
   if (!name) return '?';
@@ -69,7 +70,7 @@ export default function ShopOwnerListPage() {
       await authApi.patch(`/auth/shop-owners/${row.id}/status`, { active: !row.isActive });
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Update failed');
+      notifyError(e.body?.message || e.message || 'Update failed');
     }
   };
 
@@ -79,7 +80,7 @@ export default function ShopOwnerListPage() {
       setConfirmingDelete(null);
       load();
     } catch (e) {
-      setError(e.body?.message || e.message || 'Delete failed');
+      notifyError(e.body?.message || e.message || 'Delete failed');
     }
   };
 
@@ -102,13 +103,13 @@ export default function ShopOwnerListPage() {
   useEffect(() => { setPage(0); }, [query, list.length, pageSize]);
 
   return (
-    <div className="p-6 md:p-8 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 md:p-8 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Shop Owner List</h1>
           <p className="text-sm text-admin-muted">Review shop owners, email verification, profile completion, active status, and direct actions.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={load}
@@ -130,9 +131,9 @@ export default function ShopOwnerListPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by shop owner name, mobile, email, or address"
-          className="flex-1 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-sm text-slate-900 placeholder:text-admin-muted focus:outline-none focus:border-admin-accent"
+          className="min-w-0 flex-1 rounded-lg bg-admin-dark border border-admin-border px-3 py-2 text-sm text-slate-900 placeholder:text-admin-muted focus:outline-none focus:border-admin-accent"
         />
-        <span className="text-xs text-admin-muted">Total: {list.length}</span>
+        <span className="shrink-0 whitespace-nowrap text-xs text-admin-muted">Total: {list.length}</span>
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -216,17 +217,17 @@ export default function ShopOwnerListPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      <Link href={`/management/shops/view/?id=${r.id}`} onClick={() => { try { sessionStorage.setItem('ggfix.ownerId', r.id); } catch {} }} title="View" className="p-1.5 rounded hover:bg-admin-dark text-sky-400">
+                      <Link href={`/management/shops/view/?id=${r.id}`} onClick={() => { try { sessionStorage.setItem('ggfix.ownerId', r.id); } catch {} }} title="View" className="p-2.5 sm:p-1.5 rounded hover:bg-admin-dark text-sky-400">
                         <IconEye />
                       </Link>
-                      <Link href={`/management/shops/edit/?id=${r.id}`} onClick={() => { try { sessionStorage.setItem('ggfix.ownerId', r.id); } catch {} }} title="Edit" className="p-1.5 rounded hover:bg-admin-dark text-slate-600">
+                      <Link href={`/management/shops/edit/?id=${r.id}`} onClick={() => { try { sessionStorage.setItem('ggfix.ownerId', r.id); } catch {} }} title="Edit" className="p-2.5 sm:p-1.5 rounded hover:bg-admin-dark text-slate-600">
                         <IconPencil />
                       </Link>
                       <button
                         type="button"
                         title="Delete"
                         onClick={() => setConfirmingDelete(r)}
-                        className="p-1.5 rounded hover:bg-admin-dark text-red-600"
+                        className="p-2.5 sm:p-1.5 rounded hover:bg-admin-dark text-red-600"
                       >
                         <IconTrash />
                       </button>
@@ -249,8 +250,8 @@ export default function ShopOwnerListPage() {
       </div>
 
       {confirmingDelete && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-          <div className="bg-admin-card border border-admin-border rounded-xl p-6 max-w-sm w-full mx-4 space-y-4">
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+          <div className="bg-admin-card border border-admin-border rounded-xl p-4 sm:p-6 max-w-sm w-full max-h-[90dvh] overflow-y-auto space-y-4">
             <h3 className="text-lg font-semibold text-slate-900">Delete shop owner?</h3>
             <p className="text-sm text-admin-muted">
               This will permanently remove <span className="text-slate-800 font-medium">{confirmingDelete.name || confirmingDelete.email}</span>.

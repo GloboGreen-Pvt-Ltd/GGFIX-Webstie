@@ -58,10 +58,13 @@ function loadBanners() {
  *                                    (case-insensitive). Falls back to all
  *                                    slides if nothing matches.
  * @param {string[]} [props.exclude]  Titles to keep OUT of the rotation.
- * @param {'aspect'|'tall'} [props.height='aspect']  'aspect' derives height
+ * @param {'aspect'|'tall'|'short'} [props.height='aspect']  'aspect' derives height
  *                                    from the 1920x700 ratio (never crops);
  *                                    'tall' pins a responsive height up to
- *                                    600px and crops the sides instead.
+ *                                    600px and crops the sides instead;
+ *                                    'short' (partner dashboard) is a shorter
+ *                                    banner: full width at the banner's own
+ *                                    2.4:1 shape, so the whole image shows.
  * @param {string} [props.className]
  */
 export default function HeroCarousel({ title, exclude, height = 'aspect', className }) {
@@ -170,6 +173,28 @@ export default function HeroCarousel({ title, exclude, height = 'aspect', classN
     [count, goTo, index],
   );
 
+  /* ---- swipe (touch) ---- the arrows are hidden below sm, so on phones a
+   * horizontal swipe on the frame is the natural way to change slide. Only a
+   * clearly horizontal drag counts, so vertical page scrolling is unaffected. */
+  const touchRef = useRef(null);
+  const onTouchStart = useCallback((event) => {
+    const t = event.touches[0];
+    touchRef.current = t ? { x: t.clientX, y: t.clientY } : null;
+  }, []);
+  const onTouchEnd = useCallback(
+    (event) => {
+      const start = touchRef.current;
+      touchRef.current = null;
+      const t = event.changedTouches[0];
+      if (!start || !t || count < 2) return;
+      const dx = t.clientX - start.x;
+      const dy = t.clientY - start.y;
+      if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      goTo(dx < 0 ? index + 1 : index - 1);
+    },
+    [count, goTo, index],
+  );
+
   if (!count) return null;
 
   return (
@@ -192,7 +217,11 @@ export default function HeroCarousel({ title, exclude, height = 'aspect', classN
           uploaded. The trade-off is that art authored at a different ratio gets
           cropped by object-cover, which is why the size is published in the
           admin. */}
-      <div className="relative w-full overflow-hidden rounded-3xl bg-brand-soft shadow-soft">
+      <div
+        className="relative w-full overflow-hidden rounded-3xl bg-brand-soft shadow-soft"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
         <div
           className={cx(
             'relative w-full',
@@ -204,7 +233,9 @@ export default function HeroCarousel({ title, exclude, height = 'aspect', classN
             // nothing is ever cropped.
             height === 'tall'
               ? 'h-[220px] sm:h-[360px] lg:h-[480px] xl:h-[600px]'
-              : 'aspect-[1028/366]',
+              : height === 'short'
+                ? 'aspect-[1944/809]'
+                : 'aspect-[1028/366]',
           )}
         >
           {slides.map((slide, i) => {
@@ -284,7 +315,8 @@ export default function HeroCarousel({ title, exclude, height = 'aspect', classN
                 aria-current={current ? 'true' : undefined}
                 aria-controls={`${baseId}-slide-${i}`}
                 className={cx(
-                  'h-2.5 rounded-full transition-all duration-300 motion-reduce:transition-none',
+                  // after: widens the tap target to ~34px tall without moving the dots.
+                  'relative h-2.5 rounded-full transition-all duration-300 motion-reduce:transition-none after:absolute after:-inset-x-1 after:-inset-y-3',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2',
                   current ? 'w-7 bg-brand-600' : 'w-2.5 bg-brand-strong hover:bg-brand-400',
                 )}

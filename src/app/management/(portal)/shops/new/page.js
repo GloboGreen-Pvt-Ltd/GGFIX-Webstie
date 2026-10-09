@@ -4,19 +4,18 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/api';
+import { notifyError } from '@/lib/toast';
 
 export default function NewShopPage() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [address, setAddress] = useState('');
-  const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!name.trim() || !slug.trim()) return;
-    setError('');
     setSubmitting(true);
     try {
       await authApi.post('/auth/shops', {
@@ -26,21 +25,21 @@ export default function NewShopPage() {
       });
       router.push('/management/shops');
     } catch (e) {
-      setError(e.body?.message || e.message || 'Create failed');
+      notifyError(e.body?.message || e.message || 'Create failed');
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="mb-6 flex items-center gap-4">
+    <div className="p-4 sm:p-6 md:p-8">
+      <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
         <Link href="/management/shops" className="text-admin-muted hover:text-slate-900 text-sm">
           ← Shops
         </Link>
         <h1 className="text-2xl font-semibold text-slate-900">Create shop</h1>
       </div>
-      <div className="max-w-lg rounded-xl border border-admin-border bg-admin-card p-6">
+      <div className="max-w-lg rounded-xl border border-admin-border bg-admin-card p-4 sm:p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm text-admin-muted mb-1">Name</label>
@@ -72,7 +71,6 @@ export default function NewShopPage() {
               rows={2}
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">
             <Link
               href="/management/shops"

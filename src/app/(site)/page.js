@@ -1,50 +1,54 @@
 import Link from 'next/link';
+import { preload } from 'react-dom';
 import {
   ArrowRight,
+  ClipboardList,
+  Headphones,
+  Laptop,
+  Search,
+  ShoppingCart,
+  Smartphone,
+  Wrench,
   BadgeCheck,
+  BellRing,
   Check,
+  Clock,
   Handshake,
-  ListChecks,
   LockKeyhole,
-  Navigation,
-  Package,
+  Phone,
   Receipt,
-  ScanFace,
   ShieldCheck,
   Store,
+  TrendingUp,
+  Truck,
 } from 'lucide-react';
 
-import HeroCarousel from '@/components/site/HeroCarousel';
+import HomeHeroSlide from '@/components/site/HomeHeroSlide';
+import HomeRepairCategories from '@/components/site/HomeRepairCategories';
+import AppBenefitsSection from '@/components/site/AppBenefitsSection';
+import StoreBadges from '@/components/site/StoreBadges';
+import CustomerHomePhone from '@/components/site/CustomerHomePhone';
 import {
-  Badge,
   Button,
-  Card,
-  CTABand,
-  FeatureCard,
   Section,
   SectionHeading,
-  StatTile,
-  StepList,
   cx,
 } from '@/components/site/ui';
 import {
   BRAND,
-  BUY_FEATURES,
   CTA,
-  CUSTOMER_EXTRAS,
   FAQS,
-  HOME_MENU_GROUPS,
-  REPAIR_STEPS,
-  SELL_HIGHLIGHT,
-  SELL_STEPS,
-  TICKET_LIFECYCLE,
 } from '@/lib/siteContent';
+import JsonLd from '@/components/seo/JsonLd';
+import { organizationSchema, pageMetadata, websiteSchema } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Repair, Buy & Sell your phone',
+export const metadata = pageMetadata({
+  title: 'Mobile Repair, Buy & Sell Devices Online | GGFIX',
+  absoluteTitle: true,
   description:
-    'Book a phone repair with doorstep pickup, track every stage live, and sell your old handset to the highest-quoting shop near you. GGFIX connects you to verified repair shops within 20 km.',
-};
+    'GGFIX offers mobile, tablet, laptop, smartwatch and audio device repair services. Book repairs, buy devices or sell your used gadgets easily.',
+  path: '/',
+});
 
 /* -------------------------------------------------------------------------- */
 /* Local, page-only pieces                                                     */
@@ -68,87 +72,64 @@ export const metadata = {
  */
 const ANCHOR_OFFSET = 'scroll-mt-24 lg:scroll-mt-36';
 
-/**
- * Artwork per "Our Services" card, keyed by HOME_MENU_GROUPS[].key.
- *
- * These are real files in public/ (1254x1254 each), not remote URLs — so unlike
- * the banner and category images they are guaranteed present at build time and
- * need no loading or failure state. Plain <img> rather than next/image: the
- * config sets images.unoptimized, so next/image would emit the same tag while
- * adding nothing.
- */
-const SERVICE_IMAGES = {
-  repair: '/repair.png',
-  sell: '/sell.png',
-  buy: '/buy.png',
-};
-
-/** My Orders really splits into these five groups. */
-const ORDER_TABS = ['Buy', 'Sell', 'Pickup', 'Enquiry', 'Service'];
-
-/**
- * Facts for the customer reading this page.
- *
- * Deliberately NOT the shared PLATFORM_FACTS: two of those four tiles are about
- * the shop-owner subscription and the backend architecture, which on a customer
- * page reads as though the customer's own use is a 15-day trial. It is not —
- * the app is free for customers. Every figure below is checkable inside the
- * customer app or on /pricing.
- */
-const CUSTOMER_FACTS = [
-  { value: '20', unit: 'km', label: 'Radius for finding repair shops near you' },
-  { value: '6', unit: 'stages', label: 'On every repair ticket, from accepted to delivered' },
-  { value: '5', unit: 'order types', label: 'Buy, Sell, Pickup, Enquiry and Service in My Orders' },
-  { value: '₹0', label: 'What the GGFIX app costs you as a customer' },
-];
-const ORDER_STATUSES = ['Pending', 'Completed', 'Cancelled'];
-
 /* -------------------------------------------------------------------------- */
 /* Page                                                                        */
 /* -------------------------------------------------------------------------- */
 
+const HOME_FAQS = [
+  {
+    topic: 'Getting started',
+    question: 'Do I need the app, or can I use GGFIX on the website?',
+    answer:
+      'Booking a repair, selling a device and buying from shops all happen in the GGFIX customer app — download it, sign in with your phone number and an OTP, and you are ready. The website lets you browse nearby shops and check your account.',
+  },
+  {
+    topic: 'Repair',
+    question: 'I do not know what is wrong with my phone. Can I still book?',
+    answer:
+      'Yes. Send an enquiry instead of a booking — nearby repair shops can look at your issue and you can message them directly before you commit to anything.',
+  },
+  {
+    topic: 'Pickup',
+    question: 'Do I have to go to the shop?',
+    answer:
+      'Not if the shop offers doorstep pickup. Choose a pickup-enabled shop, confirm your address and pick a time slot — the shop collects the device from you.',
+  },
+  {
+    topic: 'Sell',
+    question: 'How do I get the best price for my old phone?',
+    answer:
+      'List it once in the Sell flow and several nearby shops send you their own quotations. Compare them side by side and accept the one you like — or none of them.',
+  },
+  {
+    topic: 'Safety',
+    question: 'Is my account and data safe?',
+    answer:
+      'You sign in with an OTP sent to your phone, and you can switch on App Lock so the app needs your fingerprint or Face ID to open. Each shop only sees the orders you place with it.',
+  },
+];
+
 export default function HomePage() {
-  const faqTeaser = FAQS.slice(0, 5);
+  // The hero artwork is a CSS background (HomeHeroSlide), which the browser
+  // only discovers after the stylesheet loads. It is the page's LCP element on
+  // every screen size, so ask for it straight away.
+  preload('/Hero-bg.jpg', { as: 'image', fetchPriority: 'high' });
 
   return (
     <>
+      {/* Who runs the site and what it is — the home page is where Google
+          expects Organization / WebSite structured data. */}
+      <JsonLd data={[organizationSchema(), websiteSchema()]} />
+
       {/* ---------------------------------------------------------------- */}
       {/* 1. Hero                                                          */}
       {/* ---------------------------------------------------------------- */}
-      {/* padding="hairline" (2px): the hero is a single image sitting straight
-          under the sticky header, whose bottom border already separates the two.
-          Anything more than a couple of px reads as a gap, not breathing room. */}
-      <Section
-        tone="white"
-        padding="hairline"
-        className="relative overflow-hidden"
-        containerClassName="relative"
-      >
-        {/* decorative gradient blobs */}
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute -left-32 -top-40 h-72 w-72 rounded-full bg-brand-100 opacity-70 blur-3xl"
-        />
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute -right-24 top-24 h-72 w-72 rounded-full bg-accent-100 opacity-60 blur-3xl"
-        />
-
-        {/* The hero is now purely the banner slider — the headline, CTAs and
-            feature list were removed. A page still needs exactly one <h1> for
-            search engines and for screen-reader document navigation, and a
-            banner image cannot supply one, so it lives here visually hidden.
-            Remove this only if a visible <h1> comes back to the hero. */}
-        <h1 className="sr-only">
-          {BRAND.name} — {BRAND.tagline}
-        </h1>
-
-        {/* Admin-managed banner slider. Slides come from /master/banners, so
-            adding one in the admin changes the hero with no code change. */}
-        {/* Full container width. Banners are authored at 1920x700, so at the
-            1280px container this renders ~467px tall — full-bleed within the
-            page gutters without the ~640px slab the old 2:1 art produced. */}
-        <HeroCarousel exclude={['Repair']} className="relative mx-auto w-full max-w-[1028px]" />
+      {/* padding="snug": the hero sits straight under the sticky header, but its
+          stats bar hangs 10px below the artwork on xl+, so it needs a little
+          room underneath. No overflow-hidden here — it would clip that bar. */}
+      {/* "Your Devices In Safe Hands" — HomeHeroSlide carries the page's <h1>. */}
+      <Section tone="white" padding="snug">
+        <HomeHeroSlide />
       </Section>
 
       {/* ---------------------------------------------------------------- */}
@@ -162,189 +143,58 @@ export default function HomePage() {
           "Our Services". Both tight puts them a comfortable distance apart
           without the gap reading as a missing section. */}
       <Section id="menu" tone="page" padding="tight" className={ANCHOR_OFFSET}>
-        {/* Three cards, one per journey — icon and name only. The per-category
-            device tiles that used to fill this section are gone; each card is a
-            single link into its detail section further down the page. */}
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-brand-ink sm:text-3xl">
-            Our Services
-          </h2>
-
-          <ul role="list" className="mt-6 grid list-none grid-cols-1 gap-5 p-0 sm:grid-cols-3">
-            {HOME_MENU_GROUPS.map((group) => (
-              <li key={group.key}>
-                <Link
-                  href={group.href}
-                  className="group flex h-full flex-col items-center gap-2.5 rounded-2xl border border-brand-line bg-white p-4 text-center shadow-soft transition hover:border-brand-200 hover:shadow-lift focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 motion-safe:hover:-translate-y-0.5 sm:p-5"
-                >
-                  {/* Decorative: the card's own label sits directly beneath and
-                      the link already has an accessible name from it, so a
-                      descriptive alt here would just be announced twice. */}
-                  <img
-                    src={SERVICE_IMAGES[group.key]}
-                    alt=""
-                    width={1254}
-                    height={1254}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-16 w-16 object-contain transition motion-safe:group-hover:scale-105 sm:h-20 sm:w-20"
-                  />
-                  <span className="text-base font-bold tracking-tight text-brand-ink sm:text-lg">
-                    {group.action}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
+        {/* Repair device categories, then the admin's Buy / Sell menu rows, then
+            Nearby Shops — one flat tile each (see HomeRepairCategories). */}
+        <HomeRepairCategories />
       </Section>
 
       {/* ---------------------------------------------------------------- */}
       {/* 3. How a repair works                                            */}
       {/* ---------------------------------------------------------------- */}
       <Section id="repair" tone="white" className={ANCHOR_OFFSET}>
-        <div className="grid gap-12 lg:grid-cols-[1.15fr_1fr] lg:gap-16">
-          <div>
-            <SectionHeading
-              eyebrow="Our Repair"
-              title="From cracked screen to delivered, in seven steps"
-              subtitle="Pick the device, pick the fault, review the report — then choose a doorstep pickup or walk it in. Either way you watch the whole thing happen."
-              align="left"
-            />
-            <StepList steps={REPAIR_STEPS} className="mt-10" />
-          </div>
-
-          <div className="lg:pt-4">
-            <Card hover={false} className="lg:sticky lg:top-28">
-              <Badge tone="brand" icon={Navigation}>
-                Live tracking
-              </Badge>
-              <h3 className="mt-4 text-xl font-bold tracking-tight text-brand-ink">
-                The six stages you will see
-              </h3>
-              <p className="mt-2 text-base leading-relaxed text-brand-muted">
-                This is the same ticket lifecycle the shop works to. When their technician moves the
-                job, your app moves with it.
-              </p>
-
-              <ol className="mt-6 space-y-4">
-                {TICKET_LIFECYCLE.map((stage, index) => (
-                  <li key={stage.status} className="flex gap-3">
-                    <span
-                      className={cx(
-                        'mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold',
-                        index === TICKET_LIFECYCLE.length - 1
-                          ? 'bg-accent-500 text-white'
-                          : 'bg-brand-soft text-brand-700'
-                      )}
-                    >
-                      {index + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-brand-ink">{stage.status}</p>
-                      <p className="mt-0.5 text-sm leading-relaxed text-brand-muted">
-                        {stage.description}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-
-              <div className="mt-6 flex items-start gap-2 rounded-2xl bg-brand-soften p-4">
-                <Receipt className="mt-0.5 h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />
-                <p className="text-sm leading-relaxed text-brand-muted">
-                  A service receipt and a digital invoice land in the app when the job is delivered.
-                </p>
-              </div>
-            </Card>
-          </div>
-        </div>
-
+        <AppBenefitsSection />
       </Section>
 
       {/* ---------------------------------------------------------------- */}
       {/* 4. Sell — the differentiator                                     */}
       {/* ---------------------------------------------------------------- */}
-      <Section id="sell" tone="dark" className={ANCHOR_OFFSET}>
+      <Section id="sell" tone="soft" className={cx(ANCHOR_OFFSET, 'bg-gradient-to-b from-[#EAF8EC] via-[#F3FBF4] to-white')}>
         <SectionHeading
-          eyebrow="Our Sell"
-          title={SELL_HIGHLIGHT.title}
-          subtitle={SELL_HIGHLIGHT.description}
-          inverted
+          eyebrow="Sell with the GGFIX app"
+          title="Sell your old device the smart way"
+          subtitle="List once, let nearby shops compete, and take the best offer — all from the GGFIX app."
         />
 
-        <div className="mt-12 grid gap-6 sm:grid-cols-3">
+        <ul className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            {
-              icon: Package,
-              title: 'You describe it once',
-              body: 'Ten guided steps capture condition, screen, faults, configuration, accessories, warranty and photos.',
-            },
-            {
-              icon: Store,
-              title: 'Nearby shops quote',
-              body: 'That single submission goes out to shops around you, and several of them can come back with a price.',
-            },
-            {
-              icon: Handshake,
-              title: 'You accept the best',
-              body: 'Compare the quotations side by side in the app and accept whichever offer you actually like.',
-            },
+            { icon: Store, title: 'Many offers, one listing', body: 'List once — nearby shops each send you their own price.', chip: 'from-[#22C55E] to-[#079455]' },
+            { icon: TrendingUp, title: 'You get the best price', body: 'Compare the offers side by side and pick the highest.', chip: 'from-[#5EA2FF] to-[#1570EF]' },
+            { icon: Clock, title: 'List in minutes', body: 'Guided questions cover condition, faults, accessories and photos.', chip: 'from-[#FDB022] to-[#F79009]' },
+            { icon: ShieldCheck, title: 'Verified shops only', body: 'Offers come from verified GGFIX partner shops near you.', chip: 'from-[#A48AFB] to-[#7F56D9]' },
+            { icon: Truck, title: 'Doorstep pickup', body: 'Accept an offer and the shop can collect the device from you.', chip: 'from-[#2ED3B7] to-[#0E9384]' },
+            { icon: Handshake, title: 'No obligation', body: "Don't like the offers? Simply don't accept — nothing to pay.", chip: 'from-[#FD6F8E] to-[#E31B54]' },
+            { icon: BellRing, title: 'Track every offer', body: 'Get notified the moment a shop quotes or updates its offer.', chip: 'from-[#F7B500] to-[#DC6803]' },
+            { icon: LockKeyhole, title: 'Safe & transparent', body: 'A clear condition report means no surprise deductions later.', chip: 'from-[#36BFFA] to-[#0086C9]' },
           ].map((item) => (
-            <div
+            <li
               key={item.title}
-              className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8"
+              className="group rounded-3xl border border-[#D6EFDB] bg-white p-6 shadow-[0_6px_20px_rgba(9,173,42,0.06)] transition hover:-translate-y-1 hover:shadow-[0_14px_32px_rgba(9,173,42,0.14)]"
             >
-              <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10 text-brand-100">
+              <span className={cx('inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-md transition group-hover:scale-105', item.chip)}>
                 <item.icon className="h-6 w-6" aria-hidden="true" />
               </span>
-              <h3 className="mt-5 text-lg font-bold tracking-tight text-white">{item.title}</h3>
-              <p className="mt-2 text-base leading-relaxed text-brand-100">{item.body}</p>
-            </div>
+              <h3 className="mt-5 text-lg font-bold tracking-tight text-brand-ink">{item.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-brand-muted">{item.body}</p>
+            </li>
           ))}
-        </div>
+        </ul>
 
-        <div className="mt-14">
-          <h3 className="text-xl font-bold tracking-tight text-white sm:text-2xl">
-            The ten steps of a sell listing
-          </h3>
-          <ol className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {SELL_STEPS.map((step, index) => (
-              <li
-                key={step.title}
-                className={cx(
-                  'flex gap-3 rounded-2xl border p-4',
-                  step.highlight
-                    ? 'border-accent-400/60 bg-accent-500/15 sm:col-span-2 lg:col-span-1'
-                    : 'border-white/10 bg-white/5'
-                )}
-              >
-                <span
-                  className={cx(
-                    'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold',
-                    step.highlight ? 'bg-accent-500 text-white' : 'bg-white/10 text-brand-100'
-                  )}
-                >
-                  {index + 1}
-                </span>
-                <div className="min-w-0">
-                  <p
-                    className={cx(
-                      'text-sm font-bold',
-                      step.highlight ? 'text-accent-100' : 'text-white'
-                    )}
-                  >
-                    {step.title}
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-brand-100">{step.description}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-
-        <div className="mt-12">
-          <Button href={CTA.getApp.href} variant="white" size="lg" icon="ArrowRight">
+        <div className="mt-10 flex flex-col items-center justify-between gap-5 rounded-3xl border border-[#BFE5C8] bg-white px-6 py-6 text-center shadow-sm sm:flex-row sm:px-8 sm:text-left">
+          <div>
+            <p className="text-lg font-extrabold text-brand-ink">Ready to sell? It takes just a few minutes.</p>
+            <p className="mt-1 text-sm text-brand-muted">Describe your device → nearby shops quote → accept the best offer.</p>
+          </div>
+          <Button href={CTA.getApp.href} variant="primary" size="lg" icon="ArrowRight">
             {CTA.getApp.label}
           </Button>
         </div>
@@ -354,116 +204,85 @@ export default function HomePage() {
       {/* 5. Buy — refurbished devices and accessories                      */}
       {/* ---------------------------------------------------------------- */}
       <Section id="buy" tone="white" className={ANCHOR_OFFSET}>
-        <SectionHeading
-          eyebrow="Our Buy"
-          title="Buy from the shops that already fix the phones"
-          subtitle="The Buy tab lists refurbished handsets, accessories and spare parts put up by the same verified shops you book repairs with. Browse by category, open the full listing, add it to your cart."
-        />
-
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {BUY_FEATURES.map((feature) => (
-            <FeatureCard
-              key={feature.title}
-              icon={feature.icon}
-              title={feature.title}
-              description={feature.description}
+        <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-14">
+          <div>
+            <SectionHeading
+              eyebrow="Buy on GGFIX"
+              title="Quality devices from shops you can trust"
+              subtitle="Refurbished phones, laptops, accessories and spare parts — sold by verified repair shops near you, at honest local prices."
+              align="left"
             />
-          ))}
+            <ul className="mt-8 space-y-3">
+              {[
+                'Sold by verified GGFIX repair shops near you',
+                'Real photos, specs and condition on every listing',
+                'Compare prices from different shops in one place',
+                'Every purchase tracked in My Orders, with the shop a call away',
+              ].map((point) => (
+                <li key={point} className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-600 text-white">
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+                  <span className="text-base font-medium text-brand-ink">{point}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Button href={CTA.getApp.href} variant="primary" size="lg" icon="ArrowRight">
+                Start shopping in the app
+              </Button>
+              <Button href="/nearby-shops" variant="outline" size="lg">
+                Find nearby shops
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            {[
+              { icon: Smartphone, title: 'Refurbished phones', text: 'Tested handsets at a fraction of the price.', tone: 'from-[#E9F9EE] to-[#CFF2DA]', chip: 'from-[#22C55E] to-[#079455]' },
+              { icon: Laptop, title: 'Laptops & tablets', text: 'Work and study devices, checked by experts.', tone: 'from-[#EEF5FF] to-[#D6E7FF]', chip: 'from-[#5EA2FF] to-[#1570EF]' },
+              { icon: Headphones, title: 'Accessories', text: 'Chargers, cables, cases, earbuds and more.', tone: 'from-[#FFF6EA] to-[#FFE3BF]', chip: 'from-[#FDB022] to-[#F79009]' },
+              { icon: Wrench, title: 'Spare parts', text: 'Screens, batteries and parts for DIY fixes.', tone: 'from-[#F5EFFF] to-[#E4D6FF]', chip: 'from-[#A48AFB] to-[#7F56D9]' },
+            ].map((tile, i) => (
+              <div
+                key={tile.title}
+                className={cx(
+                  'group relative overflow-hidden rounded-3xl bg-gradient-to-br p-5 transition hover:-translate-y-1 hover:shadow-lift sm:p-6',
+                  tile.tone,
+                  i % 2 === 1 && 'sm:translate-y-6',
+                )}
+              >
+                <tile.icon className="pointer-events-none absolute -bottom-5 -right-5 h-24 w-24 text-brand-ink opacity-[0.06]" aria-hidden="true" />
+                <span className={cx('relative inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-md', tile.chip)}>
+                  <tile.icon className="h-6 w-6" aria-hidden="true" />
+                </span>
+                <p className="relative mt-5 break-words text-base font-extrabold text-brand-ink sm:text-lg">{tile.title}</p>
+                <p className="relative mt-1 text-sm leading-relaxed text-brand-muted">{tile.text}</p>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <Card>
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand-700">
-              <ShieldCheck className="h-6 w-6" aria-hidden="true" />
-            </span>
-            <h3 className="mt-5 text-lg font-bold tracking-tight text-brand-ink">
-              Listed by a shop, not a stranger
-            </h3>
-            <p className="mt-2 text-base leading-relaxed text-brand-muted">
-              Everything on the Buy tab comes from a registered GGFIX repair shop with a real address
-              near you — the same shops that handle repairs and pickups. If something needs looking
-              at afterwards, you already know where it came from.
-            </p>
-          </Card>
-
-          <Card>
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent-600">
-              <Package className="h-6 w-6" aria-hidden="true" />
-            </span>
-            <h3 className="mt-5 text-lg font-bold tracking-tight text-brand-ink">
-              Cart today, order history tomorrow
-            </h3>
-            <p className="mt-2 text-base leading-relaxed text-brand-muted">
-              Add items to a normal cart and place the order in the app. Every purchase lands in the
-              Buy tab of My Orders alongside your repairs and sell listings, so one screen holds
-              everything you have done with GGFIX.
-            </p>
-          </Card>
-        </div>
-
-      </Section>
-
-      {/* ---------------------------------------------------------------- */}
-      {/* 6. Why GGFIX                                                     */}
-      {/* ---------------------------------------------------------------- */}
-      <Section id="why" tone="page" className={ANCHOR_OFFSET}>
-        <SectionHeading
-          eyebrow="Why GGFIX"
-          title="Handing over your phone should not feel like a leap of faith"
-          subtitle="Every one of these is a feature that already ships in the app — not a promise about a roadmap."
-        />
-
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {CUSTOMER_EXTRAS.map((item) => (
-            <FeatureCard
-              key={item.title}
-              icon={item.icon}
-              title={item.title}
-              description={item.description}
-            />
-          ))}
-        </div>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <Card>
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-soft text-brand-700">
-              <LockKeyhole className="h-6 w-6" aria-hidden="true" />
-            </span>
-            <h3 className="mt-5 text-lg font-bold tracking-tight text-brand-ink">
-              Your unlock PIN, handled properly
-            </h3>
-            <p className="mt-2 text-base leading-relaxed text-brand-muted">
-              A technician usually needs to get into the device to test it. GGFIX captures the PIN or
-              pattern and the list of missing parts as a formal step of intake, recorded against the
-              booking — instead of on a sticky note taped to the back of your phone.
-            </p>
-          </Card>
-
-          <Card>
-            <span className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-soft text-accent-600">
-              <ScanFace className="h-6 w-6" aria-hidden="true" />
-            </span>
-            <h3 className="mt-5 text-lg font-bold tracking-tight text-brand-ink">
-              Your account, locked to your face
-            </h3>
-            <p className="mt-2 text-base leading-relaxed text-brand-muted">
-              Sign in with your phone number and an OTP or a password, reset a forgotten one over
-              OTP, and switch on biometric App Lock so orders, addresses and invoices need Face ID or
-              a fingerprint before they open.
-            </p>
-          </Card>
-        </div>
-
-        <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {CUSTOMER_FACTS.map((fact, index) => (
-            <StatTile
-              key={fact.label}
-              value={fact.value}
-              unit={fact.unit}
-              label={fact.label}
-              tone={index === 1 ? 'accent' : 'brand'}
-            />
-          ))}
+        <div className="mt-14 rounded-3xl border border-brand-line bg-brand-50/60 p-6 sm:p-8">
+          <p className="text-center text-sm font-extrabold uppercase tracking-[0.14em] text-brand-700">How buying works</p>
+          <ol className="mt-6 grid gap-6 sm:grid-cols-3">
+            {[
+              { icon: Search, title: 'Browse nearby', text: 'Pick a category and see listings from shops around you.' },
+              { icon: ShoppingCart, title: 'Add to cart & order', text: 'Check the photos and specs, then order in a few taps.' },
+              { icon: ClipboardList, title: 'Track & collect', text: 'Follow your order in My Orders until it reaches you.' },
+            ].map((step, i) => (
+              <li key={step.title} className="flex items-start gap-4">
+                <span className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-brand-700 shadow-sm">
+                  <step.icon className="h-6 w-6" aria-hidden="true" />
+                  <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-[11px] font-bold text-white">{i + 1}</span>
+                </span>
+                <div>
+                  <p className="text-base font-extrabold text-brand-ink">{step.title}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-brand-muted">{step.text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
         </div>
       </Section>
 
@@ -474,108 +293,45 @@ export default function HomePage() {
         <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
           <div>
             <SectionHeading
-              eyebrow="My Orders"
-              title="Five kinds of order. One place to find them."
-              subtitle="Profile → My Orders splits into Buy, Sell, Pickup, Enquiry and Service — and each of those filters down to Pending, Completed and Cancelled, so nothing quietly disappears."
+              eyebrow="Track everything"
+              title="Always know where your device is"
+              subtitle="Repairs, pickups, purchases, sales and enquiries — all in My Orders, updated live as the shop works on them."
               align="left"
             />
 
-            <ul className="mt-8 space-y-4">
+            <ul className="mt-8 grid gap-4 sm:grid-cols-2">
               {[
-                {
-                  icon: ListChecks,
-                  title: 'Full service event history',
-                  body: 'Not just a status badge — the complete timeline of every event on the job.',
-                },
-                {
-                  icon: BadgeCheck,
-                  title: 'Estimate approval in-app',
-                  body: 'The shop quotes, you approve. Work does not start on a price you have not seen.',
-                },
-                {
-                  icon: Receipt,
-                  title: 'Receipt and invoice on file',
-                  body: 'Your service receipt and invoice stay attached to the order after delivery.',
-                },
+                { icon: BellRing, title: 'Live status updates', body: 'Get notified at every step — from accepted to ready for pickup.', chip: 'from-[#22C55E] to-[#079455]' },
+                { icon: BadgeCheck, title: 'Approve the price first', body: 'The shop quotes, you approve. No work starts on a surprise bill.', chip: 'from-[#5EA2FF] to-[#1570EF]' },
+                { icon: Receipt, title: 'Receipts & invoices', body: 'Digital receipt and invoice saved with every order.', chip: 'from-[#FDB022] to-[#F79009]' },
+                { icon: Phone, title: 'Talk to the shop', body: 'Call or message the shop handling your device anytime.', chip: 'from-[#A48AFB] to-[#7F56D9]' },
               ].map((item) => (
-                <li key={item.title} className="flex gap-4">
-                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-brand-soft text-brand-700">
+                <li key={item.title} className="rounded-2xl border border-brand-line bg-white p-4 transition hover:border-brand-600/40 hover:shadow-soft">
+                  <span className={cx('inline-flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br text-white shadow-sm', item.chip)}>
                     <item.icon className="h-5 w-5" aria-hidden="true" />
                   </span>
-                  <div className="min-w-0">
-                    <p className="text-base font-bold text-brand-ink">{item.title}</p>
-                    <p className="mt-1 text-base leading-relaxed text-brand-muted">{item.body}</p>
-                  </div>
+                  <p className="mt-3 text-base font-bold text-brand-ink">{item.title}</p>
+                  <p className="mt-1 text-sm leading-relaxed text-brand-muted">{item.body}</p>
                 </li>
               ))}
             </ul>
+
+            <div className="mt-6 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold text-brand-muted">Track all five:</span>
+              {['Service', 'Pickup', 'Buy', 'Sell', 'Enquiry'].map((t) => (
+                <span key={t} className="rounded-full bg-brand-soft px-3 py-1 text-xs font-bold text-brand-700">
+                  {t}
+                </span>
+              ))}
+            </div>
           </div>
 
-          <Card hover={false} padded={false} className="overflow-hidden">
-            <div className="border-b border-brand-line bg-brand-soften px-5 py-4">
-              <p className="text-sm font-bold text-brand-ink">My Orders</p>
-            </div>
+          {/* Phone mockup — illustrative customer app home screen. */}
+          <div className="relative mx-auto my-8 w-full max-w-[360px]">
+            <div className="pointer-events-none absolute -inset-8 rounded-[60px] bg-gradient-to-br from-brand-100/70 via-white to-accent-50/60 blur-2xl" aria-hidden="true" />
+            <CustomerHomePhone />
 
-            <div className="flex flex-wrap gap-2 border-b border-brand-line px-5 py-4">
-              {ORDER_TABS.map((tab, index) => (
-                <span
-                  key={tab}
-                  className={cx(
-                    'rounded-full px-3 py-1.5 text-xs font-bold',
-                    index === 0
-                      ? 'bg-brand-600 text-white'
-                      : 'bg-brand-soften text-brand-muted'
-                  )}
-                >
-                  {tab}
-                </span>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap gap-2 px-5 py-4">
-              {ORDER_STATUSES.map((status, index) => (
-                <span
-                  key={status}
-                  className={cx(
-                    'rounded-full border px-3 py-1 text-xs font-semibold',
-                    index === 0
-                      ? 'border-accent-300 bg-accent-50 text-accent-700'
-                      : 'border-brand-line text-brand-muted'
-                  )}
-                >
-                  {status}
-                </span>
-              ))}
-            </div>
-
-            <div className="space-y-3 px-5 pb-6">
-              {TICKET_LIFECYCLE.slice(0, 4).map((stage, index) => (
-                <div
-                  key={stage.status}
-                  className="flex items-center gap-3 rounded-2xl border border-brand-line p-4"
-                >
-                  <span
-                    className={cx(
-                      'h-2.5 w-2.5 shrink-0 rounded-full',
-                      index === 0 ? 'bg-brand-600' : 'bg-brand-strong'
-                    )}
-                    aria-hidden="true"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-brand-ink">{stage.status}</p>
-                    <p className="truncate text-xs text-brand-muted">{stage.description}</p>
-                  </div>
-                  <Check
-                    className={cx(
-                      'h-4 w-4 shrink-0',
-                      index === 0 ? 'text-brand-600' : 'text-brand-subtle'
-                    )}
-                    aria-hidden="true"
-                  />
-                </div>
-              ))}
-            </div>
-          </Card>
+          </div>
         </div>
       </Section>
 
@@ -585,18 +341,21 @@ export default function HomePage() {
       <Section id="faq" tone="page" className={ANCHOR_OFFSET}>
         <SectionHeading
           eyebrow="Questions"
-          title="The things people ask first"
-          subtitle="Straight answers about booking, pickup, pricing and getting your device back."
+          title="New to GGFIX? Start here"
+          subtitle="Quick answers to what first-time customers want to know before they book, sell or buy."
         />
 
         <div className="mx-auto mt-12 max-w-3xl space-y-4">
-          {faqTeaser.map((faq) => (
+          {HOME_FAQS.map((faq) => (
             <details
               key={faq.question}
               className="group rounded-3xl border border-brand-line bg-white p-5 shadow-soft transition open:shadow-lift sm:p-6"
             >
               <summary className="flex cursor-pointer list-none items-start justify-between gap-4 rounded-xl text-base font-bold text-brand-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 focus-visible:ring-offset-2 sm:text-lg [&::-webkit-details-marker]:hidden">
-                <span>{faq.question}</span>
+                <span>
+                  <span className="mb-1.5 inline-block rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-brand-700">{faq.topic}</span>
+                  <span className="block">{faq.question}</span>
+                </span>
                 <span
                   className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand-700 transition motion-reduce:transition-none group-open:rotate-90"
                   aria-hidden="true"
@@ -624,13 +383,65 @@ export default function HomePage() {
       {/* 9. Closing CTA                                                    */}
       {/* ---------------------------------------------------------------- */}
       <Section tone="white">
-        <CTABand
-          className="bg-gradient-to-br from-brand-600 via-brand-700 to-brand-800"
-          title={BRAND.appsStatus}
-          subtitle="Tell us where to reach you and we will let you know the moment the GGFIX customer app goes live. Run a repair shop? There is a 15-day free trial waiting with your name on it."
-          primary={CTA.contact}
-          secondary={CTA.forShops}
-        />
+        <div className="relative overflow-hidden rounded-[32px] bg-gradient-to-br from-brand-600 via-brand-700 to-brand-800 px-6 py-10 text-white shadow-lift sm:px-10 sm:py-12 lg:px-14">
+          <div className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" aria-hidden="true" />
+          <div className="pointer-events-none absolute -bottom-28 -left-16 h-72 w-72 rounded-full bg-[#9BF2AE]/10 blur-2xl" aria-hidden="true" />
+
+          <div className="relative grid items-center gap-10 lg:grid-cols-[1.2fr_1fr]">
+            <div>
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-[#C9F7D3]">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[#9BF2AE]" aria-hidden="true" />
+                {BRAND.appsStatus}
+              </span>
+              <h2 className="mt-4 text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">
+                Repair, sell and buy — all from one app
+              </h2>
+              <p className="mt-3 max-w-xl text-base leading-relaxed text-white/80">
+                The GGFIX customer app is almost here. Be the first to know when it launches and book your first repair in a few taps.
+              </p>
+              <ul className="mt-6 grid gap-2.5 sm:grid-cols-2">
+                {['Doorstep pickup from nearby shops', 'Approve the price before work starts', 'Live tracking for every order', 'Best offers when you sell'].map((point) => (
+                  <li key={point} className="flex items-center gap-2.5 text-sm font-semibold">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-brand-700">
+                      <Check className="h-3 w-3" aria-hidden="true" />
+                    </span>
+                    {point}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Button href={CTA.contact.href} variant="white" size="lg" icon="ArrowRight">
+                  Notify me at launch
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-white/15 bg-white/10 p-5 backdrop-blur-sm">
+                <p className="text-sm font-bold text-white">Get the GGFIX app</p>
+                <StoreBadges tone="dark" align="left" caption="" className="mt-3" />
+              </div>
+              <div className="rounded-3xl bg-white p-5 text-brand-ink shadow-soft">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#22C55E] to-[#079455] text-white">
+                    <Store className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div>
+                    <p className="text-base font-extrabold">Run a repair shop?</p>
+                    <p className="mt-1 text-sm leading-relaxed text-brand-muted">Start your 15-day free trial — no card needed.</p>
+                  </div>
+                </div>
+                <Link
+                  href={CTA.forShops.href}
+                  className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-brand-700 hover:underline"
+                >
+                  Explore GGFIX for shops
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
       </Section>
     </>
   );

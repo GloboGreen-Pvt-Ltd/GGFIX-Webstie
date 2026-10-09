@@ -27,6 +27,7 @@
  */
 
 import { AUTH_BASE } from '@/lib/api';
+import { scopedSessionFields, sessionScope } from '@/lib/shopAccess';
 
 export const SHOP_TOKEN_KEY = 'ggfix_shop_token';
 export const SHOP_USER_KEY = 'ggfix_shop_owner';
@@ -82,7 +83,9 @@ function emit(detail) {
   }
 }
 
-function save(session) {
+function save(rawSession) {
+  // A SHOP login keeps only its own shop — never the owner's shop list.
+  const session = scopedSessionFields(rawSession);
   const storage = safeStorage();
   if (storage) {
     try {
@@ -122,7 +125,93 @@ function save(session) {
  * is untouched by this export.
  */
 export function writeSession(session) {
+  preserveShopSessionFor(session);
   save(session);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Preserved SHOP session (Shop → Owner → "Logout" → back to the same Shop)    */
+/* -------------------------------------------------------------------------- */
+
+// When an OWNER signs in on top of a live SHOP session (shop-mobile login),
+// the shop's real, server-issued SHOP-scoped token is set aside here instead
+// of being overwritten. Owner logout puts it back (exitOwnerMode) — no OTP,
+// no re-login, and no client-side role faking: the restored token is the one
+// the backend issued for that shop.
+export const PRESERVED_SHOP_KEY = 'ggfix_shop_preserved';
+
+/** true when a JWT's `exp` is still in the future (unreadable/absent exp → treated as valid). */
+function tokenNotExpired(token) {
+  try {
+    const part = String(token).split('.')[1];
+    if (!part) return true;
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+    return !json.exp || json.exp * 1000 > Date.now() + 30000;
+  } catch {
+    return true;
+  }
+}
+
+function readPreserved() {
+  const storage = safeStorage();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(PRESERVED_SHOP_KEY);
+    const s = raw ? JSON.parse(raw) : null;
+    return s && s.token ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPreserved() {
+  const storage = safeStorage();
+  try {
+    storage?.removeItem(PRESERVED_SHOP_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Called before any NEW login is stored. OWNER login over a valid SHOP
+ * session → keep that shop session aside. A new SHOP login → any older
+ * preserved shop session is obsolete, drop it.
+ */
+function preserveShopSessionFor(incoming) {
+  const storage = safeStorage();
+  if (!storage) return;
+  if (sessionScope(incoming) !== 'OWNER') {
+    clearPreserved();
+    return;
+  }
+  const current = readShopOwner();
+  if (current?.token && sessionScope(current) === 'SHOP' && tokenNotExpired(current.token)) {
+    try {
+      storage.setItem(PRESERVED_SHOP_KEY, JSON.stringify(current));
+    } catch {
+      /* quota / private mode — owner logout will then fall back to a full logout */
+    }
+  }
+}
+
+/** Is there a still-valid shop session to return to after owner logout? */
+export function hasPreservedShopSession() {
+  const s = readPreserved();
+  return Boolean(s && tokenNotExpired(s.token));
+}
+
+/**
+ * Owner "Logout" when the owner came in on top of a shop session: drop the
+ * owner session and make the preserved SHOP session active again. Returns the
+ * restored session, or null when there is none (caller then does a full logout).
+ */
+export function exitOwnerMode() {
+  const shop = readPreserved();
+  clearPreserved();
+  if (!shop || !tokenNotExpired(shop.token)) return null;
+  save(shop); // re-stores the shop's own token + fields; emits to every subscriber
+  return readShopOwner();
 }
 
 /**
@@ -145,12 +234,60 @@ export function updateShopOwnerSession(profile) {
   return next;
 }
 
+/**
+ * Switch the active shop — POST {AUTH_BASE}/auth/switch-shop { shopId }, the
+ * call the Partner app's switchShop() makes. The backend re-issues the JWT
+ * for that shop (only for owner-scoped sessions; a shop-mobile login is
+ * locked to one shop and is refused). On success the new token + shop fields
+ * replace the stored ones and every subscriber is notified; on failure the
+ * current session is left untouched. Throws with the server's message.
+ * (AUTH_BASE already ends in /auth — the doubled segment is intentional, see
+ * shopMobileAuth.js.)
+ */
+export async function switchShop(shopId) {
+  const current = readShopOwner();
+  if (!current?.token) throw new Error('You are signed out. Please sign in again.');
+  const res = await fetch(`${base()}/auth/switch-shop`, {
+    method: 'POST',
+    credentials: 'omit',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${current.token}` },
+    body: JSON.stringify({ shopId }),
+  });
+  if (!res.ok) throw new Error((await readError(res)) || 'Could not switch shop. Please try again.');
+  const data = await res.json().catch(() => ({}));
+  const token = data && (data.accessToken || data.token);
+  if (!token) throw new Error('Invalid response: no token returned.');
+  const next = {
+    ...current,
+    token,
+    userId: data.userId ?? current.userId,
+    shopId: data.shopId ?? shopId,
+    shopName: data.shopName ?? current.shopName,
+    name: data.name ?? current.name,
+    email: data.email ?? current.email,
+    roles: data.roles ?? current.roles,
+    roleLabel: data.roleLabel ?? current.roleLabel,
+    loginScope: data.loginScope ?? current.loginScope,
+    shops: Array.isArray(data.shops) ? data.shops : current.shops,
+  };
+  save(next);
+  return next;
+}
+
+// Browser-stored, shop-scoped leftovers (recent customer searches, notification
+// 'seen' marks) — cleared on logout so the next account starts clean.
+const SHOP_SCOPED_PREFIXES = ['owner.search.recents', 'ggfix_notifications_seen_at'];
+
 export function logout() {
   const storage = safeStorage();
   if (storage) {
     try {
       storage.removeItem(SHOP_TOKEN_KEY);
       storage.removeItem(SHOP_USER_KEY);
+      storage.removeItem(PRESERVED_SHOP_KEY); // full logout: nothing to return to
+      Object.keys(storage)
+        .filter((k) => SHOP_SCOPED_PREFIXES.some((p) => k.startsWith(p)))
+        .forEach((k) => storage.removeItem(k));
     } catch {
       /* ignore */
     }
@@ -237,6 +374,7 @@ export async function login({ email, password, otp }) {
     }
 
     const session = { token, email: trimmedEmail, loginType: loginType || 'SHOP_OWNER' };
+    preserveShopSessionFor(session);
     save(session);
     return { ok: true, session };
   } catch {

@@ -12,7 +12,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Camera,
-  CheckCircle2,
   Edit3,
   Loader2,
   Mail,
@@ -37,6 +36,7 @@ import {
   Panel,
   initialsOf,
 } from '@/components/site/account/ui';
+import { notifyError, notifySuccess } from '@/lib/toast';
 
 const EMPTY_FORM = {
   firstName: '',
@@ -124,13 +124,11 @@ export default function AccountProfilePage() {
   const [saving, setSaving] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const inputRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
-    setNotice('');
     const session = readCustomer();
     const fallback = formFromProfile(session);
     try {
@@ -159,14 +157,12 @@ export default function AccountProfilePage() {
   useEffect(() => { load(); }, [load]);
 
   const update = (key, value) => {
-    setNotice('');
     setError('');
     setForm((current) => ({ ...current, [key]: value }));
   };
 
   const startEditing = () => {
     setError('');
-    setNotice('');
     setForm(savedForm);
     setEditing(true);
   };
@@ -174,7 +170,6 @@ export default function AccountProfilePage() {
   const cancelEditing = () => {
     setForm(savedForm);
     setError('');
-    setNotice('');
     setEditing(false);
   };
 
@@ -191,24 +186,22 @@ export default function AccountProfilePage() {
     const nameLooksAllowed = /\.(png|jpe?g)$/i.test(file.name || '');
     const typeLooksAllowed = ['image/png', 'image/jpeg'].includes(file.type);
     if (!nameLooksAllowed && !typeLooksAllowed) {
-      setError('Choose a PNG or JPG image.');
+      notifyError('Choose a PNG or JPG image.');
       return;
     }
     if (file.size > 1024 * 1024) {
-      setError('Choose an image smaller than 1 MB.');
+      notifyError('Choose an image smaller than 1 MB.');
       return;
     }
 
     setAvatarUploading(true);
-    setError('');
-    setNotice('');
     try {
       const profileImageUrl = await uploadCustomerAvatar(file);
       setForm((current) => ({ ...current, profileImageUrl }));
-      setNotice('Avatar uploaded. Save changes to apply it to your profile.');
+      notifySuccess('Avatar uploaded. Save changes to apply it to your profile.');
       setEditing(true);
     } catch (uploadError) {
-      setError(uploadError?.message || 'Could not upload your avatar.');
+      notifyError(uploadError, 'Could not upload your avatar.');
     } finally {
       setAvatarUploading(false);
     }
@@ -223,25 +216,23 @@ export default function AccountProfilePage() {
     const email = form.email.trim();
 
     if (!firstName) {
-      setError('Enter your first name.');
+      notifyError('Enter your first name.');
       return;
     }
     if (mobile.length !== 10) {
-      setError('Enter a valid 10-digit mobile number.');
+      notifyError('Enter a valid 10-digit mobile number.');
       return;
     }
     if (alternateMobile && alternateMobile.length !== 10) {
-      setError('Enter a valid 10-digit alternate mobile number.');
+      notifyError('Enter a valid 10-digit alternate mobile number.');
       return;
     }
     if (email && !/^\S+@\S+\.\S+$/.test(email)) {
-      setError('Enter a valid email address.');
+      notifyError('Enter a valid email address.');
       return;
     }
 
     setSaving(true);
-    setError('');
-    setNotice('');
     try {
       const saved = await updateCustomerProfile({
         fullName: [firstName, lastName].filter(Boolean).join(' '),
@@ -255,9 +246,9 @@ export default function AccountProfilePage() {
       setSavedForm(next);
       updateCustomerSession(saved);
       setEditing(false);
-      setNotice('Personal information saved successfully.');
+      notifySuccess('Personal information saved successfully.');
     } catch (saveError) {
-      setError(saveError?.message || 'Could not save your profile.');
+      notifyError(saveError, 'Could not save your profile.');
     } finally {
       setSaving(false);
     }
@@ -328,9 +319,6 @@ export default function AccountProfilePage() {
         </div>
 
         <form onSubmit={save} className="p-5 sm:p-7">
-          {notice ? <p className="mb-5 flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700"><CheckCircle2 className="h-4 w-4" />{notice}</p> : null}
-          {error && editing ? <p className="mb-5 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700">{error}</p> : null}
-
           <div className="grid gap-5 sm:grid-cols-2">
             <Field label="First Name" icon={User} readOnly={!editing} value={form.firstName} onChange={(event) => update('firstName', event.target.value)} placeholder="Enter first name" autoComplete="given-name" />
             <Field label="Last Name" icon={User} readOnly={!editing} value={form.lastName} onChange={(event) => update('lastName', event.target.value)} placeholder="Enter last name" autoComplete="family-name" />

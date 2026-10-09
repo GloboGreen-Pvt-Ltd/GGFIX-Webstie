@@ -3,7 +3,7 @@ import { Search } from 'lucide-react';
 import { cx } from '@/components/site/ui';
 
 export const FIELD_INPUT_CLS =
-  'w-full rounded-2xl border border-[#D0D5DD] bg-[#F8FBFA] px-3.5 py-3.5 text-sm text-[#101828] shadow-[inset_0_1px_3px_rgba(16,24,40,0.04)] placeholder:text-[#98A2B3] transition focus:border-[#15803D] focus:bg-white focus:outline-none focus:ring-[3px] focus:ring-[#DCFCE7]';
+  'w-full rounded-2xl border border-[#D0D5DD] bg-[#F8F8F8] px-3.5 py-3.5 text-sm text-[#111111] placeholder:text-[#98A2B3] transition focus:border-[#15803D] focus:bg-white focus:outline-none focus:ring-[3px] focus:ring-[#ECECEC]';
 
 export const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
 

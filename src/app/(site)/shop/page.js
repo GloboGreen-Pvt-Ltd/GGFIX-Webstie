@@ -44,12 +44,14 @@ import {
   SHOP_TABS,
   TICKET_LIFECYCLE,
 } from '@/lib/siteContent';
+import { pageMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'For Shops',
+export const metadata = pageMetadata({
+  title: 'Mobile Repair Shop Management Software',
   description:
-    'GGFIX is a multi-tenant SaaS for mobile repair shops — bookings with IMEI and QR intake, a real ticket lifecycle, technicians, geofenced attendance, doorstep pickup, invoicing and multi-shop switching. Start with a 15-day free trial, then ₹3,000 per year.',
-};
+    'Run your repair shop on GGFIX: bookings with IMEI and QR intake, technicians, staff attendance, doorstep pickup, invoices and multi-shop control. Free trial.',
+  path: '/shop',
+});
 
 const freeTrial = PLANS.find((plan) => plan.key === 'free-trial');
 const basic = PLANS.find((plan) => plan.key === 'basic');
@@ -295,7 +297,7 @@ export default function ShopPage() {
                 {SHOP_DASHBOARD_STATS.map((stat) => (
                   <div
                     key={stat.label}
-                    className="rounded-2xl border border-brand-line bg-white px-3 py-3 text-center"
+                    className="min-w-0 rounded-2xl border border-brand-line bg-white px-2 py-3 text-center sm:px-3"
                   >
                     <p className="text-sm font-bold text-brand-ink sm:text-base">{stat.label}</p>
                     <p className="mt-0.5 text-[11px] leading-snug text-brand-muted">{stat.hint}</p>

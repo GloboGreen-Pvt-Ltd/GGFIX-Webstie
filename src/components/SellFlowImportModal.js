@@ -19,6 +19,7 @@ import {
   parseSellFlowFile,
   planSellFlowImport,
 } from '@/lib/sellFlowExcel';
+import { notifyError } from '@/lib/toast';
 
 const WRITE_CONCURRENCY = 4;
 const PREVIEW_PAGE_SIZES = [25, 50, 100, 200];
@@ -107,7 +108,6 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
   const [parsed, setParsed] = useState(null);
   const [plan, setPlan] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [rowFilter, setRowFilter] = useState(null);
@@ -138,7 +138,6 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
 
   const buildPlan = async (parsedFile) => {
     setBusy(true);
-    setError('');
     try {
       const snapshot = await getPlanData();
       const next = planSellFlowImport({
@@ -151,7 +150,7 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
       setPlan(next);
       setStep('review');
     } catch (planError) {
-      setError(planError?.body?.message || planError?.message || 'Could not read the current master-data records to compare against.');
+      notifyError(planError?.body?.message || planError?.message || 'Could not read the current master-data records to compare against.');
     } finally {
       setBusy(false);
     }
@@ -161,17 +160,16 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
     if (!nextFile) return;
     setFile(nextFile);
     setBusy(true);
-    setError('');
     try {
       const parsedFile = await parseSellFlowFile(kind, nextFile);
       if (!parsedFile.rows.length) {
-        setError('That sheet has no data rows below the header.');
+        notifyError('That sheet has no data rows below the header.');
         return;
       }
       setParsed(parsedFile);
       await buildPlan(parsedFile);
     } catch (parseError) {
-      setError(parseError?.message || 'Could not read that file.');
+      notifyError(parseError?.message || 'Could not read that file.');
     } finally {
       setBusy(false);
     }
@@ -305,15 +303,13 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-admin-border bg-admin-card shadow-xl">
-        <div className="flex shrink-0 items-center justify-between border-b border-admin-border px-6 py-4">
+      <div className="flex max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-xl border border-admin-border bg-admin-card shadow-xl">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-admin-border px-4 py-4 sm:px-6">
           <h2 className="flex items-center gap-2 text-lg font-medium text-slate-900"><FileSpreadsheet size={18} className="text-emerald-600" />{copy.title}</h2>
           <button type="button" onClick={close} aria-label="Close" className="text-2xl leading-none text-slate-400 hover:text-slate-700">×</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 space-y-4">
           {step === 'pick' && (
             <>
               <label
@@ -336,7 +332,7 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
                 </ul>
                 <button
                   type="button"
-                  onClick={() => exportSellFlowTemplateWorkbook({ kind, categories }).catch((templateError) => setError(templateError?.message || 'Could not build the empty format.'))}
+                  onClick={() => exportSellFlowTemplateWorkbook({ kind, categories }).catch((templateError) => notifyError(templateError?.message || 'Could not build the empty format.'))}
                   className="inline-flex items-center gap-1.5 text-xs font-medium text-admin-accent hover:underline"
                 >
                   <Download size={14} /> Download the empty format
@@ -349,7 +345,7 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
             <>
               <div className="flex items-center justify-between gap-3 text-sm">
                 <p className="min-w-0 truncate text-admin-muted"><span className="font-medium text-slate-800">{file?.name}</span> · sheet “{parsed?.sheetName}” · {parsed?.rows.length || 0} data rows</p>
-                <button type="button" onClick={() => { setStep('pick'); setPlan(null); setError(''); }} className="shrink-0 text-xs font-medium text-admin-accent hover:underline">Choose a different file</button>
+                <button type="button" onClick={() => { setStep('pick'); setPlan(null); }} className="shrink-0 text-xs font-medium text-admin-accent hover:underline">Choose a different file</button>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Stat label="To create" value={counts.create || 0} tone="green" active={rowFilter === 'create'} onClick={() => toggleFilter('create')} hint="Show rows that will create records" />
@@ -400,7 +396,7 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
               <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-900"><CheckCircle2 size={20} className="mt-0.5 shrink-0" /><div><p className="font-medium">Import finished</p><p className="text-sm">Created {result?.created || 0}; updated {result?.updated || 0}{result?.cancelled ? ' before cancellation' : ''}.</p></div></div>
               {failures.length > 0 && (
                 <>
-                  <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-red-700">{failures.length} row{failures.length === 1 ? '' : 's'} could not be imported.</p><button type="button" onClick={() => exportSellFlowErrorReport({ kind, failures }).catch((reportError) => setError(reportError?.message || 'Could not build the error report.'))} className="inline-flex items-center gap-1.5 text-sm font-medium text-admin-accent hover:underline"><Download size={15} /> Download error report</button></div>
+                  <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-red-700">{failures.length} row{failures.length === 1 ? '' : 's'} could not be imported.</p><button type="button" onClick={() => exportSellFlowErrorReport({ kind, failures }).catch((reportError) => notifyError(reportError?.message || 'Could not build the error report.'))} className="inline-flex items-center gap-1.5 text-sm font-medium text-admin-accent hover:underline"><Download size={15} /> Download error report</button></div>
                   <div className="overflow-hidden rounded-lg border border-red-200"><div className="max-h-64 overflow-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead className="sticky top-0 bg-red-50 text-xs uppercase text-red-700"><tr><th className="px-3 py-2">Row</th><th className="px-3 py-2">Record</th><th className="px-3 py-2">Problem</th></tr></thead><tbody className="divide-y divide-red-100">{failureRows.map((item, index) => <tr key={`${item.rowNumber}-${index}`}><td className="px-3 py-2 text-admin-muted">{item.rowNumber ?? '—'}</td><td className="px-3 py-2 text-slate-700">{item.label || copy.noun}</td><td className="px-3 py-2 text-red-700">{item.error}</td></tr>)}</tbody></table></div><TablePagination total={failures.length} page={failureBounds.safePage} pageSize={failureSize} onPageChange={setFailurePage} onPageSizeChange={setFailureSize} pageSizes={PREVIEW_PAGE_SIZES} /></div>
                 </>
               )}
@@ -408,7 +404,7 @@ export default function SellFlowImportModal({ kind, categories = [], onClose, on
           )}
         </div>
 
-        <div className="flex shrink-0 justify-end gap-2 border-t border-admin-border px-6 py-4">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-admin-border px-4 py-4 sm:px-6">
           {step === 'review' && <button type="button" onClick={close} className="rounded-lg border border-admin-border px-4 py-2 text-sm text-slate-700 hover:bg-admin-dark">Cancel</button>}
           {step === 'review' && <button type="button" disabled={!applyCount || busy} onClick={applyPlan} className="rounded-lg bg-admin-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">Import {applyCount} {applyCount === 1 ? 'record' : 'records'}</button>}
           {step === 'done' && <button type="button" onClick={close} className="rounded-lg bg-admin-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Done</button>}

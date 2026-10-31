@@ -2,9 +2,9 @@
  * shopSubscription.js — the shop owner's own subscription status
  * (/shop-home/account/settings, "Subscription" tab).
  *
- * subscription-service has no per-owner auth check (same permitAll pattern
- * as the rest of these microservices), but is read-only here — we only ever
- * GET the owner's own status, never activate/cancel a plan from this screen.
+ * The two legacy helpers below are read-only. The Subscription v2 helpers at
+ * the bottom (catalog, quote, purchase, Razorpay UPI order/verify, receipts)
+ * identify the owner from the shop JWT only — they never send ownerUserId.
  *
  * Unlike AUTH_BASE, SUBSCRIPTION_BASE() is NOT doubled: the edge special-cases
  * this service's routing the same way it does master-data (see the header
@@ -26,3 +26,33 @@ export async function fetchSubscriptionPlans() {
   const list = await shopRequest(SUBSCRIPTION_BASE(), '/subscriptions/plans');
   return Array.isArray(list) ? list : [];
 }
+
+/* -------------------------------------------------------------------------- */
+/* Subscription v2 (owner = JWT sub; never send ownerUserId). Money in paise.  */
+/* -------------------------------------------------------------------------- */
+
+const sub = (path, options) => shopRequest(SUBSCRIPTION_BASE(), `/subscriptions${path}`, options);
+const post = (path, body) => sub(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
+
+/** { subscription, shops, entitlements, usage, trialAvailable, pendingOrder } */
+export const fetchSubscriptionMe = () => sub('/me');
+/** { plans, checkout:{ webEnabled, androidEnabled, iosEnabled, configured }, taxPercent, taxInclusive } */
+export const fetchSubscriptionCatalog = () => sub('/catalog');
+export const fetchEligibleShops = async () => {
+  const list = await sub('/eligible-shops');
+  return Array.isArray(list) ? list : [];
+};
+export const fetchQuote = (planCode, shopIds) => post('/quote', { planCode, shopIds });
+export const fetchQuotePreview = (planCode, shopCount) => post('/quote/preview', { planCode, shopCount });
+export const purchaseSubscription = (planCode, shopIds) =>
+  post('/purchase', { planCode, shopIds, channel: 'WEB', acceptTerms: true });
+export const createPaymentOrder = (orderId) => post('/payment/order', { orderId });
+export const verifyPayment = (payload) => post('/payment/verify', payload);
+export const fetchPaymentStatus = (orderId) => sub(`/payment/status/${encodeURIComponent(orderId)}`);
+export const cancelPaymentOrder = (orderId, reason) => post('/payment/cancel', { orderId, reason });
+export const fetchPaymentHistory = async () => {
+  const list = await sub('/payment/history');
+  return Array.isArray(list) ? list : [];
+};
+export const fetchReceipt = (paymentId) => sub(`/receipts/${encodeURIComponent(paymentId)}`);
+export const activateTrial = (shopIds) => post('/trial/activate', { shopIds });

@@ -14,7 +14,8 @@
  * refetched after every add/edit/delete so the grid never goes stale.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AlertTriangle, Plus, Store } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
@@ -63,6 +64,9 @@ export default function BusinessProfilePage() {
   const [loadError, setLoadError] = useState('');
 
   const [formState, setFormState] = useState(null); // { mode: 'add'|'edit', initial }
+  const router = useRouter();
+  // ?add=1&returnTo=… (subscription checkout "Add new shop") goes back there after the shop is saved.
+  const returnTo = useRef('');
   const [viewingLoc, setViewingLoc] = useState(null);
   const [deletingLoc, setDeletingLoc] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -108,7 +112,10 @@ export default function BusinessProfilePage() {
     const url = new URL(window.location.href);
     if (url.searchParams.get('add') !== '1') return;
     setFormState({ mode: 'add', initial: {} });
+    const back = url.searchParams.get('returnTo') || '';
+    if (back.startsWith('/shop-home/settings/subscription/')) returnTo.current = back;
     url.searchParams.delete('add');
+    url.searchParams.delete('returnTo');
     window.history.replaceState(null, '', url);
   }, [ownerId]);
 
@@ -209,7 +216,13 @@ export default function BusinessProfilePage() {
           submit={submitLocation}
           onClose={() => setFormState(null)}
           onSaved={async () => {
+            const back = formState.mode === 'add' ? returnTo.current : '';
+            returnTo.current = '';
             setFormState(null);
+            if (back) {
+              router.push(back);
+              return;
+            }
             await load();
           }}
         />

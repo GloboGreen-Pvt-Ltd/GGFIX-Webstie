@@ -79,7 +79,7 @@ import {
   verifyChangeMobileOtp,
 } from '@/lib/shopProfile';
 import { fetchMyKyc, saveMyKyc, uploadMyKycFile } from '@/lib/shopKyc';
-import { fetchMySubscription, fetchSubscriptionPlans } from '@/lib/shopSubscription';
+import { fetchSubscriptionMe } from '@/lib/shopSubscription';
 import { fetchShopBookings, recentBookings } from '@/lib/shopDashboard';
 import { updateShopLocation } from '@/lib/shopLocations';
 import { notifyError, notifySuccess } from '@/lib/toast';
@@ -822,31 +822,28 @@ function KycDocumentTab() {
  */
 function SubscriptionTab({ ownerId }) {
   const [sub, setSub] = useState(null);
-  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Subscription v2: GET /subscriptions/me (owner from the shop JWT) carries the
+  // server-built plan name/duration, so no plan-catalog lookup is needed here.
   useEffect(() => {
     if (!ownerId) return;
     let cancelled = false;
-    Promise.allSettled([fetchMySubscription(ownerId), fetchSubscriptionPlans()]).then(([subRes, plansRes]) => {
-      if (cancelled) return;
-      if (subRes.status === 'fulfilled') setSub(subRes.value);
-      else setError('Could not load your subscription right now.');
-      if (plansRes.status === 'fulfilled') setPlans(plansRes.value);
-      setLoading(false);
-    });
+    fetchSubscriptionMe()
+      .then((me) => {
+        if (!cancelled) setSub(me?.subscription && me.subscription.status !== 'NONE' ? me.subscription : null);
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load your subscription right now.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
     return () => { cancelled = true; };
   }, [ownerId]);
 
-  const isTrial = sub?.subscriptionType === 'TRIAL' || sub?.status === 'TRIAL' || sub?.planCode === 'FREE_TRIAL';
-  // The trial isn't in the purchasable plan catalog (GET /subscriptions/plans
-  // only lists paid plans like BASIC), so it never resolves through that
-  // lookup — check it explicitly before falling back to the raw planCode,
-  // which would otherwise surface the enum spelling ("FREE_TRIAL") verbatim.
-  const planLabel = isTrial
-    ? 'Free Trial'
-    : plans.find((p) => p.code === sub?.planCode)?.name || sub?.planCode || 'No active plan';
+  const planLabel = sub ? `${sub.planName || sub.planCode}${sub.durationLabel ? ` · ${sub.durationLabel}` : ''}` : 'No active plan';
   const daysRemaining = sub?.daysRemaining ?? 0;
 
   if (loading) {
@@ -873,7 +870,8 @@ function SubscriptionTab({ ownerId }) {
           {sub ? (
             <p className="mt-1 text-sm text-[#666666]">
               {daysRemaining > 0 ? `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining` : 'No active window'}
-              {sub.inactiveDate ? ` · renews/expires ${formatDate(sub.inactiveDate)}` : ''}
+              {sub.status ? ` · ${String(sub.status).replace(/_/g, ' ')}` : ''}
+              {sub.endsAt ? ` · renews/expires ${formatDate(sub.endsAt)}` : ''}
             </p>
           ) : (
             <p className="mt-1 text-sm text-[#666666]">No subscription record found for this account yet.</p>

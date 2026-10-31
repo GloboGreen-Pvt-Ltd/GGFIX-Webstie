@@ -16,9 +16,8 @@
  * simpler than what this page had before, to match the reference exactly.
  *
  * Real data: GET {TICKET_BASE}/technicians via fetchTechnicians()
- * (src/lib/shopDashboard.js) for the roster, plus fetchMyProfile() +
- * fetchMySubscription(ownerId) (src/lib/shopProfile.js,
- * src/lib/shopSubscription.js) for the seat limit used by the summary
+ * (src/lib/shopDashboard.js) for the roster, plus fetchSubscriptionMe()
+ * (src/lib/shopSubscription.js, per-shop entitlements.employeeLimit) for the seat limit used by the summary
  * card's ring. No new API client, no mock data.
  *
  * "+ Add Employee" now navigates to the real Add Staff flow
@@ -42,10 +41,9 @@ import PageHeader from '@/components/shop-dashboard/PageHeader';
 import Icon3D from '@/components/shop-dashboard/Icon3D';
 import EmptyState from '@/components/shop-dashboard/EmptyState';
 import { fetchTechnicians } from '@/lib/shopDashboard';
-import { fetchMyProfile } from '@/lib/shopProfile';
 import { readShopOwner } from '@/lib/shopAuth';
 import { isOwnerSession } from '@/lib/shopAccess';
-import { fetchMySubscription } from '@/lib/shopSubscription';
+import { fetchSubscriptionMe } from '@/lib/shopSubscription';
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
 
@@ -156,10 +154,10 @@ export default function EmployeeManagementPage() {
     // a shop login never fetches either; its ring just counts its own team.
     if (!isOwnerSession(readShopOwner())) return undefined;
     let alive = true;
-    fetchMyProfile()
-      .then((profile) => (profile?.id ? fetchMySubscription(profile.id) : null))
-      .then((sub) => {
-        if (alive && sub) setSeats({ used: list.length, limit: sub.employeeLimit ?? null });
+    // Subscription v2: employeeLimit is per shop and lives in /subscriptions/me entitlements.
+    fetchSubscriptionMe()
+      .then((me) => {
+        if (alive && me?.entitlements) setSeats({ used: list.length, limit: me.entitlements.employeeLimit ?? null });
       })
       .catch(() => {});
     return () => {

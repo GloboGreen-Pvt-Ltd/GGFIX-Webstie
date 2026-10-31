@@ -213,3 +213,35 @@ export const subscriptionApi = {
   put: (path, body) => request(SUBSCRIPTION_BASE(), path, { method: 'PUT', body: JSON.stringify(body) }),
   patch: (path, body) => request(SUBSCRIPTION_BASE(), path, { method: 'PATCH', body: JSON.stringify(body) }),
 };
+
+// Subscription v2 management routes (admin JWT; every write is audit-logged
+// server-side). Money is integer paise; Razorpay keys/secrets are env-only on
+// the server and never sent to or from this client.
+const ADMIN_SUB = '/subscriptions/admin';
+const qs = (params) => {
+  const p = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') p.set(k, v);
+  });
+  const s = p.toString();
+  return s ? `?${s}` : '';
+};
+export const subscriptionAdminApi = {
+  plans: () => subscriptionApi.get(`${ADMIN_SUB}/plans`),
+  createPlan: (plan) => subscriptionApi.post(`${ADMIN_SUB}/plans`, plan),
+  updatePlan: (id, plan) => subscriptionApi.put(`${ADMIN_SUB}/plans/${id}`, plan),
+  setPlanStatus: (id, status) => subscriptionApi.patch(`${ADMIN_SUB}/plans/${id}/status`, { status }),
+  updatePricing: (items) => subscriptionApi.put(`${ADMIN_SUB}/pricing`, { items }),
+  subscriptions: (status, q) => subscriptionApi.get(`${ADMIN_SUB}/subscriptions${qs({ status, q })}`),
+  subscription: (id) => subscriptionApi.get(`${ADMIN_SUB}/subscriptions/${id}`),
+  extend: (id, body) => subscriptionApi.post(`${ADMIN_SUB}/subscriptions/${id}/extend`, body),
+  cancel: (id, reason) => subscriptionApi.post(`${ADMIN_SUB}/subscriptions/${id}/cancel`, { reason }),
+  manualActivate: (body) => subscriptionApi.post(`${ADMIN_SUB}/subscriptions/manual-activate`, body),
+  payments: (status, q) => subscriptionApi.get(`${ADMIN_SUB}/payments${qs({ status, q })}`),
+  refund: (paymentId, body) => subscriptionApi.post(`${ADMIN_SUB}/payments/${paymentId}/refund`, body),
+  settings: () => subscriptionApi.get(`${ADMIN_SUB}/settings`),
+  saveSettings: (body) => subscriptionApi.put(`${ADMIN_SUB}/settings`, body),
+  auditLogs: (limit) => subscriptionApi.get(`${ADMIN_SUB}/audit-logs${qs({ limit })}`),
+  quotePreview: (planCode, shopCount) => subscriptionApi.post('/subscriptions/quote/preview', { planCode, shopCount }),
+  receipt: (paymentId) => subscriptionApi.get(`/subscriptions/receipts/${paymentId}`),
+};

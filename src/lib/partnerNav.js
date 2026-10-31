@@ -182,6 +182,8 @@ const FLOW_PAGES = {
   '/shop-home/sell/listed': sellStep('Listed'),
   '/shop-home/services/marketplace/details': { title: 'Listing Details', breadcrumb: ['Services', 'Buy', 'Listing Details'] },
   '/shop-home/services/marketplace/cart': { title: 'My Cart', breadcrumb: ['Services', 'Buy', 'My Cart'] },
+  '/shop-home/settings/subscription/checkout': { title: 'Checkout', breadcrumb: ['Settings', 'Subscription & Plan', 'Checkout'] },
+  '/shop-home/settings/subscription/receipt': { title: 'Receipt', breadcrumb: ['Settings', 'Subscription & Plan', 'Receipt'] },
 };
 
 export function resolveNavContext(pathname) {

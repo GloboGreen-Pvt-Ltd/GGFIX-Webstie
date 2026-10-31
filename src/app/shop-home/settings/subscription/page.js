@@ -1,411 +1,361 @@
 'use client';
 
 /**
- * /shop-home/settings/subscription — plan cards + multi-shop price
- * calculator, rebuilt to match a reference mobile screenshot closely (its
- * own page-local header, exact badge/icon treatment) rather than this
- * dashboard's usual PageHeader + responsive-grid layout — a deliberate,
- * scoped exception per explicit request; every other page in this
- * dashboard is untouched. Below `lg`, it's still the original single
- * stacked column capped to a phone-width max-w-md, matching that mobile
- * reference exactly. At `lg` and up (2026-09, per a later request "not one
- * long vertical stack on desktop"), the page widens to a ~1320px container
- * and splits into two columns — Current Plan on the left, Available Plans
- * (Free Trial + Basic side by side) and the Multiple Shops calculator on
- * the right — same components, same data, just a wider grid instead of one
- * flex column.
+ * /shop-home/settings/subscription — NearGFix Subscription v2 overview.
  *
- * Real data: GET {AUTH_BASE}/auth/me (fetchMyProfile, for the owner id) +
- * GET {SUBSCRIPTION_BASE}/subscriptions/owner/{ownerId} (fetchMySubscription)
- * + GET {SUBSCRIPTION_BASE}/subscriptions/plans (fetchSubscriptionPlans) —
- * the exact same three calls Account Settings' own Subscription tab
- * already uses (src/app/shop-home/account/settings/page.js's
- * SubscriptionTab). Every plan's price and shop/employee limits come
- * straight from `plan.price`/`plan.shopLimit`/`plan.employeeLimit` — the
- * same fields the admin portal's own Plans tab renders
- * (src/app/management/(portal)/subscriptions/page.js's PlanCard).
- *
- * The multi-shop formula (1 shop = the Basic plan's own price; 2+ shops =
- * shop count × ₹2,500) mirrors the admin portal's own hardcoded
- * PricingTable exactly (same file, `multiShopRows()`) — a real, existing
- * business rule in this codebase, not a new one made up for this page.
- *
- * The Basic card's light-green/dark-green highlight and "Popular" badge
- * are tied to it being the featured plan, not to whether the signed-in
- * shop's real subscription happens to BE Basic — that's shown separately
- * and honestly via the "Current" badge, computed from the real
- * subscription record.
- *
- * FREE_TRIAL_FEATURES/BASIC_FEATURES are an exact-wording fallback for
- * the two plans' checklists, matching agreed copy byte-for-byte — real
- * `plan.features` from the API is still preferred and rendered as-is when
- * present; these only fill in if that array comes back empty.
- *
- * There is no purchase/checkout endpoint anywhere in this client — the
- * existing Subscription tab's only "upgrade" action is a `mailto:` link,
- * so this page's "Request Upgrade" does the same rather than pretending
- * to be a working checkout button.
- *
- * 2026-09: added a "Current Plan" detail card above Available Plans, per a
- * reference design. Every row is real: Plan/Status/Started on/Valid till/
- * Days remaining/Amount come straight off the subscription record
- * (activeDate/inactiveDate/daysRemaining/priceAmount — the same fields the
- * admin portal's own Subscriptions table lists,
- * src/app/management/(portal)/subscriptions/page.js's subColumns). "Shops
- * covered" is the subscription's real shopCount against the matched plan's
- * real shopLimit. "Pickup service" is the plan's real pickupServiceEnabled
- * flag. "Employees" is a real headcount via fetchTechnicians() (the same
- * call employee/team already uses) — the subscription record itself has no
- * employee-count field, only a limit. "Sell orders" has no backing
- * anywhere in this codebase (confirmed: no shop-scoped Buy/Sell order
- * count exists — see reports/sales-report's own header comment for the
- * same gap) — shown as "Not tracked" rather than a fabricated number.
+ * Real data only (no mock, no hardcoded prices/features):
+ *   GET /subscriptions/me              current plan, shops, entitlements, usage, pending order
+ *   GET /subscriptions/catalog         purchasable plans (server-built `features`) + checkout flags
+ *   GET /subscriptions/payment/history payments with receipt links
+ * Buying, renewing, upgrading and the free trial happen in ./checkout
+ * (Select Plan → Select Shops → Order Summary → Pay via Razorpay UPI).
+ * Money is integer paise formatted by formatPaise(); the amount shown in
+ * Current Plan is the ACTUAL historical amount paid (amountPaidPaise).
  */
 
-import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Check, CheckCircle2, CreditCard, Crown, Gift, Loader2, Minus, Plus, Store } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, ArrowUpCircle, Clock, CreditCard, Crown, FileText, RefreshCw, RotateCw, Store } from 'lucide-react';
 
 import { cx } from '@/components/site/ui';
 import PageHeader from '@/components/shop-dashboard/PageHeader';
-import { fetchMyProfile } from '@/lib/shopProfile';
-import { fetchMySubscription, fetchSubscriptionPlans } from '@/lib/shopSubscription';
-import { fetchTechnicians } from '@/lib/shopDashboard';
+import PlanCard from '@/components/subscription/PlanCard';
+import {
+  BTN_LINK,
+  BTN_PRIMARY,
+  BTN_SECONDARY,
+  Card,
+  ENTITLEMENT_LABELS,
+  Notice,
+  Pill,
+  Row,
+  SkeletonCard,
+  SUB_BASE,
+  checkoutHref,
+} from '@/components/subscription/shopUi';
+import { fetchPaymentHistory, fetchSubscriptionCatalog, fetchSubscriptionMe } from '@/lib/shopSubscription';
+import { OPEN_ORDER_STATUSES, errorText, formatDate, formatDateTime, formatPaise, limitText, writeCheckoutState } from '@/lib/subscriptionFormat';
 
-const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#15803D] focus-visible:ring-offset-2';
-const MULTI_SHOP_UNIT_PRICE = 2500;
-
-const FREE_TRIAL_FEATURES = [
-  'New Service Booking',
-  'Up to 2 Shops',
-  'Buy Products — Unlimited',
-  'Sell Products — up to 5 orders',
-  'Up to 3 Employees per Shop',
-  'Pickup Service',
-];
-const BASIC_FEATURES = [
-  'New Service Booking',
-  'Pickup Service',
-  'Buy Products — Unlimited',
-  'Sell Products — Unlimited',
-  'Unlimited Employees',
-  'Multiple Shops',
-];
-
-function formatDate(value) {
-  if (!value) return '';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(undefined, { dateStyle: 'medium' });
-}
-
-function planPrice(plan) {
-  if (!plan) return '—';
-  if (plan.code === 'FREE_TRIAL') {
-    const days = plan.durationDays || 15;
-    return `Free · ${days} days`;
-  }
-  if (plan.price != null) return `₹${Number(plan.price).toLocaleString('en-IN')} / year`;
-  return '—';
-}
-
-function PlanCard({ plan, current, popular, highlighted }) {
-  const Icon = plan.code === 'BASIC' ? Crown : Gift;
-  const fallback = plan.code === 'FREE_TRIAL' ? FREE_TRIAL_FEATURES : plan.code === 'BASIC' ? BASIC_FEATURES : [];
-  const features = Array.isArray(plan.features) && plan.features.length > 0 ? plan.features : fallback;
-
-  return (
-    <div
-      className={cx(
-        'w-full rounded-[28px] p-5',
-        highlighted
-          ? 'border-2 border-[#15803D] bg-[#F8F8F8]'
-          : 'border border-[#ECECEC] bg-white',
-      )}
-    >
-      <div className="flex items-start gap-3.5">
-        <span
-          className={cx(
-            'flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl',
-            highlighted ? 'bg-[#F3F3F3] text-[#15803D]' : 'bg-[#FEF3C7] text-[#B45309]',
-          )}
-        >
-          <Icon className="h-6 w-6" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1 pt-0.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[1.05rem] font-extrabold text-[#111111]">{plan.name || plan.code}</p>
-            {popular ? (
-              <span className="rounded-full bg-[#14532D] px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-white">Popular</span>
-            ) : null}
-            {current ? (
-              <span className="rounded-full bg-[#F3F3F3] px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-[#666666]">Current</span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-[0.95rem] font-bold text-[#15803D]">{planPrice(plan)}</p>
-          {plan.code === 'BASIC' ? <p className="mt-0.5 text-xs text-[#98A2B3]">₹{MULTI_SHOP_UNIT_PRICE.toLocaleString('en-IN')}/shop for 2+ shops</p> : null}
-        </div>
-      </div>
-
-      <ul className="mt-4 space-y-3">
-        {features.map((f, i) => (
-          <li key={i} className="flex items-center gap-3 text-[0.9rem] text-[#111111]">
-            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#F3F3F3] text-[#15803D]">
-              <Check className="h-3.5 w-3.5" strokeWidth={3} aria-hidden="true" />
-            </span>
-            {f}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function DetailRow({ label, value, tone }) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-3">
-      <p className="shrink-0 text-sm text-[#666666]">{label}</p>
-      <p className={cx('min-w-0 break-words text-right text-sm font-bold', tone === 'green' ? 'text-[#15803D]' : 'text-[#111111]')}>{value}</p>
-    </div>
-  );
-}
-
-function CurrentPlanCard({ sub, plan, planLabel, daysRemaining, employeeCount, employeeCountLoading }) {
-  const statusLabel = (sub.status || (daysRemaining > 0 ? 'ACTIVE' : '—')).toString().toUpperCase();
-  const amount = sub.priceAmount ?? plan?.price;
-
-  const rows = [
-    { label: 'Plan', value: planLabel },
-    { label: 'Status', value: statusLabel, tone: 'green' },
-    { label: 'Started on', value: formatDate(sub.activeDate) || '—' },
-    { label: 'Valid till', value: formatDate(sub.inactiveDate) || '—' },
-    { label: 'Days remaining', value: daysRemaining > 0 ? `${daysRemaining} days` : '—' },
-    { label: 'Shops covered', value: sub.shopCount != null ? `${sub.shopCount} of ${plan?.shopLimit ?? 'Unlimited'}` : '—' },
-    { label: 'Employees', value: employeeCountLoading ? '…' : employeeCount },
-    { label: 'Sell orders', value: 'Not tracked' },
-    { label: 'Pickup service', value: plan?.pickupServiceEnabled ? 'Enabled' : 'Disabled' },
-    { label: 'Amount', value: amount != null ? `₹${Number(amount).toLocaleString('en-IN')}` : '—' },
-  ];
-
-  return (
-    <div className="w-full rounded-[28px] border border-[#ECECEC] bg-[#F8F8F8] p-5 sm:p-6">
-      <div className="flex items-start gap-3.5">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#F3F3F3] text-[#15803D]">
-          <Crown className="h-6 w-6" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1 pt-0.5">
-          <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Current Plan</p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2">
-            <p className="text-lg font-extrabold text-[#111111]">{planLabel}</p>
-            <span className="rounded-full bg-[#F3F3F3] px-2.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-[#15803D]">{statusLabel}</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-[#F8F8F8] px-4 py-3.5">
-        <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#15803D]">
-          <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-          <span className="truncate">
-            {sub.inactiveDate ? `Active until ${formatDate(sub.inactiveDate)}` : 'Active'}
-          </span>
-        </span>
-        <span className="shrink-0 text-base font-extrabold text-[#111111]">
-          {amount != null ? `₹${Number(amount).toLocaleString('en-IN')}` : '—'}
-        </span>
-      </div>
-
-      <div className="my-4 border-t border-[#ECECEC]" />
-
-      <p className="mb-1 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Plan Details</p>
-      <div className="divide-y divide-[#ECECEC]">
-        {rows.map((r) => (
-          <DetailRow key={r.label} label={r.label} value={r.value} tone={r.tone} />
-        ))}
-      </div>
-    </div>
-  );
-}
+const LIVE = ['ACTIVE', 'TRIAL'];
 
 export default function SubscriptionPage() {
-  const [profile, setProfile] = useState(null);
-  const [sub, setSub] = useState(null);
-  const [plans, setPlans] = useState([]);
+  const router = useRouter();
+  const [me, setMe] = useState(null);
+  const [catalog, setCatalog] = useState(null);
+  const [history, setHistory] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [shopCount, setShopCount] = useState(1);
-  const [technicianCount, setTechnicianCount] = useState(0);
-  const [technicianCountLoading, setTechnicianCountLoading] = useState(true);
+  const [errors, setErrors] = useState({});
 
-  useEffect(() => {
-    let alive = true;
-    fetchMyProfile()
-      .then((p) => alive && setProfile(p))
-      .catch((err) => alive && setError(err.message || 'Could not load your account.'));
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const ownerId = profile?.id;
-
-  useEffect(() => {
-    let alive = true;
-    fetchTechnicians()
-      .then((rows) => alive && setTechnicianCount(Array.isArray(rows) ? rows.length : 0))
-      .catch(() => {})
-      .finally(() => alive && setTechnicianCountLoading(false));
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!ownerId) return undefined;
-    let alive = true;
-    Promise.allSettled([fetchMySubscription(ownerId), fetchSubscriptionPlans()]).then(([subRes, plansRes]) => {
-      if (!alive) return;
-      if (subRes.status === 'fulfilled') setSub(subRes.value);
-      else setError((e) => e || 'Could not load your subscription right now.');
-      if (plansRes.status === 'fulfilled') setPlans(Array.isArray(plansRes.value) ? plansRes.value : []);
-      setLoading(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [m, c, h] = await Promise.allSettled([fetchSubscriptionMe(), fetchSubscriptionCatalog(), fetchPaymentHistory()]);
+    setMe(m.status === 'fulfilled' ? m.value : null);
+    setCatalog(c.status === 'fulfilled' ? c.value : null);
+    setHistory(h.status === 'fulfilled' ? h.value : null);
+    setErrors({
+      me: m.status === 'rejected' ? errorText(m.reason, 'Could not load your subscription.') : '',
+      catalog: c.status === 'rejected' ? errorText(c.reason, 'Could not load plans.') : '',
+      history: h.status === 'rejected' ? errorText(h.reason, 'Could not load payment history.') : '',
     });
-    return () => {
-      alive = false;
-    };
-  }, [ownerId]);
+    setLoading(false);
+  }, []);
 
-  const isTrial = sub?.subscriptionType === 'TRIAL' || sub?.status === 'TRIAL' || sub?.planCode === 'FREE_TRIAL';
-  const currentPlanCode = isTrial ? 'FREE_TRIAL' : sub?.planCode;
-  const daysRemaining = sub?.daysRemaining ?? 0;
+  useEffect(() => {
+    load();
+  }, [load]);
 
-  const trialPlan = plans.find((p) => p.code === 'FREE_TRIAL');
-  const basicPlan = plans.find((p) => p.code === 'BASIC');
+  const sub = me?.subscription || null;
+  const status = String(sub?.status || 'NONE').toUpperCase();
+  const hasPlan = sub && status !== 'NONE';
+  const isPaid = hasPlan && status !== 'TRIAL' && Number(sub.amountPaidPaise) > 0;
+  const plans = Array.isArray(catalog?.plans) ? catalog.plans : [];
+  const checkout = catalog?.checkout || {};
+  const payAvailable = !!(checkout.webEnabled && checkout.configured);
+  const currentCatalogPlan = plans.find((p) => p.code === sub?.planCode);
+  const canRenew = isPaid && currentCatalogPlan?.purchasable && !sub?.legacy;
+  const pending = me?.pendingOrder && OPEN_ORDER_STATUSES.includes(String(me.pendingOrder.status).toUpperCase()) ? me.pendingOrder : null;
 
-  const basicUnitPrice = Number(basicPlan?.price) || 3000;
-  const totalPrice = useMemo(() => {
-    if (shopCount <= 1) return basicUnitPrice;
-    return shopCount * MULTI_SHOP_UNIT_PRICE;
-  }, [shopCount, basicUnitPrice]);
+  // Pre-select the currently covered shops, then open checkout for this plan.
+  const startCheckout = (planCode, preselectCurrent) => {
+    const shopIds = preselectCurrent ? (me?.shops || []).map((s) => s.shopId).filter(Boolean) : undefined;
+    writeCheckoutState({ planCode, ...(shopIds ? { shopIds } : {}), orderId: null, termsAccepted: false, replaceAck: false });
+    router.push(checkoutHref({ plan: planCode, step: planCode ? 'shops' : 'plan' }));
+  };
 
-  const decShops = () => setShopCount((n) => Math.max(1, n - 1));
-  const incShops = () => setShopCount((n) => Math.min(20, n + 1));
+  const badgeFor = (p) => {
+    if (String(p.status).toUpperCase() === 'COMING_SOON') return 'COMING_SOON';
+    if (p.code === sub?.planCode) return LIVE.includes(status) ? 'CURRENT' : 'EXPIRED';
+    return 'AVAILABLE';
+  };
 
-  const upgradeHref = `mailto:support@ggfix.in?subject=${encodeURIComponent('Upgrade to BASIC plan')}&body=${encodeURIComponent(
-    `Please upgrade my account to the Basic plan for ${shopCount} shop${shopCount === 1 ? '' : 's'} (₹${totalPrice.toLocaleString('en-IN')}/year).`,
-  )}`;
+  const actionFor = (p) => {
+    const badge = badgeFor(p);
+    const isTrial = String(p.planType).toUpperCase() === 'TRIAL';
+    if (badge === 'COMING_SOON') return <button type="button" disabled className={cx(BTN_SECONDARY, 'w-full')}>Coming Soon</button>;
+    if (isTrial) {
+      if (badge === 'CURRENT') return <button type="button" disabled className={cx(BTN_SECONDARY, 'w-full')}>Trial active</button>;
+      return me?.trialAvailable ? (
+        <button type="button" onClick={() => startCheckout(p.code)} className={cx(BTN_PRIMARY, 'w-full')}>Start Free Trial</button>
+      ) : (
+        <button type="button" disabled className={cx(BTN_SECONDARY, 'w-full')}>Trial already used</button>
+      );
+    }
+    const label = badge === 'CURRENT' ? 'Renew Plan' : isPaid && LIVE.includes(status) ? 'Switch to this plan' : 'Choose Plan';
+    return (
+      <button type="button" disabled={!payAvailable || !p.purchasable} onClick={() => startCheckout(p.code, badge === 'CURRENT' || badge === 'EXPIRED')} className={cx(BTN_PRIMARY, 'w-full')}>
+        {label}
+      </button>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-5">
-      <PageHeader title="Subscription & Plan" subtitle="Your current plan, available plans and billing." />
+      <PageHeader
+        title="Subscription & Plan"
+        subtitle="Your NearGFix plan, covered shops, payments and receipts."
+        action={
+          <>
+            <button type="button" onClick={load} className={BTN_SECONDARY} aria-label="Refresh">
+              <RefreshCw className={cx('h-4 w-4', loading && 'animate-spin')} aria-hidden="true" />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+            {canRenew ? (
+              <button type="button" disabled={!payAvailable} onClick={() => startCheckout(sub.planCode, true)} className={BTN_SECONDARY}>
+                <RotateCw className="h-4 w-4" aria-hidden="true" /> Renew
+              </button>
+            ) : null}
+            <button type="button" disabled={!plans.length} onClick={() => startCheckout(null)} className={BTN_PRIMARY}>
+              <ArrowUpCircle className="h-4 w-4" aria-hidden="true" /> {hasPlan ? 'Upgrade' : 'Choose a Plan'}
+            </button>
+          </>
+        }
+      />
 
-      <div className="w-full">
-        {error ? (
-          <div role="alert" className="mb-6 flex items-start gap-2 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>{error}</span>
-          </div>
-        ) : null}
+      {errors.me ? <Notice tone="red" icon={AlertTriangle}>{errors.me}</Notice> : null}
 
-        {/* Mobile/tablet: single stacked column (unchanged). Desktop (xl+):
-            Current Plan on the left, Available Plans + Multiple Shops on
-            the right, both starting at the same top edge — per request,
-            not one long vertical stack any more on wide screens. */}
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(320px,0.9fr)_minmax(600px,1.6fr)] xl:items-start xl:gap-6">
-          <div className="flex min-w-0 flex-col gap-6">
-            {loading ? (
-              <div className="flex items-center gap-2 py-2 text-sm text-[#666666]">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading your subscription…
+      {pending ? (
+        <Notice tone="amber" icon={Clock}>
+          <p className="font-bold">A payment is in progress</p>
+          <p className="mt-0.5">
+            Order {pending.orderNo || ''} for {pending.planName || 'a plan'} · {formatPaise(pending.totalPaise)} is not confirmed yet. Check its status before starting a new
+            payment.
+          </p>
+          <Link href={checkoutHref({ step: 'pay', order: pending.id })} className={cx(BTN_LINK, 'mt-2')}>
+            Check payment status →
+          </Link>
+        </Notice>
+      ) : null}
+
+      {!loading && catalog && !payAvailable ? (
+        <Notice tone="gray" icon={CreditCard}>
+          Online payment is not available yet. You can still view plans{me?.trialAvailable ? ' and start the free trial' : ''}; paid plans will open for purchase soon.
+        </Notice>
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.6fr)] xl:items-start">
+        {/* Left: current plan, details, shops */}
+        <div className="flex min-w-0 flex-col gap-5">
+          {loading ? (
+            <SkeletonCard lines={6} />
+          ) : hasPlan ? (
+            <CurrentPlan sub={sub} status={status} />
+          ) : !errors.me ? (
+            <Card>
+              <div className="flex items-start gap-3.5">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#F3F3F3] text-[#666666]">
+                  <Crown className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-base font-extrabold text-[#111111]">No active plan</p>
+                  <p className="mt-1 text-sm text-[#666666]">
+                    {me?.trialAvailable ? 'Start the free trial or choose a plan for your shops.' : 'Choose a plan to cover your shops.'}
+                  </p>
+                </div>
               </div>
-            ) : sub ? (
-              <CurrentPlanCard
-                sub={sub}
-                plan={plans.find((p) => p.code === currentPlanCode)}
-                planLabel={isTrial ? 'Free Trial' : plans.find((p) => p.code === sub.planCode)?.name || sub.planCode || 'No active plan'}
-                daysRemaining={daysRemaining}
-                employeeCount={technicianCount}
-                employeeCountLoading={technicianCountLoading}
-              />
+            </Card>
+          ) : null}
+
+          {!loading && hasPlan ? <PlanDetails sub={sub} me={me} /> : null}
+          {!loading && hasPlan ? <ManageShops shops={me?.shops || []} canRenew={canRenew && payAvailable} onRenew={() => startCheckout(sub.planCode, true)} /> : null}
+        </div>
+
+        {/* Right: plans + payment history */}
+        <div className="flex min-w-0 flex-col gap-5">
+          <div>
+            <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.08em] text-[#666666]">Available Plans</p>
+            {errors.catalog ? <Notice tone="red" icon={AlertTriangle}>{errors.catalog}</Notice> : null}
+            {loading ? (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <SkeletonCard lines={6} />
+                <SkeletonCard lines={6} />
+              </div>
+            ) : plans.length === 0 && !errors.catalog ? (
+              <Card>
+                <p className="text-sm text-[#666666]">No plans are available right now.</p>
+              </Card>
             ) : (
-              <div className="rounded-2xl border border-dashed border-[#ECECEC] bg-[#F8F8F8] px-4 py-5 text-center text-sm text-[#666666]">
-                No subscription record found for this account yet.
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                {plans.map((p) => (
+                  <PlanCard key={p.code} plan={p} badge={badgeFor(p)} selected={badgeFor(p) === 'CURRENT'} action={actionFor(p)} />
+                ))}
               </div>
             )}
           </div>
 
-          <div className="flex min-w-0 flex-col gap-6">
-            <div>
-              <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.08em] text-[#666666]">Available Plans</p>
-              {loading ? (
-                <div className="flex items-center gap-2 py-6 text-sm text-[#666666]">
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading plans…
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                  {trialPlan ? <PlanCard plan={trialPlan} current={currentPlanCode === 'FREE_TRIAL'} /> : null}
-                  {basicPlan ? <PlanCard plan={basicPlan} current={currentPlanCode === 'BASIC'} popular highlighted /> : null}
-                </div>
-              )}
-            </div>
-
-            {basicPlan ? (
-              <div>
-                <p className="mb-3 text-xs font-extrabold uppercase tracking-[0.08em] text-[#666666]">Basic · Multiple Shops</p>
-                <div className="w-full rounded-[28px] border border-[#ECECEC] bg-[#F8F8F8] p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#F8F8F8] text-[#15803D]">
-                        <Store className="h-5 w-5" aria-hidden="true" />
-                      </span>
-                      <p className="text-sm font-bold text-[#111111]">How many shops?</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={decShops}
-                        disabled={shopCount <= 1}
-                        aria-label="Fewer shops"
-                        className={cx(
-                          'flex h-9 w-9 items-center justify-center rounded-full bg-[#F3F3F3] text-[#111111] transition hover:bg-[#F3F3F3] disabled:cursor-not-allowed disabled:opacity-40',
-                          FOCUS_RING,
-                        )}
-                      >
-                        <Minus className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                      <span className="w-6 text-center text-lg font-extrabold text-[#111111]">{shopCount}</span>
-                      <button
-                        type="button"
-                        onClick={incShops}
-                        aria-label="More shops"
-                        className={cx('flex h-9 w-9 items-center justify-center rounded-full bg-[#F8F8F8] text-[#15803D] transition hover:bg-[#F3F3F3]', FOCUS_RING)}
-                      >
-                        <Plus className="h-4 w-4" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-2xl bg-[#F8F8F8] px-4 py-3.5">
-                    <p className="text-sm font-bold text-[#111111]">{shopCount}× Basic subscription</p>
-                    <p className="text-lg font-extrabold text-[#111111]">₹{totalPrice.toLocaleString('en-IN')}</p>
-                  </div>
-                  <p className="mt-2.5 text-xs text-[#98A2B3]">
-                    1 shop = ₹{basicUnitPrice.toLocaleString('en-IN')} · 2 or more = ₹{MULTI_SHOP_UNIT_PRICE.toLocaleString('en-IN')} per shop / year.
-                  </p>
-
-                  <a
-                    href={upgradeHref}
-                    className={cx(
-                      'mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#F3BF23] px-4 py-3 text-sm font-bold text-[#1E1E1E] transition hover:bg-[#E5B11A]',
-                      FOCUS_RING,
-                    )}
-                  >
-                    <CreditCard className="h-4 w-4" aria-hidden="true" />
-                    Request Upgrade
-                  </a>
-                </div>
-              </div>
-            ) : null}
-          </div>
+          <PaymentHistory rows={history} loading={loading} error={errors.history} />
         </div>
       </div>
     </div>
+  );
+}
+
+function CurrentPlan({ sub, status }) {
+  const trial = status === 'TRIAL';
+  return (
+    <Card className="bg-[#F8F8F8]">
+      <div className="flex items-start gap-3.5">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-[#15803D]">
+          <Crown className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Current Plan</p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2">
+            <p className="break-words text-lg font-extrabold text-[#111111]">
+              {sub.planName || sub.planCode}
+              {sub.durationLabel ? <span className="text-sm font-semibold text-[#666666]"> · {sub.durationLabel}</span> : null}
+            </p>
+            <Pill status={status} />
+          </div>
+          {sub.legacy ? <p className="mt-1 text-xs text-[#98A2B3]">Legacy plan — kept with its original limits until it ends.</p> : null}
+        </div>
+      </div>
+      <div className="mt-4 divide-y divide-[#ECECEC] rounded-2xl bg-white px-4">
+        <Row label="Status" value={status.replace(/_/g, ' ')} tone={LIVE.includes(status) ? 'green' : 'red'} />
+        <Row label="Started" value={formatDate(sub.startedAt)} />
+        <Row label="Valid until" value={formatDate(sub.endsAt)} />
+        <Row label="Amount paid" value={trial && !Number(sub.amountPaidPaise) ? `${formatPaise(0)} (Free Trial)` : formatPaise(sub.amountPaidPaise)} strong />
+      </div>
+    </Card>
+  );
+}
+
+function PlanDetails({ sub, me }) {
+  const ent = me?.entitlements || {};
+  const usage = me?.usage || {};
+  const shopsCovered = sub.shopCount ?? usage.shopsUsed ?? (me?.shops || []).length;
+  const enabled = ENTITLEMENT_LABELS.filter(([k]) => ent[k]);
+  const days = sub.daysRemaining;
+  return (
+    <Card title="Plan Details">
+      <div className="divide-y divide-[#ECECEC]">
+        <Row label="Started" value={formatDate(sub.startedAt)} />
+        <Row label="Expires" value={formatDate(sub.endsAt)} />
+        <Row label="Days remaining" value={days != null ? `${days} day${days === 1 ? '' : 's'}` : '—'} tone={days != null && days <= 7 ? 'red' : undefined} />
+        <Row label="Shops covered" value={`${shopsCovered ?? '—'}${ent.shopLimit != null ? ` of ${ent.shopLimit}` : ''}`} />
+        <Row
+          label="Employees used"
+          value={`${usage.employeesUsedMaxPerShop ?? '—'} of ${limitText(ent.employeeLimit)}${ent.employeeLimitScope === 'PER_SHOP' ? ' per shop' : ''}`}
+        />
+        <Row label="Sell orders" value={`${usage.sellOrdersUsed ?? '—'} of ${limitText(ent.sellOrderLimit)}`} />
+        <Row label="Buy orders" value={limitText(ent.buyOrderLimit)} />
+        <Row label="Pickup service" value={ent.pickupEnabled ? 'Enabled' : 'Not included'} tone={ent.pickupEnabled ? 'green' : undefined} />
+      </div>
+      <p className="mt-4 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">Enabled features</p>
+      {enabled.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {enabled.map(([k, label]) => (
+            <Pill key={k} tone="green">{label}</Pill>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-1 text-sm text-[#666666]">No paid features on this plan.</p>
+      )}
+    </Card>
+  );
+}
+
+function ManageShops({ shops, canRenew, onRenew }) {
+  return (
+    <Card
+      title="Manage Shops"
+      subtitle={`${shops.length} shop${shops.length === 1 ? '' : 's'} on this subscription`}
+      action={
+        <Link href="/shop-home/account/business-profile/" className={BTN_LINK}>
+          <Store className="h-4 w-4" aria-hidden="true" /> Business locations
+        </Link>
+      }
+    >
+      {shops.length === 0 ? (
+        <p className="text-sm text-[#666666]">No shops are linked to this subscription.</p>
+      ) : (
+        <ul className="divide-y divide-[#ECECEC]">
+          {shops.map((s) => (
+            <li key={s.shopId} className="flex items-start justify-between gap-3 py-3">
+              <div className="min-w-0">
+                <p className="break-words text-sm font-bold text-[#111111]">{s.name || 'Shop'}</p>
+                <p className="text-xs text-[#666666]">
+                  {formatDate(s.startsAt)} – {formatDate(s.endsAt)}
+                </p>
+              </div>
+              <span className="shrink-0">
+                <Pill status={s.status} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {canRenew ? (
+        <button type="button" onClick={onRenew} className={cx(BTN_SECONDARY, 'mt-4 w-full')}>
+          <RotateCw className="h-4 w-4" aria-hidden="true" /> Renew or change covered shops
+        </button>
+      ) : null}
+    </Card>
+  );
+}
+
+function PaymentHistory({ rows, loading, error }) {
+  const list = Array.isArray(rows) ? rows : [];
+  return (
+    <Card title="Payment History">
+      {error ? <Notice tone="red" icon={AlertTriangle}>{error}</Notice> : null}
+      {loading ? (
+        <div className="space-y-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-12 animate-pulse rounded-xl bg-[#F3F3F3]" />
+          ))}
+        </div>
+      ) : list.length === 0 && !error ? (
+        <p className="text-sm text-[#666666]">No payments yet.</p>
+      ) : (
+        <ul className="divide-y divide-[#ECECEC]">
+          {list.map((p) => (
+            <li key={p.paymentId || p.orderId} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="break-words text-sm font-bold text-[#111111]">
+                    {p.planName || '—'}
+                    {p.durationLabel ? ` · ${p.durationLabel}` : ''}
+                  </p>
+                  <Pill status={p.status} />
+                </div>
+                <p className="mt-0.5 text-xs text-[#666666]">
+                  {formatDateTime(p.paidAt)} · {p.shopCount ?? '—'} shop{p.shopCount === 1 ? '' : 's'} · {p.method || 'UPI'}
+                  {p.orderNo ? ` · ${p.orderNo}` : ''}
+                </p>
+              </div>
+              <div className="flex items-center justify-between gap-3 sm:justify-end">
+                <p className="text-base font-extrabold text-[#111111]">{formatPaise(p.amountPaise)}</p>
+                {p.paymentId && p.receiptNo ? (
+                  <Link href={`${SUB_BASE}/receipt/?id=${encodeURIComponent(p.paymentId)}`} className={BTN_LINK}>
+                    <FileText className="h-4 w-4" aria-hidden="true" /> Receipt
+                  </Link>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

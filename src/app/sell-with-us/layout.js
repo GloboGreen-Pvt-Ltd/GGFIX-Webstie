@@ -1,5 +1,3 @@
-import { Inter, Raleway } from 'next/font/google';
-
 import { pageMetadata } from '@/lib/seo';
 
 /**
@@ -9,9 +7,15 @@ import { pageMetadata } from '@/lib/seo';
  * font change.
  */
 
-const inter = Inter({ subsets: ['latin'], weight: ['400', '500', '600', '700', '800'], variable: '--font-inter', display: 'swap' });
-// Raleway is used only for the GGFIX logo wordmark (.ggfix-logo-text).
-const raleway = Raleway({ subsets: ['latin'], weight: ['500'], variable: '--font-raleway', display: 'swap' });
+// Inter + Raleway come from a plain Google Fonts stylesheet (below), not
+// next/font/google: next/font downloads the font files at BUILD time and its
+// Next 14 loader crashes ("reading '1'") on Google's current font URLs, which
+// broke the production build. Raleway is used only for the GGFIX logo wordmark
+// (.ggfix-logo-text).
+const FONT_VARS = {
+  '--font-inter': "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+  '--font-raleway': "'Raleway', ui-sans-serif, system-ui, sans-serif",
+};
 
 // The seller (shop) homepage — /sell is the separate customer page for selling
 // a used phone. `?login=1` variants canonicalise here.
@@ -25,7 +29,9 @@ export const metadata = pageMetadata({
 
 export default function SellWithUsLayout({ children }) {
   return (
-    <div id="sell-with-us-root" className={`${inter.variable} ${raleway.variable} min-h-screen bg-white font-[family-name:var(--font-inter)] text-[#1E1E1E] antialiased`}>
+    <div id="sell-with-us-root" style={FONT_VARS} className="min-h-screen bg-white font-[family-name:var(--font-inter)] text-[#1E1E1E] antialiased">
+      {/* eslint-disable-next-line @next/next/no-page-custom-font -- text fonts scoped to this route. */}
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Raleway:wght@500&display=swap" />
       {/* Google Material Symbols (Outlined), used by every icon on this page — see MaterialIcon.js. */}
       {/* display=block (not swap): an icon font must never flash its ligature names as text while loading. */}
       {/* eslint-disable-next-line @next/next/no-page-custom-font, @next/next/google-font-display -- icon font scoped to this route. */}

@@ -23,7 +23,8 @@ function shopToken() {
 export async function shopRequest(base, path, options = {}) {
   const url = `${String(base || '').replace(/\/$/, '')}${path}`;
   const token = shopToken();
-  const { headers, ...rest } = options;
+  // rawResponse:true returns the Response itself (e.g. a PDF blob) after the ok check.
+  const { headers, rawResponse, ...rest } = options;
   const res = await fetch(url, {
     ...rest,
     headers: {
@@ -46,6 +47,7 @@ export async function shopRequest(base, path, options = {}) {
     err.body = body;
     throw err;
   }
+  if (rawResponse) return res;
   if (res.status === 204) return null;
   return res.json();
 }

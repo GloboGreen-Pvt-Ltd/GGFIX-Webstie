@@ -7,6 +7,7 @@
  *   GET /subscriptions/me              current plan, shops, entitlements, usage, pending order
  *   GET /subscriptions/catalog         purchasable plans (server-built `features`) + checkout flags
  *   GET /subscriptions/payment/history payments with receipt links
+ *   GET /subscriptions/invoices        invoice no / PDF / WhatsApp status (optional — hidden on 404)
  * Buying, renewing, upgrading and the free trial happen in ./checkout
  * (Select Plan → Select Shops → Order Summary → Pay via Razorpay UPI).
  * Money is integer paise formatted by formatPaise(); the amount shown in
@@ -21,6 +22,7 @@ import { AlertTriangle, ArrowUpCircle, Clock, CreditCard, Crown, FileText, Refre
 import { cx } from '@/components/site/ui';
 import PageHeader from '@/components/shop-dashboard/PageHeader';
 import PlanCard from '@/components/subscription/PlanCard';
+import { InvoiceActions } from '@/components/subscription/GstInvoice';
 import {
   BTN_LINK,
   BTN_PRIMARY,
@@ -34,7 +36,7 @@ import {
   SUB_BASE,
   checkoutHref,
 } from '@/components/subscription/shopUi';
-import { fetchPaymentHistory, fetchSubscriptionCatalog, fetchSubscriptionMe } from '@/lib/shopSubscription';
+import { fetchInvoices, fetchPaymentHistory, fetchSubscriptionCatalog, fetchSubscriptionMe } from '@/lib/shopSubscription';
 import { OPEN_ORDER_STATUSES, errorText, formatDate, formatDateTime, formatPaise, limitText, writeCheckoutState } from '@/lib/subscriptionFormat';
 
 const LIVE = ['ACTIVE', 'TRIAL'];
@@ -44,15 +46,18 @@ export default function SubscriptionPage() {
   const [me, setMe] = useState(null);
   const [catalog, setCatalog] = useState(null);
   const [history, setHistory] = useState(null);
+  const [invoices, setInvoices] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [m, c, h] = await Promise.allSettled([fetchSubscriptionMe(), fetchSubscriptionCatalog(), fetchPaymentHistory()]);
+    const [m, c, h, inv] = await Promise.allSettled([fetchSubscriptionMe(), fetchSubscriptionCatalog(), fetchPaymentHistory(), fetchInvoices()]);
     setMe(m.status === 'fulfilled' ? m.value : null);
     setCatalog(c.status === 'fulfilled' ? c.value : null);
     setHistory(h.status === 'fulfilled' ? h.value : null);
+    // Invoices are optional (older server → 404): failure just hides the invoice UI.
+    setInvoices(inv.status === 'fulfilled' ? inv.value : null);
     setErrors({
       me: m.status === 'rejected' ? errorText(m.reason, 'Could not load your subscription.') : '',
       catalog: c.status === 'rejected' ? errorText(c.reason, 'Could not load plans.') : '',
@@ -203,7 +208,13 @@ export default function SubscriptionPage() {
             )}
           </div>
 
-          <PaymentHistory rows={history} loading={loading} error={errors.history} />
+          <PaymentHistory
+            rows={history}
+            invoices={invoices}
+            loading={loading}
+            error={errors.history}
+            onInvoiceUpdated={(v) => setInvoices((list) => (list || []).map((i) => (i.id === v.id ? v : i)))}
+          />
         </div>
       </div>
     </div>
@@ -314,7 +325,18 @@ function ManageShops({ shops, canRenew, onRenew }) {
   );
 }
 
-function PaymentHistory({ rows, loading, error }) {
+// History row → its InvoiceView (by invoiceId, else Razorpay payment id / order no).
+function invoiceFor(p, invoices) {
+  if (!Array.isArray(invoices)) return null;
+  return (
+    invoices.find((i) => p.invoiceId && i.id === p.invoiceId) ||
+    invoices.find((i) => p.razorpayPaymentId && i.payment?.razorpayPaymentId === p.razorpayPaymentId) ||
+    invoices.find((i) => p.orderNo && i.payment?.orderNo === p.orderNo) ||
+    null
+  );
+}
+
+function PaymentHistory({ rows, invoices, loading, error, onInvoiceUpdated }) {
   const list = Array.isArray(rows) ? rows : [];
   return (
     <Card title="Payment History">
@@ -329,7 +351,10 @@ function PaymentHistory({ rows, loading, error }) {
         <p className="text-sm text-[#666666]">No payments yet.</p>
       ) : (
         <ul className="divide-y divide-[#ECECEC]">
-          {list.map((p) => (
+          {list.map((p) => {
+            const inv = invoiceFor(p, invoices);
+            const invoiceId = inv?.id || p.invoiceId;
+            return (
             <li key={p.paymentId || p.orderId} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
@@ -347,13 +372,22 @@ function PaymentHistory({ rows, loading, error }) {
               <div className="flex items-center justify-between gap-3 sm:justify-end">
                 <p className="text-base font-extrabold text-[#111111]">{formatPaise(p.amountPaise)}</p>
                 {p.paymentId && p.receiptNo ? (
-                  <Link href={`${SUB_BASE}/receipt/?id=${encodeURIComponent(p.paymentId)}`} className={BTN_LINK}>
+                  <Link
+                    href={`${SUB_BASE}/receipt/?id=${encodeURIComponent(p.paymentId)}${invoiceId ? `&invoice=${encodeURIComponent(invoiceId)}` : ''}`}
+                    className={BTN_LINK}
+                  >
                     <FileText className="h-4 w-4" aria-hidden="true" /> Receipt
                   </Link>
                 ) : null}
               </div>
+              {invoiceId ? (
+                <div className="sm:col-span-2">
+                  <InvoiceActions invoice={inv} fallback={p} onUpdated={onInvoiceUpdated} />
+                </div>
+              ) : null}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </Card>

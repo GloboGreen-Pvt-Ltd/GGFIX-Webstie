@@ -20,6 +20,7 @@ import { cx } from '@/components/site/ui';
 import PageHeader from '@/components/shop-dashboard/PageHeader';
 import SearchField from '@/components/shop-dashboard/SearchField';
 import PlanCard from '@/components/subscription/PlanCard';
+import { GstBreakdown, gstNote } from '@/components/subscription/GstInvoice';
 import { BTN_LINK, BTN_PRIMARY, BTN_SECONDARY, Card, Notice, Pill, Row, SkeletonCard, SUB_BASE, checkoutHref } from '@/components/subscription/shopUi';
 import { fetchMyProfile } from '@/lib/shopProfile';
 import {
@@ -709,14 +710,21 @@ function SummaryStep({ plan, shopIds, shopNames, profile, cs, payAvailable, onCh
                   value={formatPaise(quote.additionalShopsTotalPaise)}
                 />
               ) : null}
-              {Number(quote.discountPaise) > 0 ? (
-                <Row label={`Multi-shop discount (${quote.additionalShopDiscountPct}%, included)`} value={`−${formatPaise(quote.discountPaise)}`} tone="green" />
-              ) : null}
-              <Row label="Subtotal" value={formatPaise(quote.subtotalPaise)} />
-              {Number(quote.taxPercent) > 0 ? <Row label={`Includes tax (${quote.taxPercent}%)`} value={formatPaise(quote.taxPaise)} /> : null}
-              <Row label="Final payable" value={formatPaise(quote.totalPaise)} strong />
+              {quote.gst ? (
+                <GstBreakdown gst={quote.gst} />
+              ) : (
+                <>
+                  {Number(quote.discountPaise) > 0 ? (
+                    <Row label={`Multi-shop discount (${quote.additionalShopDiscountPct}%, included)`} value={`−${formatPaise(quote.discountPaise)}`} tone="green" />
+                  ) : null}
+                  <Row label="Subtotal" value={formatPaise(quote.subtotalPaise)} />
+                  {Number(quote.taxPercent) > 0 ? <Row label={`Includes tax (${quote.taxPercent}%)`} value={formatPaise(quote.taxPaise)} /> : null}
+                  <Row label="Final payable" value={formatPaise(quote.totalPaise)} strong />
+                </>
+              )}
             </div>
           </div>
+          {quote.gst ? <p className="mt-2 text-xs text-[#666666]">{gstNote(quote.gst)}</p> : null}
           {quote.renewalPricePaise != null ? (
             <p className="mt-2 text-xs text-[#666666]">Renewal price at the end of this term: {formatPaise(quote.renewalPricePaise)} (at current prices).</p>
           ) : null}

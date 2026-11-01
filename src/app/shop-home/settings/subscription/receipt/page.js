@@ -5,6 +5,9 @@
  * NearGFix subscription receipt from GET /subscriptions/receipts/{paymentId}.
  * Print / Save as PDF uses the browser print dialog; the print stylesheet
  * hides the dashboard chrome so only the receipt is printed.
+ * Optional &invoice=<invoiceId> (or a match in GET /subscriptions/invoices)
+ * adds the GST breakdown, PDF download and WhatsApp status; a server
+ * without invoices keeps the plain receipt.
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -13,8 +16,9 @@ import { useSearchParams } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, Printer } from 'lucide-react';
 
 import ReceiptView from '@/components/subscription/ReceiptView';
+import { InvoiceActions } from '@/components/subscription/GstInvoice';
 import { BTN_PRIMARY, BTN_SECONDARY, Notice, SkeletonCard, SUB_BASE } from '@/components/subscription/shopUi';
-import { fetchReceipt } from '@/lib/shopSubscription';
+import { fetchInvoice, fetchInvoices, fetchReceipt } from '@/lib/shopSubscription';
 import { errorText } from '@/lib/subscriptionFormat';
 
 const PRINT_CSS = `@media print {
@@ -25,23 +29,45 @@ const PRINT_CSS = `@media print {
 }`;
 
 export default function ReceiptPage() {
-  const id = useSearchParams().get('id') || '';
+  const params = useSearchParams();
+  const id = params.get('id') || '';
+  const invoiceId = params.get('invoice') || '';
   const [receipt, setReceipt] = useState(null);
+  const [invoice, setInvoice] = useState(null);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setError('');
     setReceipt(null);
+    setInvoice(null);
     if (!id) {
       setError('No receipt selected.');
       return;
     }
+    let r;
     try {
-      setReceipt(await fetchReceipt(id));
+      r = await fetchReceipt(id);
+      setReceipt(r);
     } catch (e) {
       setError(errorText(e, 'Could not load this receipt.'));
+      return;
     }
-  }, [id]);
+    // Invoice is optional — any failure keeps the plain receipt.
+    try {
+      if (invoiceId) {
+        setInvoice(await fetchInvoice(invoiceId));
+      } else {
+        const list = await fetchInvoices();
+        setInvoice(
+          list.find((i) => r?.razorpayPaymentId && i.payment?.razorpayPaymentId === r.razorpayPaymentId) ||
+            list.find((i) => r?.orderNo && i.payment?.orderNo === r.orderNo) ||
+            null,
+        );
+      }
+    } catch {
+      setInvoice(null);
+    }
+  }, [id, invoiceId]);
 
   useEffect(() => {
     load();
@@ -69,10 +95,15 @@ export default function ReceiptPage() {
           ) : null}
         </Notice>
       ) : null}
+      {receipt && invoice?.id ? (
+        <div className="rounded-2xl border border-[#ECECEC] bg-white px-4 py-3 print:hidden">
+          <InvoiceActions invoice={invoice} onUpdated={setInvoice} showReason />
+        </div>
+      ) : null}
       {!receipt && !error ? <SkeletonCard lines={8} /> : null}
       {receipt ? (
         <div id="subscription-receipt-print">
-          <ReceiptView receipt={receipt} />
+          <ReceiptView receipt={receipt} invoice={invoice?.id ? invoice : null} />
         </div>
       ) : null}
     </div>

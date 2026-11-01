@@ -20,9 +20,11 @@ import { AlertTriangle, CheckCircle2, Clock, FileText, Home, Loader2, RefreshCw,
 
 import { cx } from '@/components/site/ui';
 import { BTN_LINK, BTN_PRIMARY, BTN_SECONDARY, Card, Notice, Pill, Row, SkeletonCard, SUB_BASE } from '@/components/subscription/shopUi';
+import { GstBreakdown, InvoiceActions, gstNote } from '@/components/subscription/GstInvoice';
 import {
   cancelPaymentOrder,
   createPaymentOrder,
+  fetchInvoiceByOrder,
   fetchPaymentHistory,
   fetchPaymentStatus,
   fetchQuote,
@@ -295,6 +297,14 @@ export default function PayStep({
         {openOrder?.orderNo ? <Row label="Order" value={openOrder.orderNo} /> : null}
         <Row label="Amount payable" value={amountPaise != null ? formatPaise(amountPaise) : '…'} strong />
       </div>
+      {!openOrder && quote?.gst ? (
+        <div className="mt-3 rounded-2xl bg-[#F8F8F8] px-4 py-2">
+          <div className="divide-y divide-[#ECECEC]">
+            <GstBreakdown gst={quote.gst} />
+          </div>
+          <p className="pb-1 pt-1.5 text-xs text-[#666666]">{gstNote(quote.gst)}</p>
+        </div>
+      ) : null}
 
       {quoteError && !openOrder ? (
         <div className="mt-3">
@@ -353,8 +363,24 @@ export function SuccessStep({ orderId, trial, initialOrder }) {
   const [order, setOrder] = useState(initialOrder && initialOrder.id === orderId ? initialOrder : null);
   const [me, setMe] = useState(null);
   const [paymentId, setPaymentId] = useState('');
+  const [invoice, setInvoice] = useState(null);
   const [state, setState] = useState('loading'); // loading | ok | notyet | error
   const [error, setError] = useState('');
+
+  // The invoice is issued just after activation: 404 → retry a few times;
+  // any other error (e.g. older server) just leaves the invoice UI hidden.
+  const loadInvoice = useCallback(async (oid) => {
+    for (let i = 0; i < 5; i += 1) {
+      try {
+        const v = await fetchInvoiceByOrder(oid);
+        if (v && typeof v === 'object' && v.id) setInvoice(v);
+        return;
+      } catch (e) {
+        if (e?.status !== 404 || i === 4) return;
+        await sleep(2500);
+      }
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setState('loading');
@@ -381,11 +407,12 @@ export function SuccessStep({ orderId, trial, initialOrder }) {
       fetchPaymentHistory()
         .then((list) => setPaymentId(list.find((p) => p.orderId === orderId)?.paymentId || ''))
         .catch(() => {});
+      loadInvoice(orderId);
     } catch (e) {
       setState('error');
       setError(errorText(e, 'Could not confirm your subscription.'));
     }
-  }, [orderId, trial]);
+  }, [orderId, trial, loadInvoice]);
 
   useEffect(() => {
     load();
@@ -447,13 +474,27 @@ export function SuccessStep({ orderId, trial, initialOrder }) {
           <Row key={k} label={k} value={v} />
         ))}
       </div>
+      {!trial && invoice?.gst ? (
+        <div className="mt-4 rounded-2xl bg-[#F8F8F8] px-4 py-2">
+          <div className="divide-y divide-[#ECECEC]">
+            <GstBreakdown gst={invoice.gst} totalLabel="Total Paid" />
+          </div>
+          <p className="pb-1 pt-1.5 text-xs text-[#666666]">{gstNote(invoice.gst)}</p>
+        </div>
+      ) : null}
+      {!trial && invoice ? (
+        <div className="mt-4 rounded-2xl border border-[#ECECEC] px-4 py-3">
+          <p className="mb-1.5 text-[0.65rem] font-bold uppercase tracking-wide text-[#666666]">{invoice.title || 'Invoice'}</p>
+          <InvoiceActions invoice={invoice} onUpdated={setInvoice} showReason />
+        </div>
+      ) : null}
       <div className="mt-6 grid gap-2 sm:grid-cols-3">
         <Link href={`${SUB_BASE}/`} className={BTN_PRIMARY}>
           View Subscription
         </Link>
         {!trial ? (
           paymentId ? (
-            <Link href={`${SUB_BASE}/receipt/?id=${encodeURIComponent(paymentId)}`} className={BTN_SECONDARY}>
+            <Link href={`${SUB_BASE}/receipt/?id=${encodeURIComponent(paymentId)}${invoice?.id ? `&invoice=${encodeURIComponent(invoice.id)}` : ''}`} className={BTN_SECONDARY}>
               <FileText className="h-4 w-4" aria-hidden="true" /> Download Receipt
             </Link>
           ) : (

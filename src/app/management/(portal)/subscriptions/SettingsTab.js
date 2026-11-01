@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, KeyRound, Save, ScrollText } from 'lucide-react';
+import { AlertTriangle, FileText, KeyRound, Save, ScrollText } from 'lucide-react';
 
 import { subscriptionAdminApi } from '@/lib/api';
 import { Button } from '@/components/PageHeader';
@@ -23,6 +23,11 @@ const NUMBER_KEYS = [
 ];
 const BOOL_KEYS = ['trialOncePerOrg', 'webCheckoutEnabled', 'androidCheckoutEnabled', 'iosCheckoutEnabled'];
 const TEXT_KEYS = ['receiptBusinessName', 'receiptAddress', 'receiptGstin', 'receiptEmail', 'receiptPhone'];
+// GST invoice keys — sent only when the server already reports them, so an
+// older subscription-service keeps today's exact settings payload.
+const INVOICE_TEXT_KEYS = ['receiptState', 'receiptStateCode', 'receiptSac', 'invoicePrefix', 'invoiceWhatsappTemplate'];
+const INVOICE_BOOL_KEYS = ['invoiceWhatsappEnabled'];
+const invoiceKeysSupported = (s) => !!s && [...INVOICE_TEXT_KEYS, ...INVOICE_BOOL_KEYS].some((k) => k in s);
 
 function pickEditable(s) {
   const out = {};
@@ -34,6 +39,12 @@ function pickEditable(s) {
   });
   TEXT_KEYS.forEach((k) => {
     out[k] = s?.[k] ?? '';
+  });
+  INVOICE_TEXT_KEYS.forEach((k) => {
+    out[k] = s?.[k] ?? '';
+  });
+  INVOICE_BOOL_KEYS.forEach((k) => {
+    out[k] = !!s?.[k];
   });
   return out;
 }
@@ -73,6 +84,24 @@ export default function SettingsTab() {
         return;
       }
     }
+    const invoiceOn = invoiceKeysSupported(settings);
+    if (invoiceOn) {
+      const code = String(form.receiptStateCode || '').trim();
+      const sac = String(form.receiptSac || '').trim();
+      const prefix = String(form.invoicePrefix || '').trim();
+      if (code && !/^\d{2}$/.test(code)) {
+        setError('State code: enter the 2-digit GST state code.');
+        return;
+      }
+      if (sac && !/^\d{4,8}$/.test(sac)) {
+        setError('SAC: enter digits only, exactly as on the GST registration.');
+        return;
+      }
+      if (prefix && !/^[A-Za-z0-9]{1,4}$/.test(prefix)) {
+        setError('Invoice prefix: up to 4 letters or digits (invoice numbers must stay within 16 characters).');
+        return;
+      }
+    }
     setSaving(true);
     setError('');
     try {
@@ -80,6 +109,12 @@ export default function SettingsTab() {
         ...Object.fromEntries(NUMBER_KEYS.map(([k]) => [k, Number(form[k])])),
         ...Object.fromEntries(BOOL_KEYS.map((k) => [k, !!form[k]])),
         ...Object.fromEntries(TEXT_KEYS.map((k) => [k, String(form[k] || '').trim() || null])),
+        ...(invoiceOn
+          ? {
+              ...Object.fromEntries(INVOICE_BOOL_KEYS.map((k) => [k, !!form[k]])),
+              ...Object.fromEntries(INVOICE_TEXT_KEYS.map((k) => [k, String(form[k] || '').trim() || null])),
+            }
+          : {}),
       };
       const saved = await subscriptionAdminApi.saveSettings(body);
       if (saved && typeof saved === 'object') {
@@ -165,6 +200,47 @@ export default function SettingsTab() {
                 </Field>
               </div>
             </Card>
+
+            {invoiceKeysSupported(settings) ? (
+              <Card title="GST invoice & WhatsApp delivery" icon={FileText}>
+                <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  GST invoices are issued only when the GSTIN is set and GST % &gt; 0; otherwise a Payment Receipt is issued with no tax rows. GSTIN and SAC must be copied
+                  from the company&apos;s GST registration — never enter placeholder values. Leave a field blank if it is not known.
+                </p>
+                <p className="mb-3 text-xs text-admin-muted">
+                  With the values below, new payments get a{' '}
+                  <span className="font-semibold text-slate-800">
+                    {String(form.receiptGstin || '').trim() && Number(form.taxPercent) > 0 ? 'Tax Invoice' : 'Payment Receipt'}
+                  </span>
+                  .
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="State" hint="Supplier state as registered for GST, e.g. Tamil Nadu.">
+                    <input value={form.receiptState} onChange={set('receiptState')} className={inputCls} />
+                  </Field>
+                  <Field label="State code" hint="2-digit GST state code (first 2 digits of the GSTIN).">
+                    <input value={form.receiptStateCode} onChange={set('receiptStateCode')} inputMode="numeric" maxLength={2} className={`${inputCls} font-mono`} />
+                  </Field>
+                  <Field label="SAC" hint="From the GST registration only — blank if not known.">
+                    <input value={form.receiptSac} onChange={set('receiptSac')} inputMode="numeric" maxLength={8} className={`${inputCls} font-mono`} />
+                  </Field>
+                  <Field label="Invoice prefix" hint="Up to 4 characters, e.g. NGF → NGF/26-27/00001.">
+                    <input value={form.invoicePrefix} onChange={set('invoicePrefix')} maxLength={4} className={`${inputCls} font-mono uppercase`} />
+                  </Field>
+                  <div className="sm:col-span-2">
+                    <Toggle
+                      label="Send invoices on WhatsApp"
+                      hint="Needs the BotBee template approved and BotBee enabled on the server; otherwise delivery is skipped."
+                      checked={form.invoiceWhatsappEnabled}
+                      onChange={set('invoiceWhatsappEnabled')}
+                    />
+                  </div>
+                  <Field label="WhatsApp template name" hint="Approved BotBee template, e.g. neargfix_subscription_paid." className="sm:col-span-2">
+                    <input value={form.invoiceWhatsappTemplate} onChange={set('invoiceWhatsappTemplate')} className={`${inputCls} font-mono`} />
+                  </Field>
+                </div>
+              </Card>
+            ) : null}
           </div>
           <div className="flex justify-end">
             <Button variant="primary" icon={Save} disabled={saving} onClick={save}>
